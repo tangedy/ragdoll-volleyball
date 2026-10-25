@@ -179,9 +179,12 @@ function Theme.shadow(f: GuiObject, radius: number?)
 	f:GetPropertyChangedSignal("Position"):Connect(function()
 		sh.Position = f.Position + UDim2.fromOffset(0, 5)
 	end)
-	f:GetPropertyChangedSignal("Size"):Connect(function()
-		sh.Size = f.Size
-	end)
+	-- follow the frame's rendered size, so size constraints on the frame apply to the shadow too
+	local function syncSize()
+		sh.Size = UDim2.fromOffset(f.AbsoluteSize.X, f.AbsoluteSize.Y)
+	end
+	f:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncSize)
+	task.defer(syncSize)
 	f.AncestryChanged:Connect(function()
 		if not f.Parent then
 			sh:Destroy()

@@ -216,6 +216,17 @@ local function build()
 	}, 5)
 	refs.bannerGrad = Theme.new("UIGradient", { Rotation = 90 }, refs.banner)
 	refs.bannerScale = Theme.new("UIScale", nil, refs.banner)
+	-- big 3-2-1 countdown number (server-driven)
+	refs.countdown = Theme.label(gui, {
+		Name = "Countdown",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.42),
+		Size = UDim2.fromOffset(220, 200),
+		Text = "",
+		TextTransparency = 1,
+		ZIndex = 21,
+	}, 6)
+	refs.countdownGrad = Theme.gradient(refs.countdown, Color3.new(1, 1, 1), C.Gold)
 	refs.hint = Theme.label(gui, {
 		Name = "Hint",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -490,7 +501,7 @@ local function build()
 	}, gui)
 	Theme.new("UIListLayout", { Padding = UDim.new(0, 6), VerticalAlignment = Enum.VerticalAlignment.Bottom }, lobby)
 	refs.lobby = lobby
-	local function switch(name: string, initial: boolean, onChange: (boolean) -> ())
+	local function switch(name: string, initial: boolean, onChange: (boolean) -> ()): (boolean) -> ()
 		local state = initial
 		local row = Theme.new("TextButton", {
 			Name = name,
@@ -539,9 +550,19 @@ local function build()
 			SoundController.play("UIClick")
 			onChange(state)
 		end)
+		-- external setter so the switch can follow server state
+		return function(v: boolean)
+			if v ~= state then
+				state = v
+				render(true)
+			end
+		end
 	end
-	switch("Play again", true, function(v)
+	local setQueue = switch("Play again", true, function(v)
 		Net.request(Net.Actions.SetAutoQueue, { value = v })
+	end)
+	player:GetAttributeChangedSignal("AutoQueue"):Connect(function()
+		setQueue(player:GetAttribute("AutoQueue") ~= false)
 	end)
 	switch("Camera shake", true, function(v)
 		HUDController.settings.CameraShake = v
@@ -717,7 +738,7 @@ end
 
 -- Results card -------------------------------------------------------------------------------------
 
-local function showResults(data: any)
+local function showResults(data: any, persist: boolean?)
 	local r = refs.results :: Frame
 	local title = if data.aborted
 		then "MATCH OVER"
@@ -747,6 +768,7 @@ local function showResults(data: any)
 		table.insert(lines, "Progress is not saving right now")
 	end
 	refs.resultBody.Text = table.concat(lines, "\n")
+	r.Size = UDim2.fromOffset(380, 112 + #lines * 21) -- fit the card to its lines
 	r.Visible = true
 	Theme.pop(r, 0.5, 0.4)
 	-- count the pts up
@@ -762,9 +784,16 @@ local function showResults(data: any)
 		refs.resultPts.Text = ("+%d PTS"):format(target)
 	end)
 	SoundController.play(if data.won then "Purchase" else "UIOpen")
-	task.delay(Config.Match.ResultsOverlay + 0.6, function()
-		r.Visible = false
-	end)
+	if not persist then
+		task.delay(Config.Match.ResultsOverlay + 0.6, function()
+			r.Visible = false
+		end)
+	end
+end
+HUDController.showResults = showResults
+
+function HUDController.hideResults()
+	refs.results.Visible = false
 end
 
 -- Per-frame update ------------------------------------------------------------------------------------
@@ -774,7 +803,6 @@ local function fmtTime(seconds: number): string
 	return ("%d:%02d"):format(seconds // 60, seconds % 60)
 end
 
-local lastCountdown = -1
 local function update()
 	if HUDController.cinematic then
 		return
@@ -826,17 +854,6 @@ local function update()
 			refs.timerStroke.Color = C.Gold
 			refs.timerGrad.Color = ColorSequence.new(C.PanelLight, C.Ink)
 		end
-	end
-	-- countdown ticks
-	if state == "RoundCountdown" and inMatch then
-		local n = math.max(1, math.ceil(left))
-		if n ~= lastCountdown then
-			lastCountdown = n
-			SoundController.play("CountdownTick")
-			HUDController.hint(tostring(n), 0.8)
-		end
-	else
-		lastCountdown = -1
 	end
 
 	local phase = ""
@@ -914,6 +931,33 @@ function HUDController.start()
 		HUDController.feed(d.text)
 	end)
 	Net.on("Results", showResults)
+	local countdownToken = 0
+	Net.on("Countdown", function(d)
+		if type(d.n) ~= "number" then
+			return
+		end
+		countdownToken += 1
+		local token = countdownToken
+		local l = refs.countdown :: TextLabel
+		local stroke = l:FindFirstChildOfClass("UIStroke")
+		l.Text = tostring(d.n)
+		l.TextTransparency = 0
+		if stroke then
+			stroke.Transparency = 0
+		end
+		if not HUDController.settings.ReducedMotion then
+			Theme.pop(l, 2.2, 0.35)
+		end
+		SoundController.play("CountdownTick")
+		task.delay(0.8, function()
+			if token == countdownToken then
+				tween(l, 0.15, { TextTransparency = 1 })
+				if stroke then
+					tween(stroke, 0.15, { Transparency = 1 })
+				end
+			end
+		end)
+	end)
 	Net.on("Possession", function(d)
 		if d.dropped then
 			HUDController.hint("Too slow! Ball dropped.", 1.5)

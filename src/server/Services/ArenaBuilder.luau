@@ -15,7 +15,7 @@ local J = Config.Jail
 
 local ArenaBuilder = {}
 
-local GROUPS = { "Characters", "Ragdoll", "Barrier", "Ball" }
+local GROUPS = { "Characters", "Ragdoll", "Barrier", "PlayerWall", "Ball", "EdgeWall", "Ejected" }
 
 function ArenaBuilder.setupCollisionGroups()
 	for _, g in GROUPS do
@@ -36,6 +36,25 @@ function ArenaBuilder.setupCollisionGroups()
 	set("Ball", "Barrier", false) -- balls cross freely
 	set("Ball", "Ball", true)
 	set("Barrier", "Default", false)
+	-- PlayerWall: stops walking characters only (jail and hub walls). Ragdolls fly through, so the
+	-- back line stays a real edge instead of an invisible bumper.
+	set("PlayerWall", "Characters", true)
+	set("PlayerWall", "Ragdoll", false)
+	set("PlayerWall", "Ball", false)
+	set("PlayerWall", "Default", false)
+	-- One-way court edges: EdgeWall only collides with "Ejected" bodies (flung past the edge), so a
+	-- launched player can leave the court but can never bounce back onto it.
+	for _, g in { "Default", "Characters", "Ragdoll", "Barrier", "PlayerWall", "Ball", "EdgeWall" } do
+		set("EdgeWall", g, false)
+	end
+	set("EdgeWall", "Ejected", true)
+	set("Ejected", "Default", true)
+	set("Ejected", "Barrier", true)
+	set("Ejected", "Characters", false)
+	set("Ejected", "Ragdoll", false)
+	set("Ejected", "Ejected", false)
+	set("Ejected", "Ball", false)
+	set("Ejected", "PlayerWall", false)
 end
 
 local function part(props: { [string]: any }, parent: Instance): Part
@@ -304,6 +323,46 @@ function ArenaBuilder.build(): Folder
 			end
 		end
 	end
+	-- One-way edge walls just outside every outer court edge (see collision groups above).
+	-- Side walls exist per shrink level; ArenaService enables only the current outer edge.
+	local edgeH = 60
+	local function edgeWall(name: string, cf: CFrame, size: Vector3, level: number?)
+		local w = part({
+			Name = name,
+			Size = size,
+			CFrame = cf,
+			Transparency = 1,
+			CanQuery = false,
+			CanTouch = false,
+			CastShadow = false,
+			CollisionGroup = "EdgeWall",
+		}, barriers)
+		w:AddTag("EdgeWall")
+		if level then
+			w:SetAttribute("WallLevel", level)
+			w.CanCollide = level == 1
+		end
+	end
+	for _, team in { "Red", "Blue" } do
+		local sign = ArenaLayout.teamSign(team)
+		edgeWall(
+			"EdgeWallBack_" .. team,
+			CFrame.new(o.X, o.Y + edgeH / 2 - 15, o.Z + sign * (hl + A.EdgeWallOffset)),
+			Vector3.new(A.CourtWidth + 40, edgeH, 0.5)
+		)
+	end
+	for level = 1, A.OvertimeStrips + 1 do
+		local edge = hw - stripW * (level - 1)
+		for _, xs in { -1, 1 } do
+			edgeWall(
+				"EdgeWallSide",
+				CFrame.new(o.X + xs * (edge + A.EdgeWallOffset), o.Y + edgeH / 2 - 15, o.Z),
+				Vector3.new(0.5, edgeH, A.CourtLength + 2),
+				level
+			)
+		end
+	end
+
 	-- glowing center line
 	local center = rimPiece("CenterLine", Vector3.new(o.X, o.Y + 0.02, o.Z), A.CourtWidth, false, Color3.fromRGB(255, 255, 255), 3, 0.8)
 	center.Size = Vector3.new(A.CourtWidth, 0.06, 0.9)
@@ -361,7 +420,8 @@ function ArenaBuilder.build(): Folder
 			local r = rimPiece("JailRim_" .. team, Vector3.new(c.X + xs * hw, o.Y - 0.05, c.Z), J.StripDepth, true, col, 3, 1.4)
 			r:AddTag("JailRim")
 		end
-		-- near side: characters only, so jailed players cannot jump the gap
+		-- near side: blocks walkers and ragdolls both ways (nobody crosses between court and jail),
+		-- but balls pass, so prisoners can still throw onto the court
 		part({
 			Name = "JailBarrier_" .. team,
 			Size = Vector3.new(A.CourtWidth + 2, A.BarrierHeight, 0.6),
@@ -438,7 +498,7 @@ function ArenaBuilder.build(): Folder
 		Transparency = 1,
 		CanQuery = false,
 		CanTouch = false,
-		CollisionGroup = "Barrier",
+		CollisionGroup = "PlayerWall",
 	}, barriers)
 	-- purple neon trim around the hub floor
 	local hubColor = Color3.fromRGB(170, 110, 255)

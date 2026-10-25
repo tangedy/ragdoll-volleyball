@@ -41,7 +41,7 @@ Config.Arena = {
 	CourtWidth = 64, -- along X
 	FloorThickness = 2,
 	VoidDepth = 25, -- elimination plane below the court surface
-	SpawnSetback = 30, -- spawn distance from the center line
+	SpawnSetback = 24, -- spawn distance from the center line (24 from the back edge too)
 	SpawnEdgeMargin = 14,
 	OpeningBallSpots = 6,
 	OpeningBallOffset = 6, -- studs from the center line
@@ -51,6 +51,9 @@ Config.Arena = {
 	OvertimeStrips = 4, -- per side
 	OvertimeStepInterval = 5,
 	OvertimeWarning = 1,
+	EdgeWallOffset = 2.5, -- one-way wall distance outside the court edge
+	EjectDistance = 5, -- a flung body this far past the edge has cleared the wall and can't return
+	StuckOffCourtTime = 3, -- a body hanging past the edge this long without falling is out
 	LobbyOrigin = Vector3.new(0, 200, -170),
 	LobbySize = Vector3.new(70, 2, 70),
 }
@@ -58,7 +61,7 @@ Config.Arena = {
 Config.Jail = {
 	Enabled = true,
 	StripDepth = 8,
-	Gap = 4, -- void gap between a team's back line and the jail strip behind it
+	Gap = 8, -- void gap between a team's back line and the jail: wider than a lying body (~5.5)
 	RespawnDelay = 1.5,
 	ReturnDelay = 1.0,
 	ReturnImmunity = 1.5,
@@ -68,7 +71,7 @@ Config.Jail = {
 Config.Player = {
 	WalkSpeed = 18,
 	JumpPower = 42,
-	PickupRadius = 5,
+	PickupRadius = 6, -- horizontal distance from the player to the ball
 	MaxHeldBalls = 1,
 	FullChargeTime = 0.65,
 	MinThrowSpeed = 85,
@@ -85,6 +88,7 @@ Config.Player = {
 	CatchRadius = 6, -- a ball passing within this distance of a catching player can be caught
 	PossessionWarn = 8,
 	PossessionForceDrop = 12,
+	ForceDropPickupBlock = 2, -- after a forced drop, no pickups for this long (no instant re-grab)
 	KnockoutCreditWindow = 4,
 	MaxPitchUpDeg = 50,
 	MaxPitchDownDeg = 35,
@@ -92,10 +96,15 @@ Config.Player = {
 }
 
 Config.Knockback = {
-	HorizontalMin = 28,
-	HorizontalMax = 40,
-	Upward = 18,
-	MaxSpeed = 70, -- clamp on resulting limb velocity
+	HorizontalMin = 28, -- quick throws: v0.1 strength
+	HorizontalMax = 44, -- full charge: +10% over v0.1 (40) for a harder fling
+	Upward = 26, -- more hang time = bigger-looking launch without much extra distance
+	MaxSpeed = 80, -- clamp on resulting limb velocity
+	-- Exaggeration: the whole body tumbles about a random axis while each limb windmills on its
+	-- floppy joint. Bodies keep their natural slide on landing (no extra friction).
+	TumbleSpin = 7, -- rad/s whole-body flip
+	LimbSpin = 9, -- rad/s random per-limb spin
+	LimbFlail = 10, -- studs/s random per-limb velocity (averages out across the body)
 }
 
 Config.Ball = {

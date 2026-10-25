@@ -120,14 +120,26 @@ end
 
 -- Comic pop text above the impact ("POW!").
 local function popText(pos: Vector3, color: Color3)
-	local a = anchorAt(pos + Vector3.new(0, 2.5, 0))
+	-- sits above the impact flash; depth-tested (AlwaysOnTop billboards proved unreliable to render)
+	local a = Instance.new("Part")
+	a.Anchored = true
+	a.CanCollide = false
+	a.CanQuery = false
+	a.CanTouch = false
+	a.Transparency = 1
+	a.Size = Vector3.one * 0.2
+	a.Position = pos + Vector3.new(0, 4.5, 0)
+	a.Parent = fxFolder
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromOffset(160, 70)
-	bb.AlwaysOnTop = true
+	bb.Size = UDim2.fromOffset(170, 74)
+	bb.AlwaysOnTop = false
 	bb.LightInfluence = 0
 	bb.MaxDistance = 150
 	bb.Adornee = a
-	bb.Parent = a
+	bb.Parent = player:FindFirstChildOfClass("PlayerGui") or a
+	a.Destroying:Connect(function()
+		bb:Destroy()
+	end)
 	local l = Theme.label(bb, {
 		Size = UDim2.fromScale(1, 1),
 		Text = POPS[math.random(1, #POPS)],
@@ -255,6 +267,15 @@ local function onElimination(d: any)
 		EffectsController.addShake(0.35)
 		fovKick = 8
 	end
+end
+
+-- Studio UI gallery hooks: replay effects with fake event data.
+function EffectsController.previewHit(pos: Vector3, model: Instance?)
+	onImpact({ kind = "Hit", position = pos, ballType = "Standard", direction = Vector3.zAxis, targetModel = model })
+end
+
+function EffectsController.previewElimination(team: string)
+	onElimination({ victimName = "Bot", victimTeam = if team == "Red" then "Blue" else "Red", killer = player, killerTeam = team })
 end
 
 function EffectsController.init()

@@ -49,6 +49,22 @@ function CharacterController.start()
 	if player.Character then
 		task.spawn(onCharacter, player.Character)
 	end
+	-- each round countdown, swing the camera behind you facing the court (teleports keep the old yaw)
+	Net.MatchState:GetAttributeChangedSignal("State"):Connect(function()
+		if Net.MatchState:GetAttribute("State") ~= "RoundCountdown" or (player:GetAttribute("Team") or "") == "" then
+			return
+		end
+		task.wait(0.15) -- let the spawn teleport replicate
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root then
+			local look = root.CFrame.LookVector
+			local flat = Vector3.new(look.X, 0, look.Z)
+			flat = if flat.Magnitude > 0.1 then flat.Unit else Vector3.zAxis
+			local camera = workspace.CurrentCamera
+			camera.CFrame = CFrame.lookAt(root.Position - flat * 12 + Vector3.new(0, 5, 0), root.Position + flat * 10)
+		end
+	end)
 	Net.on("DodgeAccepted", function(d)
 		local character = player.Character
 		if character and typeof(d.dir) == "Vector3" then

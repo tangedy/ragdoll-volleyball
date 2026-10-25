@@ -40,6 +40,7 @@ Optional place settings:
   - F7 forces sudden death.
   - F8 toggles the debug overlay (leak counters and hit-outcome tuning data).
   - F9 runs the scenario test suite. Results print to Output and go to `workspace.RD_TestResults`. You can also start it from the server command bar with `workspace:SetAttribute("RD_RunTests", true)`.
+  - F10 launches your own character with a full-charge hit, to feel the knockback.
 - **Hub (between matches, 7 s):** the SHOP and DAILY buttons, or the kiosks, open the pts shop and locker and the daily reward. Keeping the shop open holds you in the hub.
 - **Controls:**
 

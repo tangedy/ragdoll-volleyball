@@ -164,7 +164,7 @@ function BallService.start()
 	RunService.Heartbeat:Connect(BallService.step)
 	task.spawn(function()
 		while true do
-			task.wait(0.1)
+			task.wait(0.05)
 			BallService.pickupTick()
 			BallService.settleTick()
 		end
@@ -538,12 +538,18 @@ function BallService.pickupTick()
 	local radius = Config.Player.PickupRadius
 	local candidates = S.PlayerStateService.all()
 	for _, ball in balls do
-		if ball.state == "Resting" and t >= ball.lockoutUntil then
+		-- landed balls are harmless, so rolling ("Spent") balls can be grabbed too, not just settled ones
+		if (ball.state == "Resting" or ball.state == "Spent") and t >= ball.lockoutUntil then
 			local pos = ball.part.Position
 			local best, bestDist = nil, radius
 			for _, c in candidates do
 				if c.heldBall == nil and c.root and not c.isDummy and S.CombatService.canPickup(c, ball, pos) then
-					local d = (c.root.Position - pos).Magnitude
+					local rp = c.root.Position
+					-- horizontal distance, with a generous height window (balls sit low, roots high)
+					local d = Vector3.new(rp.X - pos.X, 0, rp.Z - pos.Z).Magnitude
+					if math.abs(rp.Y - pos.Y) > 7 then
+						d = math.huge
+					end
 					if d <= bestDist and not (ball.lastThrower == c and t < ball.throwerLockoutUntil) then
 						best, bestDist = c, d
 					end

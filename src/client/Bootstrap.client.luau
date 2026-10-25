@@ -49,6 +49,8 @@ if RunService:IsStudio() then
 			C.Net.request(C.Net.Actions.Dev, { cmd = "ForceOvertime" })
 		elseif input.KeyCode == Enum.KeyCode.F9 then
 			C.Net.request(C.Net.Actions.Dev, { cmd = "RunTests" })
+		elseif input.KeyCode == Enum.KeyCode.F10 then
+			C.Net.request(C.Net.Actions.Dev, { cmd = "LaunchMe" })
 		end
 	end)
 end

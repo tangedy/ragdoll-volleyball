@@ -25,6 +25,12 @@ end
 
 -- Only the current outer edge shows a side rim; back-rim pieces of dropped strips go dark.
 local function syncRims(steps: number)
+	for _, w in CollectionService:GetTagged("EdgeWall") do
+		local level = w:GetAttribute("WallLevel")
+		if w:IsA("BasePart") and level then
+			w.CanCollide = level == steps + 1
+		end
+	end
 	for rim in rimHome do
 		local level = rim:GetAttribute("RimLevel")
 		local stripIndex = rim:GetAttribute("StripIndex")

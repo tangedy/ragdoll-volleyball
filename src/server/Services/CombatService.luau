@@ -96,7 +96,11 @@ function CombatService.canPickup(c: any, ball: any, pos: Vector3): boolean
 	if not alive(c) or ragdolled(c) then
 		return false
 	end
-	if c.action ~= "Idle" and c.action ~= "Dodging" then
+	if c.pickupBlockedUntil and now() < c.pickupBlockedUntil then
+		return false
+	end
+	-- free hands are all that matter: walking (or dodging, or just after a throw) over a ball grabs it
+	if c.action ~= "Idle" and c.action ~= "Dodging" and c.action ~= "Recovering" then
 		return false
 	end
 	local ctx = CombatService.contextOf(c)
@@ -343,6 +347,23 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 	end
 end
 
+-- Studio dev key (F10): fling a combatant exactly like a real hit coming from behind them.
+function CombatService.debugLaunch(c: any, charge: number)
+	if not c.character or not c.root or ragdolled(c) then
+		return
+	end
+	local look = c.root.CFrame.LookVector
+	local kb = ProjectileMath.knockback(look * 100, charge, "Standard")
+	if c.heldBall then
+		S.BallService.drop(c)
+	end
+	S.PlayerStateService.setAction(c, "Ragdolled")
+	c.immuneUntil = now() + P.RagdollDuration + P.PostHitImmunity
+	S.RagdollService.ragdoll(c.character, kb)
+	S.NetService.broadcast("Impact", { kind = "Hit", ballType = "Standard", position = c.root.Position, direction = look, targetModel = c.character, target = c.player })
+	scheduleRecovery(c)
+end
+
 -- Actions ------------------------------------------------------------------------------------------
 
 function CombatService.doChargeStart(c: any)
@@ -440,6 +461,7 @@ function CombatService.possessionTick()
 			local held = t - c.heldSince
 			if held >= P.PossessionForceDrop then
 				S.BallService.drop(c)
+				c.pickupBlockedUntil = t + P.ForceDropPickupBlock
 				if c.action == "Charging" then
 					S.PlayerStateService.setAction(c, "Idle")
 				end

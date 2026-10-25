@@ -1,6 +1,36 @@
 # Implementation status (Oct 24, 2026)
 
-## Stage 1a: designer loop (latest)
+## Visual, audio and feel pass (Oct 25)
+
+- **Arena:** neon team rims with light curtains and rising sparks; rims move inward as the court shrinks. The jail is glass with a neon trim, the hub has a purple trim, and the night lighting has bloom. Set `Lighting.Technology = Future` by hand in Studio; scripts and Rojo can't set it.
+- **Hits:** the target flashes white, plus a spark burst, shockwave, comic "POW/BAM/SMACK!" pop, layered hit sound, a camera kick and a red vignette for the person hit, and a hitmarker for the thrower.
+- **Eliminations:** "ELIMINATION!" plus a team-colored screen flash for the eliminator, a rim pulse on the victim's side and a void splash for everyone.
+- **Sound:** every cue is a layered stack of built-in engine sounds in `shared/Sounds.luau`, so each can be swapped for uploaded audio. The mix hasn't been listened to yet.
+- **UI:** a shared `client/UI/Theme.luau` (outlined rounded type, gradient panels, 3D buttons) restyles the HUD, results card, shop, daily panel, mobile buttons, tutorial, spectator bar and loading screen. Every pop-up is captured in `docs/screenshots/`.
+- **Ragdoll fix (Oct 25):** the R15 rigs use Roblox's newer joint system (AnimationConstraints plus built-in limited BallSocketConstraints), so the old Motor6D-only ragdoll never loosened a joint and bodies flew rigid. Ragdoll now disables the AnimationConstraints (all except Root) so the built-in sockets take over; arms swing up to about 156° and legs about 87° mid-flight. Classic Motor6D rigs still work.
+- **Fling feel:** natural slide is back (no added friction) and the full-body tumble about a random axis is back, with per-limb spin and flail. Knockback is 28 (quick) to 44 (full charge) horizontal and 26 up. Spawns moved to 24 studs from the center line.
+- **Court edges:**
+  - The jail is now 8 studs out (wider than a lying body), so no one can rest across the court edge and the jail anymore.
+  - The jail's court-facing wall blocks walkers and ragdolls both ways, while balls pass through.
+  - One-way edge walls 2.5 studs outside every court edge only affect bodies already flung 5+ studs out, so they can leave but never bounce back.
+  - Anyone hanging past the edge for 3 s without falling is out.
+- **Countdown:** the server sends 3-2-1 directly to the players in the match, and a big number pops for each tick (verified in Studio: received 3,2,1 and displayed 3,2,1).
+- **Pickup:** landed-but-still-rolling balls can be grabbed, pickup uses horizontal distance within 6 studs, it works during throw recovery, and it checks 20 times a second. After a 12 s forced drop, that player can't pick up for 2 s, so the timeout can't be dodged by re-grabbing.
+- **Knockback probe** (`workspace:SetAttribute("RD_KnockbackProbe", true)`): number of throws (out of 3) where the target fell off.
+
+| Where the target stands | Quick throw | Full charge |
+| --- | --- | --- |
+| Middle of their half (34 from the back edge) | 0 | 0 |
+| 18 from the back edge | 1 of 2 hits | 3 |
+| 10 from the back edge | 3 | 3 |
+| 10 from a side edge | 0 | 3 |
+| 5 from a side edge | 3 | fell (1 hit) |
+
+- **Tests:** the F9 suite is 18/18, including new tests for the jail wall, the one-way edge and rolling pickup.
+- **Dev key:** F10 (Studio) launches your own character with a full-charge hit so you can feel the knockback.
+- **Studio UI gallery:** `game.Players.LocalPlayer:SetAttribute("RD_Gallery", "<item>")` pins any pop-up for review.
+
+## Stage 1a: designer loop
 
 - **Pts economy.** Pts replace coins everywhere (save schema v3 migrates coins to pts 1:1). A match pays the single highest tier: 600 final knockout / 500 never eliminated / 300 on court at the win / 200 win / 50 losing-team participation. Every payout needs at least one action (anti-AFK). XP, levels and win streaks are unchanged. Values are in `Config.Pts`.
 - **Daily login rewards.** A 7-day ladder in `Config.DailyRewards`. Claimed with a button once per UTC day; a missed day resets to day 1; never auto-claimed. The DAILY panel shows a "!" badge and opens once per session when there's something to claim.

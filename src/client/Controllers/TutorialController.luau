@@ -52,6 +52,12 @@ local function text(): (string?, string?)
 	return nil, nil
 end
 
+-- Studio UI gallery hook.
+function TutorialController.debugStep(n: number)
+	step = n
+	catchShownAt = os.clock()
+end
+
 function TutorialController.init()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "Tutorial"

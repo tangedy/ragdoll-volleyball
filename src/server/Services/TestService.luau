@@ -34,6 +34,12 @@ function TestService.start()
 	if not RunService:IsStudio() then
 		return
 	end
+	Workspace:GetAttributeChangedSignal("RD_KnockbackProbe"):Connect(function()
+		if Workspace:GetAttribute("RD_KnockbackProbe") == true then
+			Workspace:SetAttribute("RD_KnockbackProbe", false)
+			task.spawn(TestService.knockbackProbe)
+		end
+	end)
 	Workspace:GetAttributeChangedSignal("RD_RunTests"):Connect(function()
 		if Workspace:GetAttribute("RD_RunTests") == true then
 			Workspace:SetAttribute("RD_RunTests", false)
@@ -166,12 +172,26 @@ test("hit while charging cancels the throw and drops the ball", function()
 	assertTrue(target.chargeStart == nil, "charge not cleared")
 end)
 
+-- Remove loose balls near a spot so pickups can't interfere with a scenario.
+local function clearBallsNear(pos: Vector3, radius: number)
+	for _, b in S.BallService.all() do
+		if b.context == "Match" and not b.holder and (b.part.Position - pos).Magnitude < radius then
+			S.BallService.destroy(b)
+		end
+	end
+end
+
 test("catch window catches an incoming throw (catch before hit)", function()
 	local catcher = bots("Red")[1]
 	local thrower = bots("Blue")[1]
 	ready(catcher, point("Red", 10, 12))
 	ready(thrower, point("Blue", 10, 12))
 	task.wait(0.3)
+	clearBallsNear(catcher.root.Position, 14)
+	if catcher.heldBall then
+		S.BallService.drop(catcher)
+		clearBallsNear(catcher.root.Position, 14)
+	end
 	giveBall(thrower)
 	local before = catcher.stats.catches + catcher.stats.botCatches
 	S.CombatService.doThrow(thrower, aimAt(thrower, catcher, 0), 0)
@@ -243,9 +263,12 @@ test("possession timeout forces a drop at 12 s", function()
 	local ball = giveBall(bot)
 	bot.heldSince = now() - (Config.Player.PossessionForceDrop + 0.1)
 	assertTrue(waitUntil(function()
-		return bot.heldBall == nil
+		return ball.holder ~= bot
 	end, 0.6), "ball not dropped")
 	assertTrue(ball.holder == nil, "ball still has holder")
+	-- and no instant re-grab: the player can't pick anything up for a moment
+	task.wait(0.8)
+	assertTrue(bot.heldBall == nil, "re-grabbed a ball right after the forced drop")
 end)
 
 test("ball conservation repairs missing balls without duplicates", function()
@@ -307,6 +330,58 @@ test("void fall -> jail; jail hit -> return; revenge on own eliminator; cap -> s
 	end, Config.Jail.ReturnDelay + 0.8), "did not return to court")
 	assertTrue(ArenaLayout.onHalf("Red", jailee.root.Position, 0, -2), "returned to wrong place")
 	assertTrue(jailee.immuneUntil > now(), "no return immunity")
+end)
+
+test("jail wall: a prisoner cannot walk from the jail onto the court", function()
+	local bot = bots("Red")[1]
+	ready(bot, point("Red", 0, 20))
+	task.wait(0.2)
+	S.PlayerStateService.setStatus(bot, "Jailed")
+	S.CharacterService.teleport(bot, ArenaLayout.jailCenter("Red") + Vector3.new(0, 3, 0))
+	task.wait(0.3)
+	-- the red jail is behind the BLUE back line; try to walk onto the blue court
+	bot.humanoid:MoveTo(O + Vector3.new(0, 3, 30))
+	task.wait(2.5)
+	assertTrue(ArenaLayout.inJail("Red", bot.root.Position), ("prisoner left the jail (z=%.1f)"):format(bot.root.Position.Z - O.Z))
+	S.PlayerStateService.setStatus(bot, "Active")
+	ready(bot, point("Red", 0, 20))
+end)
+
+test("one-way edge: a flung body past the edge can't come back onto the court", function()
+	local bot = bots("Blue")[1]
+	ready(bot, point("Blue", 0, 44))
+	task.wait(0.3)
+	bot.immuneUntil = 0
+	S.PlayerStateService.setAction(bot, "Ragdolled")
+	S.RagdollService.ragdoll(bot.character, Vector3.new(0, 28, 45)) -- out past the blue back line
+	assertTrue(waitUntil(function()
+		return bot.ejected == true or bot.status ~= "Active"
+	end, 1.5), "never marked ejected")
+	-- shove it straight back at the court
+	for _, p in bot.character:GetDescendants() do
+		if p:IsA("BasePart") and not p.Anchored then
+			p.AssemblyLinearVelocity = Vector3.new(0, 25, -70)
+		end
+	end
+	task.wait(1.2)
+	local z = bot.root.Position.Z - O.Z
+	local backOnCourt = bot.status == "Active" and z < ArenaLayout.HalfLength and bot.root.Position.Y > ArenaLayout.SurfaceY - 2
+	assertTrue(not backOnCourt, ("body bounced back onto the court (z=%.1f)"):format(z))
+	-- tidy up whatever state it ended in
+	S.PlayerStateService.setStatus(bot, "Active")
+	ready(bot, point("Blue", 0, 20))
+end)
+
+test("rolling (not yet settled) balls can be picked up", function()
+	local bot = bots("Red")[1]
+	ready(bot, point("Red", -12, 18))
+	task.wait(0.3)
+	local ball = S.BallService.spawn("Standard", bot.root.Position + Vector3.new(2, -1.5, 0), "Match")
+	ball.state = "Spent" -- still rolling after a throw
+	ball.part.AssemblyLinearVelocity = Vector3.new(9, 0, 0)
+	ball.lockoutUntil = 0
+	S.BallService.pickupTick()
+	assertTrue(ball.holder == bot, "rolling ball was not picked up")
 end)
 
 test("no constraint, ball or bot build-up", function()
@@ -446,6 +521,88 @@ test("finisher plays on the match-ending knockout, then the match ends", functio
 		return ms:GetAttribute("State") == "Intermission" or ms:GetAttribute("MatchId") ~= matchId
 	end, 15), "match did not end after the finisher")
 end)
+
+-- Knockback probe (tuning): real throws at a bot standing at several spots on its half, at min and
+-- full charge. Reports how many hits end in the void per spot and how far the body travelled.
+-- Run: workspace:SetAttribute("RD_KnockbackProbe", true); results in "RD_KnockbackResults".
+function TestService.knockbackProbe()
+	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
+	if not waitUntil(function()
+		return ms:GetAttribute("State") == "RoundActive"
+	end, 30) then
+		Workspace:SetAttribute("RD_KnockbackResults", "SKIPPED: no live round")
+		return
+	end
+	S.BotService.setPaused(true)
+	local spots = {
+		{ name = "center of half (x0, 14 from line)", x = 0, depth = 14 },
+		{ name = "spawn line (x0, 30 deep)", x = 0, depth = 30 },
+		{ name = "deep (x0, 38 deep = 10 from back)", x = 0, depth = 38 },
+		{ name = "near side (x22 = 10 from edge)", x = 22, depth = 24 },
+		{ name = "edge (x27 = 5 from edge)", x = 27, depth = 24 },
+	}
+	local lines = {}
+	for _, spot in spots do
+		for _, charge in { 0, 1 } do
+			local ko, trials, travel, hits = 0, 3, 0, 0
+			for _ = 1, trials do
+				-- knockouts can end the round; wait for the next one instead of throwing at nothing
+				waitUntil(function()
+					return ms:GetAttribute("State") == "RoundActive"
+				end, 15)
+				if ms:GetAttribute("State") ~= "RoundActive" then
+					break
+				end
+				S.BotService.setPaused(true) -- a new round un-pauses bots
+				local target = bots("Blue")[1]
+				local thrower = bots("Red")[1]
+				if not (target and thrower) then
+					break
+				end
+				local tp = point("Blue", spot.x, spot.depth)
+				ready(target, tp)
+				ready(thrower, point("Red", spot.x * 0.5, 4))
+				target.jailReturns = 0
+				task.wait(0.35)
+				local start = target.root.Position
+				giveBall(thrower)
+				thrower.chargeStart = now() - charge * Config.Player.FullChargeTime
+				S.PlayerStateService.setAction(thrower, "Charging")
+				S.CombatService.doThrow(thrower, aimAt(thrower, target, charge), 0)
+				local hit = waitUntil(function()
+					return target.action == "Ragdolled"
+				end, 1.5)
+				if hit then
+					hits += 1
+					local maxD = 0
+					local t0 = os.clock()
+					while os.clock() - t0 < 4 do
+						if target.root and target.root.Parent then
+							local p = target.root.Position
+							maxD = math.max(maxD, (Vector3.new(p.X, 0, p.Z) - Vector3.new(start.X, 0, start.Z)).Magnitude)
+						end
+						if target.status ~= "Active" then
+							break
+						end
+						task.wait()
+					end
+					if target.status ~= "Active" then
+						ko += 1
+					end
+					travel += maxD
+				end
+				-- put the team back so the round keeps running
+				S.PlayerStateService.setStatus(target, "Active")
+				task.wait(0.2)
+			end
+			table.insert(lines, ("%-38s charge %3.0f%%: hits %d/3, void %d, avg travel %.1f studs"):format(spot.name, charge * 100, hits, ko, if hits > 0 then travel / hits else 0))
+		end
+	end
+	S.BotService.setPaused(false)
+	local out = table.concat(lines, "\n")
+	print("[KnockbackProbe]\n" .. out)
+	Workspace:SetAttribute("RD_KnockbackResults", out)
+end
 
 function TestService.runAll()
 	if running then

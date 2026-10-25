@@ -110,6 +110,11 @@ function MatchService.start()
 			devOvertime = true
 		elseif p.cmd == "RunTests" then
 			task.spawn(S.TestService.runAll)
+		elseif p.cmd == "LaunchMe" then
+			local c = S.PlayerStateService.get(player)
+			if c then
+				S.CombatService.debugLaunch(c, 1)
+			end
 		end
 	end)
 	task.spawn(MatchService.run)
@@ -357,6 +362,27 @@ local function courtStep()
 				local pos = c.root.Position
 				if pos.Y < ArenaLayout.VoidY then
 					table.insert(fallen, c)
+				elseif c.action == "Ragdolled" then
+					-- once a flung body is past the court edge it becomes "ejected": the one-way edge
+					-- walls stop it bouncing back on. If it somehow stays off the court without
+					-- falling (wedged on an edge), it still counts as out after a few seconds.
+					local sign = ArenaLayout.teamSign(c.team)
+					local rel = pos - Config.Arena.Origin
+					local hw = ArenaLayout.safeHalfWidth(S.ArenaService.getOvertimeSteps())
+					local past = math.max(math.abs(rel.X) - hw, rel.Z * sign - ArenaLayout.HalfLength)
+					if past > 0.8 then
+						c.offCourtSince = c.offCourtSince or os.clock()
+						if past > Config.Arena.EjectDistance and not c.ejected then
+							-- fully beyond the one-way wall: from now on it can't bounce back in
+							c.ejected = true
+							S.RagdollService.markEjected(c.character)
+						end
+						if os.clock() - c.offCourtSince > Config.Arena.StuckOffCourtTime then
+							table.insert(fallen, c)
+						end
+					else
+						c.offCourtSince = nil
+					end
 				elseif c.action ~= "Ragdolled" then
 					if pos.Y > ArenaLayout.SurfaceY - 1 then
 						c.lastCourtPos = pos
@@ -376,7 +402,15 @@ local function courtStep()
 			end
 		end
 	end
+	for _, c in roster do
+		if c.action ~= "Ragdolled" then
+			c.offCourtSince = nil
+			c.ejected = nil
+		end
+	end
 	for _, c in fallen do
+		c.offCourtSince = nil
+		c.ejected = nil
 		eliminate(c)
 	end
 	if #fallen > 0 then
@@ -528,7 +562,8 @@ local function startSuddenDeath()
 	end
 	task.delay(1.4, function()
 		if overtime then
-			banner(if J.Enabled then "JAIL CLOSED! COURT SHRINKING!" else "COURT SHRINKING!", Color3.fromRGB(255, 200, 60), 1.8)
+			banner(if J.Enabled then "JAIL CLOSED!" else "COURT SHRINKING!", Color3.fromRGB(255, 200, 60), 1.8)
+			S.NetService.broadcast("Hint", { text = "The court is shrinking!", duration = 2.2 })
 		end
 	end)
 end
@@ -696,7 +731,19 @@ local function runMatch(queued: { any })
 		setState("RoundCountdown", M.RoundCountdown)
 		freeze(true)
 		S.BotService.setPaused(false)
-		local ok = waitPhase(M.RoundCountdown, shouldAbort)
+		-- server-driven 3-2-1 so every client shows each tick, then GO! when the round goes live
+		local ok = true
+		for n = M.RoundCountdown, 1, -1 do
+			for _, c in roster do
+				if c.player then
+					S.NetService.send(c.player, "Countdown", { n = n })
+				end
+			end
+			if not waitPhase(1, shouldAbort) then
+				ok = false
+				break
+			end
+		end
 		freeze(false)
 		if not ok then
 			aborted = true
