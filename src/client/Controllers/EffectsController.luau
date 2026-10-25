@@ -263,6 +263,11 @@ local function onElimination(d: any)
 			HUDController.flash(teamColor, 0.35, 0.5)
 		end)
 		HUDController.banner("ELIMINATION!", Color3.fromRGB(255, 225, 90), 1.4, "Elimination")
+		if type(d.coins) == "number" and d.coins > 0 then
+			task.delay(0.25, function()
+				HUDController.coinPop(d.coins)
+			end)
+		end
 		EffectsController.pulseRims(nil, 5, 1)
 		EffectsController.addShake(0.35)
 		fovKick = 8
@@ -275,7 +280,7 @@ function EffectsController.previewHit(pos: Vector3, model: Instance?)
 end
 
 function EffectsController.previewElimination(team: string)
-	onElimination({ victimName = "Bot", victimTeam = if team == "Red" then "Blue" else "Red", killer = player, killerTeam = team })
+	onElimination({ victimName = "Bot", victimTeam = if team == "Red" then "Blue" else "Red", killer = player, killerTeam = team, coins = 25 })
 end
 
 function EffectsController.init()

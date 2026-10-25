@@ -10,7 +10,7 @@ Mark each row with how it was verified: **S** = Studio (state the number of clie
 | M2 | A full match completes and the next one starts without developer intervention | S (1 client + bots), Oct 24 |
 | M3 | PC, mobile and controller can each do every action without menus and without blocking camera control | |
 | M4 | Players can identify the incoming ball type before impact; every type follows the same ownership, catch and cleanup rules | |
-| M5 | A new player discovers the core actions, finishes a match, equips an earned cosmetic and keeps it after rejoining | Partial S: earned pts bought and equipped a skin; keeping it after rejoining needs Studio API access (untested) |
+| M5 | A new player discovers the core actions, finishes a match, equips an earned cosmetic and keeps it after rejoining | Partial S: earned coins bought and equipped a skin; keeping it after rejoining needs Studio API access (untested) |
 
 ## Required edge cases (spec §16)
 
@@ -53,12 +53,12 @@ Mark each row with how it was verified: **S** = Studio (state the number of clie
 
 | Test | Result |
 | --- | --- |
-| Pts pay the single highest tier (600/500/300/200) and 50 to losers who played; idle players and aborted matches get 0 | A |
+| Coins pay the single highest tier (600/500/300/200) and 50 to losers who played; idle players and aborted matches get 0 | A |
 | Daily reward pays once per UTC day, advances the ladder, resets on a missed day, wraps after day 7 | A |
-| A daily claim through the UI updates pts and clears the badge | S |
+| A daily claim through the UI updates coins and clears the badge | S |
 | Sudden death: timer end never decides on a count; jail closes; prisoners stay in jail; knockouts spectate | A |
 | The court keeps shrinking in sudden death until a team is out | S (strips retract; fallback path not yet hit) |
-| Shop: buy deducts pts, duplicate refused, unaffordable refused, equip works, hub-only | S (hub-only refusal not yet exercised) |
+| Shop: buy deducts coins, duplicate refused, unaffordable refused, equip works, hub-only | S (hub-only refusal not yet exercised) |
 | Ball skin shows on your Standard ball and never on power-up balls | S (Standard); power-up exclusion is by code |
 | The finisher plays for everyone in the match on the match-ending knockout, then the match ends | A + S (one client) |
 | Two clients both see the same finisher | |

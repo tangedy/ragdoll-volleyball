@@ -9,6 +9,7 @@ local Net = require(script.Parent.Net)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 local AimController = require(script.Parent.AimController)
 local InputController = require(script.Parent.InputController)
+local BallGuideController = require(script.Parent.BallGuideController)
 
 local player = Players.LocalPlayer
 
@@ -24,7 +25,7 @@ local function text(): (string?, string?)
 	local input = AimController.lastInput
 	local inMatch = (player:GetAttribute("Team") or "") ~= ""
 	if step == 1 then
-		return "Walk over a ball.", nil
+		return nil, nil -- floor arrows lead the player to a ball instead of text (BallGuideController)
 	elseif step == 2 then
 		if input == "Touch" then
 			return "Hold THROW to aim. Release to throw.", "Throw"
@@ -94,6 +95,7 @@ function TutorialController.start()
 		end
 	end)
 	RunService.RenderStepped:Connect(function()
+		BallGuideController.enabled = step == 1
 		local t, pointer = text()
 		cardHolder.Visible = t ~= nil
 		if t then

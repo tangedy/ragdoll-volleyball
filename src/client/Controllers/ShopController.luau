@@ -1,5 +1,5 @@
 --!strict
--- Hub UI: the pts shop/locker (buy and equip cosmetics) and the daily login reward. Shown only in
+-- Hub UI: the coins shop/locker (buy and equip cosmetics) and the daily login reward. Shown only in
 -- the hub, never during a match. While the shop is open the player stays in the hub (auto-queue is
 -- paused and restored on close) so the short intermission never yanks them out mid-purchase.
 
@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Catalog = require(Shared.Catalog)
@@ -25,15 +26,16 @@ local gui: ScreenGui
 local shopPanel: Frame
 local dailyPanel: Frame
 local grid: ScrollingFrame
-local ptsLabel: TextLabel
+local coinsLabel: TextLabel
 local tabButtons: { [string]: TextButton } = {}
 local dailyBadge: Frame
 local dailyBoxes: { Frame } = {}
 local claimButton: TextButton
 local currentTab = "BallSkin"
-local profile: any = { pts = 0, owned = {}, equipped = {}, daily = nil }
+local profile: any = { coins = 0, owned = {}, equipped = {}, daily = nil }
 local queueBeforeShop: boolean? = nil
 local dailyAutoShown = false
+local claimPending = false -- the player pressed Claim and we're waiting for the server's answer
 
 local new = Theme.new
 
@@ -134,7 +136,7 @@ local function renderGrid()
 	for name, b in tabButtons do
 		Theme.recolor(b, if name == currentTab then C.Gold else C.PanelLight)
 	end
-	ptsLabel.Text = tostring(profile.pts or 0)
+	coinsLabel.Text = tostring(profile.coins or 0)
 	for i, item in Catalog.inCategory(currentTab) do
 		local accent = tierColor(item)
 		local card = new("Frame", {
@@ -152,8 +154,8 @@ local function renderGrid()
 		}, 2)
 		local owned = owns(item)
 		local equipped = isEquipped(item)
-		local affordable = owned or (profile.pts or 0) >= item.Price
-		local label = if equipped then "EQUIPPED" elseif owned then "EQUIP" else ("%d PTS"):format(item.Price)
+		local affordable = owned or (profile.coins or 0) >= item.Price
+		local label = if equipped then "EQUIPPED" elseif owned then "EQUIP" else ("%d COINS"):format(item.Price)
 		local color = if equipped then Color3.fromRGB(90, 85, 120) elseif owned then C.Green elseif affordable then C.Gold else Color3.fromRGB(120, 70, 80)
 		local btn = Theme.button(card, label, color, {
 			AnchorPoint = Vector2.new(0.5, 1),
@@ -170,7 +172,7 @@ local function renderGrid()
 				Net.request(Net.Actions.BuyItem, { id = item.Id })
 			else
 				SoundController.play("UIError")
-				HUDController.hint(("Need %d more pts"):format(item.Price - (profile.pts or 0)), 1.5)
+				HUDController.hint(("Need %d more coins"):format(item.Price - (profile.coins or 0)), 1.5)
 			end
 		end)
 	end
@@ -200,8 +202,42 @@ local function renderDaily()
 		end
 		check.Visible = done
 	end
-	Theme.setText(claimButton, if d.claimed then "COME BACK TOMORROW" else ("CLAIM %d PTS"):format(d.amount))
+	Theme.setText(claimButton, if d.claimed then "COME BACK TOMORROW!" else ("CLAIM %d COINS"):format(d.amount))
 	Theme.recolor(claimButton, if d.claimed then Color3.fromRGB(90, 85, 120) else C.Gold)
+end
+
+-- Claimed: today's box pops with a check, the button says come back tomorrow, the panel closes
+-- itself, and the coins fly into the counter.
+local function celebrateClaim(day: number, amount: number)
+	local box = dailyBoxes[day]
+	if box then
+		local sc = box:FindFirstChildOfClass("UIScale") or new("UIScale", nil, box)
+		sc.Scale = 1.35
+		TweenService:Create(sc, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		local check = box:FindFirstChild("Check") :: GuiObject?
+		if check then
+			Theme.pop(check, 0.2, 0.4)
+		end
+	end
+	task.defer(function()
+		-- after the regular profile refresh repaints the panel
+		Theme.recolor(claimButton, C.Green)
+		Theme.pop(claimButton, 0.8, 0.3)
+	end)
+	SoundController.play("DailyClaim")
+	task.delay(1.4, function()
+		if dailyPanel.Visible then
+			ShopController.openDaily(false)
+		end
+		HUDController.coinPop(amount)
+	end)
+end
+
+function ShopController.claimDaily()
+	if profile.daily and not profile.daily.claimed and not claimPending then
+		claimPending = true
+		Net.request(Net.Actions.ClaimDaily)
+	end
 end
 
 function ShopController.openShop(on: boolean)
@@ -326,8 +362,8 @@ function ShopController.init()
 	local coin = new("Frame", { Position = UDim2.fromOffset(6, 6), Size = UDim2.fromOffset(26, 26), BackgroundColor3 = Color3.new(1, 1, 1) }, wallet)
 	Theme.round(coin)
 	Theme.gradient(coin, C.Gold, C.GoldDark)
-	Theme.label(coin, { Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), Text = "P" }, 1.5)
-	ptsLabel = Theme.label(wallet, {
+	Theme.label(coin, { Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), Text = "C" }, 1.5)
+	coinsLabel = Theme.label(wallet, {
 		Position = UDim2.fromOffset(38, 5),
 		Size = UDim2.new(1, -46, 1, -10),
 		Text = "0",
@@ -399,7 +435,7 @@ function ShopController.init()
 		Theme.body(box, {
 			Size = UDim2.new(1, -8, 0.14, 0),
 			Position = UDim2.new(0, 4, 0.74, 0),
-			Text = "PTS",
+			Text = "COINS",
 			TextColor3 = C.Muted,
 		})
 		Theme.label(box, {
@@ -419,16 +455,19 @@ function ShopController.init()
 		Size = UDim2.new(0.62, 0, 0, 58),
 	})
 	claimButton.Activated:Connect(function()
-		if profile.daily and not profile.daily.claimed then
-			Net.request(Net.Actions.ClaimDaily)
-			SoundController.play("DailyClaim")
-		end
+		ShopController.claimDaily()
 	end)
 end
 
 function ShopController.start()
 	Net.on("Profile", function(d)
+		local justClaimed = claimPending and d.daily and d.daily.claimed
 		profile = d
+		if justClaimed then
+			claimPending = false
+			renderDaily()
+			celebrateClaim(d.daily.day, Config.DailyRewards.Ladder[d.daily.day] or 0)
+		end
 		if shopPanel.Visible then
 			renderGrid()
 		end

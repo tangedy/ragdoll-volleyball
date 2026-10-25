@@ -39,8 +39,8 @@ Signature: `FireClient(kind: string, data: table)`.
 | `Ragdoll` | `{ on }` | Mirrors the ragdoll state into the local humanoid. |
 | `ThrowResult` | `{ throwId, ok }` | Reconciles the client's throw prediction. |
 | `Possession` | `{ warn?, remaining?, dropped? }` | Holding warning at 8 s, forced drop at 12 s. |
-| `Results` | `{ winner, won, aborted, casual, pts, tier, xp, level, leveledUp, streak, stats, persistent }` | The 4 s results overlay. |
-| `Profile` | `{ pts, owned, equipped, daily = { day, amount, claimed }, level, xp, xpNext, streak, persistent, tutorialStep }` | HUD chip, shop and daily panels. |
+| `Results` | `{ winner, won, aborted, casual, coins, tier, xp, level, leveledUp, streak, stats, persistent }` | The 4 s results overlay. |
+| `Profile` | `{ coins, owned, equipped, daily = { day, amount, claimed }, level, xp, xpNext, streak, persistent, tutorialStep }` | HUD chip, shop and daily panels. |
 | `ShopResult` | `{ id, ok, message?, equip? }` | Buy and equip outcome. |
 | `BallLaunched` | `{ id, origin, vel, ballType, t0, thrower, throwId, look? }` | Lets clients render the arc locally; `look` holds the owner's skin and trail (Standard balls only). |
 | `Finisher` | `{ module, killer, victim, killerName, victimName, winner, duration }` | Plays the finisher cutscene; sent only to players in the match. |

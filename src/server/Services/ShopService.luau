@@ -1,6 +1,6 @@
 --!strict
--- Pts shop, cosmetic equip and daily login rewards. Everything is decided here; the client only
--- sends requests. Buying and equipping are hub-only (never during a match), and pts are never
+-- Coins shop, cosmetic equip and daily login rewards. Everything is decided here; the client only
+-- sends requests. Buying and equipping are hub-only (never during a match), and coins are never
 -- spent without the server confirming ownership, price and balance.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -57,14 +57,7 @@ function ShopService.claimDaily(c: any): boolean
 	ls.day = status.day
 	ls.claimedDate = today
 	ls.lastDate = today
-	c.profile.Pts += status.amount
-	if c.player then
-		S.NetService.send(c.player, "Banner", {
-			text = ("DAY %d: +%d PTS"):format(status.day, status.amount),
-			color = Color3.fromRGB(255, 215, 80),
-			duration = 1.6,
-		})
-	end
+	c.profile.Coins += status.amount
 	S.AnalyticsService.event(c, "DailyClaim", status.day)
 	S.DataService.push(c)
 	task.spawn(S.DataService.save, c, false)
@@ -89,10 +82,10 @@ function ShopService.buy(c: any, id: string): (boolean, string?)
 	if item.Price <= 0 then
 		return false, "Not for sale"
 	end
-	if c.profile.Pts < item.Price then
-		return false, ("Need %d more pts"):format(item.Price - c.profile.Pts)
+	if c.profile.Coins < item.Price then
+		return false, ("Need %d more coins"):format(item.Price - c.profile.Coins)
 	end
-	c.profile.Pts -= item.Price
+	c.profile.Coins -= item.Price
 	c.profile.OwnedCosmetics[id] = true
 	c.profile.Equipped[item.Category] = id -- equip on purchase
 	S.AnalyticsService.event(c, "ShopBuy_" .. id, item.Price)

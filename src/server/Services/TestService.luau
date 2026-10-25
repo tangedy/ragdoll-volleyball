@@ -384,6 +384,31 @@ test("rolling (not yet settled) balls can be picked up", function()
 	assertTrue(ball.holder == bot, "rolling ball was not picked up")
 end)
 
+test("an elimination pays the eliminator 25 coins instantly", function()
+	local me
+	for _, c in S.MatchService.roster() do
+		if c.player and c.profile then
+			me = c
+		end
+	end
+	assertTrue(me ~= nil, "no real player in the match")
+	local enemyTeam = if me.team == "Red" then "Blue" else "Red"
+	local victim = bots(enemyTeam)[1]
+	assertTrue(victim ~= nil, "no enemy bot")
+	ready(victim, point(enemyTeam, 0, 20))
+	task.wait(0.2)
+	local before = me.profile.Coins
+	victim.lastHitBy = me
+	victim.lastHitAt = now()
+	victim.character:PivotTo(CFrame.new(victim.root.Position - Vector3.new(0, 60, 0)))
+	assertTrue(waitUntil(function()
+		return victim.status ~= "Active"
+	end, 1), "victim not eliminated")
+	assertTrue(me.profile.Coins == before + Config.Coins.Elimination, ("coins %d -> %d"):format(before, me.profile.Coins))
+	S.PlayerStateService.setStatus(victim, "Active")
+	ready(victim, point(enemyTeam, 0, 20))
+end)
+
 test("no constraint, ball or bot build-up", function()
 	local rigs, sockets = 0, 0
 	for _, d in Workspace:GetDescendants() do
@@ -422,7 +447,7 @@ test("simultaneous final eliminations -> draw (ends the round)", function()
 	assertTrue(ms:GetAttribute("RedWins") == redWins and ms:GetAttribute("BlueWins") == blueWins, "a team was awarded the round")
 end)
 
-test("pts: highest win tier only; 50 for playing on the losing team", function()
+test("coins: highest win tier only; 50 for playing on the losing team", function()
 	local function fake(team: string, elims: number, alive: boolean, throws: number): any
 		local st = S.PlayerStateService.newStats()
 		st.throws = throws
@@ -435,9 +460,9 @@ test("pts: highest win tier only; 50 for playing on the losing team", function()
 	local loser = fake("Blue", 1, false, 2)
 	local idleLoser = fake("Blue", 1, false, 0)
 	local ctx = { matchId = 1, winner = "Red", aborted = false, casual = true, duration = 60, finalEliminator = killer }
-	local P = Config.Pts
+	local P = Config.Coins
 	local function check(c: any, want: number, label: string)
-		local got = S.RewardService.pts(c, ctx)
+		local got = S.RewardService.coins(c, ctx)
 		assertTrue(got == want, ("%s: got %d, want %d"):format(label, got, want))
 	end
 	check(killer, P.WinLastElimination, "last elimination")
@@ -452,20 +477,20 @@ test("pts: highest win tier only; 50 for playing on the losing team", function()
 	check(late, P.WinAlive, "late joiner can't be flawless")
 	local abortCtx = table.clone(ctx)
 	abortCtx.aborted = true
-	assertTrue(S.RewardService.pts(killer, abortCtx) == 0, "aborted match paid pts")
+	assertTrue(S.RewardService.coins(killer, abortCtx) == 0, "aborted match paid coins")
 end)
 
 test("daily reward: pays once per UTC day, ladder advances, missed day resets", function()
 	local yesterday = os.date("!%Y-%m-%d", os.time() - 86400)
 	local c: any = {
 		profileLoaded = true,
-		profile = { Pts = 0, LoginStreak = { day = 3, lastDate = yesterday, claimedDate = yesterday } },
+		profile = { Coins = 0, LoginStreak = { day = 3, lastDate = yesterday, claimedDate = yesterday } },
 	}
 	local ladder = Config.DailyRewards.Ladder
 	assertTrue(S.ShopService.claimDaily(c), "first claim refused")
-	assertTrue(c.profile.LoginStreak.day == 4 and c.profile.Pts == ladder[4], "did not advance to day 4")
+	assertTrue(c.profile.LoginStreak.day == 4 and c.profile.Coins == ladder[4], "did not advance to day 4")
 	assertTrue(not S.ShopService.claimDaily(c), "second claim the same day paid")
-	assertTrue(c.profile.Pts == ladder[4], "pts changed on a refused claim")
+	assertTrue(c.profile.Coins == ladder[4], "coins changed on a refused claim")
 	c.profile.LoginStreak = { day = 5, lastDate = "2000-01-01", claimedDate = "2000-01-01" }
 	S.ShopService.claimDaily(c)
 	assertTrue(c.profile.LoginStreak.day == 1, "missed day did not reset the ladder")

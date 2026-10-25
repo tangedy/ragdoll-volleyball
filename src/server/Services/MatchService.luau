@@ -264,11 +264,19 @@ local function eliminate(c: any)
 		S.BallService.drop(c)
 	end
 	c.chargeStart = nil
+	local reward = 0
 	if credit then
 		if c.isBot then
 			credit.stats.botKnockouts += 1
 		else
 			credit.stats.knockouts += 1
+		end
+		-- instant elimination bonus for real players
+		if credit.player and credit.profile then
+			reward = Config.Coins.Elimination
+			credit.profile.Coins += reward
+			credit.stats.eliminationCoins += reward
+			S.DataService.push(credit)
 		end
 		feed(("%s 💥 launched %s off the court!"):format(tag(credit), tag(c)))
 	else
@@ -285,6 +293,7 @@ local function eliminate(c: any)
 		killerName = if credit then credit.name else nil,
 		killer = if credit then credit.player else nil,
 		killerTeam = if credit then credit.team else nil,
+		coins = reward,
 		position = fallPos,
 		edge = c.lastCourtPos,
 	})
@@ -560,12 +569,6 @@ local function startSuddenDeath()
 			S.PlayerStateService.setStatus(c, "Jailed")
 		end
 	end
-	task.delay(1.4, function()
-		if overtime then
-			banner(if J.Enabled then "JAIL CLOSED!" else "COURT SHRINKING!", Color3.fromRGB(255, 200, 60), 1.8)
-			S.NetService.broadcast("Hint", { text = "The court is shrinking!", duration = 2.2 })
-		end
-	end)
 end
 
 -- Returns ("Red" | "Blue" | "Draw" | "Abort", endedByElimination).
@@ -779,7 +782,12 @@ local function runMatch(queued: { any })
 			wins[result] += 1
 			MatchService.setAttr("RedWins", wins.Red)
 			MatchService.setAttr("BlueWins", wins.Blue)
-			resultBanner(("%s WINS THE ROUND!"):format(Config.Teams[result].Name), result, 2.2)
+			-- the match-winning round goes straight to "RED WINS!" (no stacked round + match banners)
+			if decidesMatch then
+				resultBanner(("%s WINS!"):format(Config.Teams[result].Name), result, 2.4)
+			else
+				resultBanner(("%s WINS THE ROUND!"):format(Config.Teams[result].Name), result, 2.2)
+			end
 		end
 		for _, c in roster do
 			S.AnalyticsService.funnel(c, "CompletedFirstRound")
@@ -802,9 +810,9 @@ local function runMatch(queued: { any })
 			winner = "Blue"
 		end
 	end
-	if winner then
-		resultBanner(("%s WINS!"):format(Config.Teams[winner].Name), winner, 2.5)
-	elseif aborted then
+	-- the winner banner already played during the final round's resolution, and that wait outlasts
+	-- it, so the results card below never overlaps it
+	if aborted then
 		banner("MATCH ABORTED", Color3.new(1, 1, 1), 2)
 	end
 	local bots = 0

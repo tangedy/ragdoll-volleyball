@@ -149,15 +149,16 @@ Config.Bots = {
 	Names = { "Bot Bounce", "Bot Bonk", "Bot Zoom", "Bot Wobble", "Bot Pop", "Bot Flop" },
 }
 
--- Pts: the one in-game currency. Earned from match wins (highest tier only), a small
--- participation payout for the losing team, and daily login rewards. Nothing else pays pts.
-Config.Pts = {
+-- Coins: the one in-game currency. Earned from match wins (highest tier only), a small
+-- participation payout for the losing team, eliminations, and daily login rewards.
+Config.Coins = {
+	Elimination = 25, -- paid instantly to whoever is credited with knocking someone off
 	Win = 200, -- your team won the match
 	WinAlive = 300, -- ...and you were on the court (not jailed/spectating) when it was won
 	WinFlawless = 500, -- ...and you were never eliminated during the whole match
 	WinLastElimination = 600, -- ...you scored the match-ending knockout
 	LossParticipation = 50, -- finished a match you actually played in, on the losing team
-	MinParticipationActions = 1, -- throws/catches/dodges needed for ANY pts payout (anti-AFK)
+	MinParticipationActions = 1, -- throws/catches/dodges needed for ANY coins payout (anti-AFK)
 }
 
 -- 7-day login ladder; day 8 starts the ladder again. A missed day resets to day 1.
@@ -196,7 +197,7 @@ Config.Camera = {
 
 Config.Data = {
 	StoreName = "PlayerData_v1",
-	SchemaVersion = 3,
+	SchemaVersion = 4,
 	AutosaveInterval = 120,
 	MaxRetries = 4,
 	SessionLockTimeout = 300,

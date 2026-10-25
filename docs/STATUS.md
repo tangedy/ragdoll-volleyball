@@ -1,5 +1,18 @@
 # Implementation status (Oct 24, 2026)
 
+## Oct 25 polish pass
+
+- **Currency:** it's called coins everywhere: UI, code and save data (schema v4 migrates the v3 "Pts" field).
+- **Eliminations:** +25 coins, paid instantly to the credited player, with a "+25" coin pop under "ELIMINATION!" that flies into the coin counter.
+- **Sudden death:** only the "SUDDEN DEATH!" banner (no jail-closed or court-shrinking text).
+- **Match end:** the final round shows "RED/BLUE WINS!" once; the results card follows after it. In Studio the banner showed for 2.4 s and the results arrived 3.1 s later.
+- **Match summary:** the title, the coins earned (tier plus elimination coins), and hits / catches / knockouts.
+- **Daily claim:** today's box pops with a check, the button reads "COME BACK TOMORROW!", then the panel closes itself and the coins fly to the counter.
+- **Tutorial step 1:** "Walk over a ball." is replaced by gold chevron arrows on the floor from the player to the nearest ball they can pick up, with a pulsing ring under it (`BallGuideController`).
+- **Loading screen:** "FLING YOUR FRIENDS!".
+- **Tests:** the F9 suite is 19/19 (adds the elimination-coins test).
+
+
 ## Visual, audio and feel pass (Oct 25)
 
 - **Arena:** neon team rims with light curtains and rising sparks; rims move inward as the court shrinks. The jail is glass with a neon trim, the hub has a purple trim, and the night lighting has bloom. Set `Lighting.Technology = Future` by hand in Studio; scripts and Rojo can't set it.
@@ -32,10 +45,10 @@
 
 ## Stage 1a: designer loop
 
-- **Pts economy.** Pts replace coins everywhere (save schema v3 migrates coins to pts 1:1). A match pays the single highest tier: 600 final knockout / 500 never eliminated / 300 on court at the win / 200 win / 50 losing-team participation. Every payout needs at least one action (anti-AFK). XP, levels and win streaks are unchanged. Values are in `Config.Pts`.
+- **Coins economy.** Coins replace coins everywhere (save schema v3 migrates coins to coins 1:1). A match pays the single highest tier: 600 final knockout / 500 never eliminated / 300 on court at the win / 200 win / 50 losing-team participation. Every payout needs at least one action (anti-AFK). XP, levels and win streaks are unchanged. Values are in `Config.Coins`.
 - **Daily login rewards.** A 7-day ladder in `Config.DailyRewards`. Claimed with a button once per UTC day; a missed day resets to day 1; never auto-claimed. The DAILY panel shows a "!" badge and opens once per session when there's something to claim.
 - **Sudden death.** When the timer ends, the round no longer ends on a head count: jail closes, the court shrinks every 5 s, and the round ends when a team is out. A fallback (`SuddenDeathFallback`) ends it if it still stalls after the court has fully shrunk.
-- **Hub intermission of 7 s.** The lobby is the hub: chat, practice dummy, SHOP & LOCKER (buy and equip with pts, server-validated, hub-only) and DAILY, opened from the HUD buttons or the kiosks. While the shop is open you stay in the hub; auto-queue is restored when you close it.
+- **Hub intermission of 7 s.** The lobby is the hub: chat, practice dummy, SHOP & LOCKER (buy and equip with coins, server-validated, hub-only) and DAILY, opened from the HUD buttons or the kiosks. While the shop is open you stay in the hub; auto-queue is restored when you close it.
 - **Cosmetics.** `shared/Catalog.luau` holds ball skins (Standard balls only, so power-up types stay readable), trails, titles (on the name tag) and finishers, each with Robux product-id placeholders.
 - **Finishers.** The match-ending knockout triggers a `Finisher` phase. Play freezes, the server re-stages and re-launches the victim, and every player in the match sees the killer's equipped finisher cutscene. Modules live in `src/shared/Finishers/` (the contract is in its README). Default and Spotlight exist; real designs come later.
 - **Stage 1 hardening.**
@@ -49,12 +62,12 @@
 - The F9 suite passed 15/15 on four separate runs. It covers:
   - Every spec §16 row a bot can drive.
   - Jail, revenge and the return cap.
-  - The pts tiers, including idle winners.
+  - The coins tiers, including idle winners.
   - The daily ladder.
   - Sudden death closing the jail.
   - The finisher phase leading to the end of the match.
-- **Shop through the real remotes:** a buy deducts pts, a duplicate is refused, an unaffordable item is refused with the shortfall, equip switches work, and the held ball shows the equipped skin.
-- **Daily claim:** 500 → 600 pts, and the badge cleared.
+- **Shop through the real remotes:** a buy deducts coins, a duplicate is refused, an unaffordable item is refused with the shortfall, equip switches work, and the held ball shows the equipped skin.
+- **Daily claim:** 500 → 600 coins, and the badge cleared.
 - **Finisher, observed on the client:** Scriptable camera, HUD hidden, "FINAL KNOCKOUT!" and "X finished Y!" banners, the victim re-launched off the court, then the camera and HUD restored.
 - **Ball visuals:** 16 client visuals during bot play, the server parts hidden while in flight, and cleanup afterwards.
 
@@ -112,7 +125,7 @@ The milestones are listed in spec order, with the amendment's additions under ea
 - **Loading screen:** a custom screen in ReplicatedFirst.
 - **Lobby:** a practice ball and a launchable practice dummy.
 - **Tutorial:** server-owned steps that advance on real actions: walk over a ball → hold to aim → launch the dummy or hit someone → stay on the court → catch tip during downtime.
-- **Rewards (superseded by pts, see above):** coins per spec §13, with a per-match performance cap and a participation requirement. Bots pay 50%. XP and level follow the A4 curve, with the level badge over the head. Win streaks have a flame at 3+; casual matches with more than half bots don't change them. A "STREAK ENDED!" bonus is included.
+- **Rewards (superseded by coins, see above):** coins per spec §13, with a per-match performance cap and a participation requirement. Bots pay 50%. XP and level follow the A4 curve, with the level badge over the head. Win streaks have a flame at 3+; casual matches with more than half bots don't change them. A "STREAK ENDED!" bonus is included.
 - **Saving:** a DataStore profile with `UpdateAsync`, a session lock, retries, autosave and `BindToClose`. The v1 → v2 migration adds the A4 fields. If loading fails, the defaults never overwrite a real save and the HUD says progress isn't saving.
 - **Analytics:** a monotonic onboarding funnel for fresh saves only, plus custom events for catches, jail, revenge, match duration, bot count and invalid remotes.
 - **Not done:** cosmetic inventory and equip, daily quests, the login streak, the cosmetic index, and the catalog with simulated purchases (A4/A5). These are Stage 2 of the release plan.

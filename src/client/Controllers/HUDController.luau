@@ -251,7 +251,7 @@ local function build()
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
 	}, feedFrame)
 
-	-- Profile chip (top left): coin + pts, level badge + XP bar
+	-- Profile chip (top left): coin + coins, level badge + XP bar
 	local chip = Theme.panel(gui, {
 		Name = "Chip",
 		Position = UDim2.fromOffset(10, 8),
@@ -266,7 +266,7 @@ local function build()
 	Theme.round(coin)
 	Theme.gradient(coin, C.Gold, C.GoldDark)
 	Theme.stroke(coin, Theme.darken(C.GoldDark, 0.5), 2)
-	Theme.label(coin, { Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), Text = "P" }, 1.5)
+	Theme.label(coin, { Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), Text = "C" }, 1.5)
 	refs.coins = Theme.label(chip, {
 		Position = UDim2.fromOffset(40, 6),
 		Size = UDim2.new(1, -100, 0, 30),
@@ -474,10 +474,10 @@ local function build()
 		Text = "",
 		ZIndex = 4,
 	}, 3)
-	refs.resultPts = Theme.label(results, {
+	refs.resultCoins = Theme.label(results, {
 		Position = UDim2.fromOffset(16, 34),
 		Size = UDim2.new(1, -32, 0, 50),
-		Text = "+0 PTS",
+		Text = "+0 COINS",
 		TextColor3 = C.Gold,
 	}, 3)
 	refs.resultBody = Theme.body(results, {
@@ -695,6 +695,60 @@ function HUDController.vignette(intensity: number, duration: number)
 	tween(v, duration, { BackgroundTransparency = 1 })
 end
 
+-- "+25" coin reward under the banner: bounces in, then flies into the coin counter.
+function HUDController.coinPop(amount: number)
+	local reduced = HUDController.settings.ReducedMotion
+	local holder = Theme.new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.4),
+		Size = UDim2.fromOffset(190, 64),
+		BackgroundTransparency = 1,
+		ZIndex = 22,
+	}, gui)
+	local coin = Theme.new("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 6, 0.5, 0),
+		Size = UDim2.fromOffset(52, 52),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		ZIndex = 22,
+	}, holder)
+	Theme.round(coin)
+	Theme.gradient(coin, C.Gold, C.GoldDark)
+	Theme.stroke(coin, Theme.darken(C.GoldDark, 0.5), 3)
+	Theme.label(coin, { Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.15, 0.15), Text = "C", ZIndex = 23 }, 2)
+	local text = Theme.label(holder, {
+		Position = UDim2.fromOffset(64, 0),
+		Size = UDim2.new(1, -64, 1, 0),
+		Text = ("+%d"):format(amount),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 22,
+	}, 4)
+	Theme.gradient(text, Color3.fromRGB(255, 250, 200), C.Gold)
+	SoundController.play("CoinGain")
+	if reduced then
+		task.delay(1.2, function()
+			holder:Destroy()
+		end)
+		return
+	end
+	Theme.pop(holder, 0.2, 0.45)
+	-- coin spins while it hangs there
+	tween(coin, 0.6, { Rotation = 360 }, Enum.EasingStyle.Back)
+	task.delay(0.9, function()
+		-- fly to the coin counter (top-left chip) and shrink away
+		local target = refs.chip.AbsolutePosition + Vector2.new(20, 20) - gui.AbsolutePosition
+		local tw = tween(holder, 0.45, {
+			Position = UDim2.fromOffset(target.X, target.Y),
+			Size = UDim2.fromOffset(60, 20),
+		}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		tween(text, 0.45, { TextTransparency = 1 })
+		tw.Completed:Once(function()
+			holder:Destroy()
+			Theme.pop(refs.chip, 1.2, 0.3)
+		end)
+	end)
+end
+
 function HUDController.hitmarker()
 	local hm = refs.hitmarker :: Frame
 	hm.Visible = true
@@ -742,7 +796,7 @@ local function showResults(data: any, persist: boolean?)
 	local r = refs.results :: Frame
 	local title = if data.aborted
 		then "MATCH OVER"
-		elseif data.won and data.pts > 0 then string.upper(data.tier) .. "!"
+		elseif data.won and data.coins > 0 then string.upper(data.tier) .. "!"
 		elseif data.won then "YOU WIN!"
 		elseif data.winner then "GOOD GAME!"
 		else "DRAW!"
@@ -752,36 +806,25 @@ local function showResults(data: any, persist: boolean?)
 		top, bottom = Color3.fromRGB(150, 140, 190), Color3.fromRGB(90, 80, 130)
 	end
 	refs.ribbonGrad.Color = ColorSequence.new(top, bottom)
+	-- the summary is just the title, the coins and the three combat stats
 	local lines = {
 		("Hits %d   ·   Catches %d   ·   Knockouts %d"):format(data.stats.hits, data.stats.catches, data.stats.knockouts),
-		("+%d XP%s"):format(data.xp, if data.leveledUp then ("   ·   LEVEL UP! Lv %d"):format(data.level) else ""),
 	}
-	if data.stats.revenges > 0 then
-		table.insert(lines, ("Revenge hits: %d"):format(data.stats.revenges))
-	end
-	if data.streak and data.streak >= Config.Progression.StreakFlameAt then
-		table.insert(lines, ("🔥 Win streak: %d"):format(data.streak))
-	elseif data.casual then
-		table.insert(lines, "Casual match (bots): streak unchanged")
-	end
-	if not data.persistent then
-		table.insert(lines, "Progress is not saving right now")
-	end
 	refs.resultBody.Text = table.concat(lines, "\n")
-	r.Size = UDim2.fromOffset(380, 112 + #lines * 21) -- fit the card to its lines
+	r.Size = UDim2.fromOffset(380, 124)
 	r.Visible = true
 	Theme.pop(r, 0.5, 0.4)
-	-- count the pts up
-	local target = data.pts
+	-- count the coins up
+	local target = data.coins
 	task.spawn(function()
 		local t0 = os.clock()
 		local dur = 0.8
 		while os.clock() - t0 < dur do
 			local a = (os.clock() - t0) / dur
-			refs.resultPts.Text = ("+%d PTS"):format(math.floor(target * (1 - (1 - a) ^ 3)))
+			refs.resultCoins.Text = ("+%d COINS"):format(math.floor(target * (1 - (1 - a) ^ 3)))
 			task.wait()
 		end
-		refs.resultPts.Text = ("+%d PTS"):format(target)
+		refs.resultCoins.Text = ("+%d COINS"):format(target)
 	end)
 	SoundController.play(if data.won then "Purchase" else "UIOpen")
 	if not persist then
@@ -965,14 +1008,14 @@ function HUDController.start()
 			HUDController.hint("Throw it!", 1.5)
 		end
 	end)
-	local lastPts: number? = nil
+	local lastCoins: number? = nil
 	Net.on("Profile", function(d)
-		local pts = d.pts or 0
-		refs.coins.Text = tostring(pts)
-		if lastPts and pts ~= lastPts then
+		local coins = d.coins or 0
+		refs.coins.Text = tostring(coins)
+		if lastCoins and coins ~= lastCoins then
 			Theme.pop(refs.chip, 1.15, 0.3)
 		end
-		lastPts = pts
+		lastCoins = coins
 		refs.level.Text = tostring(d.level)
 		tween(refs.xpBar, 0.4, { Size = UDim2.fromScale(math.clamp(d.xp / math.max(d.xpNext, 1), 0, 1), 1) })
 		refs.saveWarn.Text = if d.persistent then "" else "Progress not saving"

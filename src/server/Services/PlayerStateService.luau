@@ -21,6 +21,7 @@ export type Stats = {
 	dodges: number,
 	jailEscapes: number,
 	streakEnds: number,
+	eliminationCoins: number,
 }
 
 export type Combatant = {
@@ -82,6 +83,7 @@ function PlayerStateService.newStats(): Stats
 		dodges = 0,
 		jailEscapes = 0,
 		streakEnds = 0,
+		eliminationCoins = 0,
 	}
 end
 

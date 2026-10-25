@@ -114,6 +114,11 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.8 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.4, delay = 0.08 },
 	},
+	CoinGain = {
+		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.7 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 2.25, delay = 0.07 },
+		{ id = S .. "clickfast.wav", volume = 0.3, pitch = 1.6, delay = 0.02 },
+	},
 	-- UI
 	UIClick = {
 		{ id = S .. "clickfast.wav", volume = 0.4, pitch = 1.1, jitter = 0.05 },

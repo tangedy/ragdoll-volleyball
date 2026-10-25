@@ -8,11 +8,11 @@ Starting point: see [STATUS.md](STATUS.md).
 
 ## Stage 1: Core loop complete, then a closed playtest
 
-*Redefined on Oct 24, 2026. The first version of this stage only polished what existed. A playtest is only informative once the designer's full loop exists: earn pts, spend them in the hub, come back daily, and get sudden death and the final-knockout moment. So Stage 1 now finishes that loop first, then playtests it.*
+*Redefined on Oct 24, 2026. The first version of this stage only polished what existed. A playtest is only informative once the designer's full loop exists: earn coins, spend them in the hub, come back daily, and get sudden death and the final-knockout moment. So Stage 1 now finishes that loop first, then playtests it.*
 
 ### 1a. Finish the core loop (done in Studio, solo plus bots)
 
-- [x] **Pts currency.** It replaces coins, and a v2 → v3 save migration converts coins to pts 1:1. Match pays the single highest tier:
+- [x] **Coins currency.** It replaces coins, and a v2 → v3 save migration converts coins to coins 1:1. Match pays the single highest tier:
   - 600 for the final knockout.
   - 500 for never being eliminated.
   - 300 for being on the court at the win.
@@ -20,9 +20,9 @@ Starting point: see [STATUS.md](STATUS.md).
   - 50 for playing on the losing team.
 
   Any payout needs at least one throw, catch or dodge, so AFK players earn nothing.
-- [x] **Daily login rewards.** A 7-day ladder (100 → 750 pts). It's claimed once per UTC day with a button, never auto-claimed. A missed day resets it to day 1.
+- [x] **Daily login rewards.** A 7-day ladder (100 → 750 coins). It's claimed once per UTC day with a button, never auto-claimed. A missed day resets it to day 1.
 - [x] **Sudden death.** When the timer ends, the round no longer ends on a head count. Jail closes (no returns, and new knockouts spectate) and the court keeps shrinking until a team is out. A fallback ends it if it still stalls after the court has fully shrunk.
-- [x] **7 s hub intermission.** You can talk (default chat), practice on the dummy, and use the SHOP & LOCKER (buy and equip ball skins, trails, titles and finishers with pts) and DAILY. Both open from HUD buttons or kiosks in the hub. Keeping the shop open holds you in the hub.
+- [x] **7 s hub intermission.** You can talk (default chat), practice on the dummy, and use the SHOP & LOCKER (buy and equip ball skins, trails, titles and finishers with coins) and DAILY. Both open from HUD buttons or kiosks in the hub. Keeping the shop open holds you in the hub.
 - [x] **Finisher system.** The match-ending knockout plays a cutscene for everyone in the match. Finishers are modules in `src/shared/Finishers/` with a documented contract. The server stages the victim and each client plays the camera and effects. Two exist so far: Default and Spotlight (for sale). Designing the real finishers is Stage 2.
 - [x] **Hardening already done.**
   - Smooth client-rendered ball flight with thrower prediction.
@@ -36,7 +36,7 @@ Starting point: see [STATUS.md](STATUS.md).
 2. **Mobile pass on 3+ physical phones.** Check button sizes, safe areas, throwing while dragging the camera, the hub buttons and shop panel at phone size, and the finisher camera.
 3. **Knockback tuning.** Use the F8 hit-outcome data. The target is that center hits usually recover and edge hits are dangerous.
 4. **Audio and VFX pass.** Throw, hit, catch, splash, jail, sudden death and the finisher sting. The built-in sounds that actually load were checked in Studio.
-5. **Economy sanity check.** Hold the shop prices against the pts rate: about 200–600 per win plus the dailies. Target: a first skin within 2–3 matches, and the 2,000–3,000 pts items in a few days.
+5. **Economy sanity check.** Hold the shop prices against the coins rate: about 200–600 per win plus the dailies. Target: a first skin within 2–3 matches, and the 2,000–3,000 coins items in a few days.
 6. **Bot quality.** Use Easy/Normal per match size and stop bots crowding onto one ball.
 7. **Cleanup.** Remove the template Baseplate and SpawnLocation, and turn on Studio API access to test real saving.
 
@@ -63,13 +63,13 @@ Starting point: see [STATUS.md](STATUS.md).
 
 ### Scope
 
-1. **Finisher designs.** Design the real finisher cutscenes on the Stage 1 module contract and sell them for pts and Robux.
+1. **Finisher designs.** Design the real finisher cutscenes on the Stage 1 module contract and sell them for coins and Robux.
 2. **More cosmetics.** KO effects and victory poses join the existing ball skins, trails, titles and finishers (`shared/Catalog.luau` already holds Robux product-id placeholders).
 3. **Cosmetic index.** An INDEX grid grouped by category. Unowned items show a silhouette and how to get them. A completed category grants a title.
-4. **Daily quests.** 3 quests per UTC day from a pool, paid in pts; `PlayersOnly` quests ignore bot actions; finishing all 3 pays a bonus. The daily login ladder already exists from Stage 1.
+4. **Daily quests.** 3 quests per UTC day from a pool, paid in coins; `PlayersOnly` quests ignore bot actions; finishing all 3 pays a bonus. The daily login ladder already exists from Stage 1.
 5. **Purchases** (`MarketplaceService.ProcessReceipt`):
    - Receipts are idempotent: purchase ids are stored in the profile, a failed or duplicate receipt never grants twice or loses an item, and the client shows a "Delivering…" state.
-   - Products: Starter Bundle (once per account), pts packs, 2x Pts, 2x XP, VIP and Emote Pack game passes, Quest Reroll.
+   - Products: Starter Bundle (once per account), coins packs, 2x Coins, 2x XP, VIP and Emote Pack game passes, Quest Reroll.
    - Limited items: stock is decremented atomically across servers (DataStore `UpdateAsync` on a stock key, or MemoryStore with a DataStore backstop). Stock never goes below 0.
    - Studio simulation of every product flow, as the amendment asks.
 6. **Placement rules.**

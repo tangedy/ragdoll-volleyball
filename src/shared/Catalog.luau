@@ -1,5 +1,5 @@
 --!strict
--- Every cosmetic, its pts price and (later) its Robux product id. Cosmetics never change
+-- Every cosmetic, its coins price and (later) its Robux product id. Cosmetics never change
 -- competitive stats: skins apply only to Standard balls so power-up types always stay readable,
 -- and nothing here touches radius, speed, knockback or catch timing (spec §13).
 
@@ -9,7 +9,7 @@ export type Item = {
 	Id: string,
 	Category: Category,
 	Name: string,
-	Price: number, -- pts; 0 = free / owned by default
+	Price: number, -- coins; 0 = free / owned by default
 	RobuxProductId: number, -- placeholder until products exist (Amendment A5)
 	Default: boolean?,
 	Data: { [string]: any },

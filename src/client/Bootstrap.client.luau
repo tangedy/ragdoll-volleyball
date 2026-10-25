@@ -16,6 +16,7 @@ local ORDER = {
 	"EffectsController",
 	"CharacterController",
 	"SpectatorController",
+	"BallGuideController",
 	"TutorialController",
 	"FinisherController",
 	"ShopController",

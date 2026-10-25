@@ -67,7 +67,7 @@ title.BackgroundTransparency = 1
 title.Font = Enum.Font.FredokaOne
 title.TextScaled = true
 title.TextColor3 = Color3.new(1, 1, 1)
-title.Text = "SMASH YOUR FRIENDS"
+title.Text = "FLING YOUR FRIENDS!"
 title.Rotation = -3
 title.Parent = bg
 stroke(title, 6)

@@ -19,7 +19,7 @@ local store: DataStore? = nil
 
 export type Profile = {
 	SchemaVersion: number,
-	Pts: number, -- schema v3: the single currency (replaces v1/v2 Coins)
+	Coins: number, -- the single currency (schema v4; v3 stored it as "Pts")
 	OwnedCosmetics: { [string]: boolean },
 	Equipped: { [string]: string },
 	TutorialStep: number,
@@ -40,7 +40,7 @@ export type Profile = {
 local function default(): Profile
 	return {
 		SchemaVersion = D.SchemaVersion,
-		Pts = 0,
+		Coins = 0,
 		OwnedCosmetics = {},
 		Equipped = {},
 		TutorialStep = 1,
@@ -79,11 +79,14 @@ function DataService.migrate(old: any): Profile
 		data.BestWinStreak = 0
 	end
 	if version < 3 then
-		-- v3: coins become pts 1:1; the daily ladder gains a claimed date
-		local anyData = data :: any
-		data.Pts = tonumber(anyData.Coins) or 0
-		anyData.Coins = nil
+		-- v3: the daily ladder gains a claimed date
 		data.LoginStreak.claimedDate = data.LoginStreak.claimedDate or ""
+	end
+	if version < 4 then
+		-- v4: the currency is "Coins" again (v3 briefly stored it as "Pts"); keep whichever exists
+		local anyData = data :: any
+		data.Coins = tonumber(anyData.Pts) or tonumber(anyData.Coins) or 0
+		anyData.Pts = nil
 	end
 	data.SchemaVersion = D.SchemaVersion
 	return data
@@ -107,7 +110,7 @@ local function pushProfile(c: any)
 		return
 	end
 	S.NetService.send(c.player, "Profile", {
-		pts = p.Pts,
+		coins = p.Coins,
 		owned = p.OwnedCosmetics,
 		equipped = p.Equipped,
 		daily = S.ShopService.dailyStatus(c),
