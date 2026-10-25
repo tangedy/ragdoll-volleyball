@@ -1,0 +1,38 @@
+{
+  "name": "RagdollDodgeball",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "Server": {
+        "$path": "src/server"
+      }
+    },
+    "ReplicatedFirst": {
+      "LoadingScreen": {
+        "$path": "src/first/LoadingScreen.client.luau"
+      }
+    },
+    "StarterPlayer": {
+      "$properties": {
+        "CharacterWalkSpeed": 18,
+        "CharacterUseJumpPower": true,
+        "CharacterJumpPower": 42
+      },
+      "StarterPlayerScripts": {
+        "Client": {
+          "$path": "src/client"
+        }
+      }
+    },
+    "Players": {
+      "$properties": {
+        "CharacterAutoLoads": false
+      }
+    }
+  }
+}
