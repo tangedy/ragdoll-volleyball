@@ -5,9 +5,12 @@
 -- light tears out of the winner's hand, erasing the victim and carving a hollow path through the
 -- court. The last shot is the winner's own view down the path.
 --
---   0.0-0.65 shot 1, on the winner: the orbs pop in (0.05 / 0.15) and hover, swelling
+--   0.0-0.2  shot 1, on the winner: arms swing up and out to the sides
+--   0.2-0.65 on the last frame of the raise both orbs pop into existence and hover, swelling
 --   0.65-1.9 the orbs ease into a spiral that tightens and speeds up, the frame warping as they close
---   1.9      clash: impact frames, the orbs snap into a crackling violet sphere
+--   1.9      clash: impact frames, the orbs snap into a crackling violet sphere; the camera slowly
+--            pulls back
+--   2.15-2.6 the sphere shrinks to nothing under a whoosh that fades with it
 --   2.6-3.4  shot 2, close on the victim: every sound cut, total silence
 --   3.4-3.6  hard pull-back to a wide side shot of the whole line
 --   3.6      the beam fires at full length instantly; the victim breaks into pixels, the path is
@@ -19,13 +22,14 @@
 
 local Lighting = game:GetService("Lighting")
 local SoundService = game:GetService("SoundService")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
-local POP_BLUE = 0.05
-local POP_RED = 0.15
-local POP_TIME = 0.45
+local RAISE = 0.2 -- arms up to the sides; the orbs spawn on its last frame
+local POP_TIME = 0.35
 local ORBIT = 0.65 -- the spiral starts
 local CONTACT = 1.9
+local SHRINK = 2.15 -- the sphere shrinks away to nothing by the cut
 local CUT = 2.6
 local PULL = 3.4 -- 0.8 s on the victim
 local BLAST = 3.6 -- 0.2 s pull-back
@@ -299,7 +303,7 @@ return {
 
 		-- mood: darker, punchier contrast for the build-up
 		local mood = Instance.new("ColorCorrectionEffect")
-		mood.Brightness = -0.08
+		mood.Brightness = -0.16
 		mood.Contrast = 0.3
 		mood.Saturation = 0.25
 		mood.Parent = cam
@@ -379,8 +383,7 @@ return {
 		local nextRing = 0
 		local nextCollar = 0
 
-		ctx.sound("PurpleOrbs", center)
-		ctx.pose(hero, "ArmsSpread", 0.3)
+		ctx.pose(hero, "ArmsSpread", RAISE)
 		if victim then
 			ctx.pose(victim, "Catch", 0.4)
 		end
@@ -399,24 +402,37 @@ return {
 				local bp = center + off + bob + rng:NextUnitVector() * shove
 				local rp = center - off - bob + rng:NextUnitVector() * (0.08 + shove)
 				local base = 1.6 - 0.5 * p
-				sizeOrb(blue, base * popIn((t - POP_BLUE) / POP_TIME), 1.9 - 0.3 * math.sin(t * 9))
-				sizeOrb(red, base * popIn((t - POP_RED) / POP_TIME), 2 + 0.35 * math.sin(t * 31))
+				sizeOrb(blue, base * popIn((t - RAISE) / POP_TIME), 1.9 - 0.3 * math.sin(t * 9))
+				sizeOrb(red, base * popIn((t - RAISE) / POP_TIME), 2 + 0.35 * math.sin(t * 31))
 				moveOrb(blue, CFrame.new(bp))
 				moveOrb(red, CFrame.new(rp))
 				pull.CFrame = CFrame.new(bp)
-				if t >= POP_RED + 0.2 and t >= nextRing then
+				-- they start dim and glow brighter as they close, bleeding toward violet at the end
+				local glow = 0.2 + 0.8 * p ^ 1.6
+				local toViolet = 0.45 * p ^ 3
+				for _, o in { { blue, BLUE }, { red, RED } } do
+					local orb, color = o[1], o[2]
+					local tinted = color:Lerp(VIOLET, toViolet)
+					orb.core.Color = tinted:Lerp(Color3.new(0, 0, 0), 0.55 * (1 - glow))
+					orb.halo.Color = tinted
+					orb.halo.Transparency = 0.1 + 0.6 * (1 - glow)
+					orb.light.Brightness = 9 * glow
+					orb.light.Range = 10 + 12 * glow
+				end
+				pullFx.Transparency = NumberSequence.new(0.2 + 0.6 * (1 - glow), 0.6 * (1 - glow))
+				mood.Brightness = -0.16 + 0.1 * p
+				if t >= RAISE + 0.2 and t >= nextRing then
 					nextRing = t + 0.22 - 0.14 * p
 					ctx.fx.shockwave(rp, (cam.CFrame.Position - rp), RED, 4 + 2 * p, 0.25)
 				end
 			end
-			if at("popBlue", POP_BLUE, t) then
-				ctx.fx.flash(center + u * ORBIT_R, BLUE, 5)
-				ctx.fx.burst(center + u * ORBIT_R, BLUE, if reduced then 6 else 20, 16, 0.4)
+			if at("pop", RAISE, t) then
+				ctx.sound("PurpleOrbs", center)
+				ctx.fx.flash(center + u * ORBIT_R, BLUE, 2.5)
+				ctx.fx.burst(center + u * ORBIT_R, BLUE, if reduced then 4 else 10, 12, 0.3)
 				pullFx.Rate = if reduced then 40 else 140
-			end
-			if at("popRed", POP_RED, t) then
-				ctx.fx.flash(center - u * ORBIT_R, RED, 5)
-				ctx.fx.burst(center - u * ORBIT_R, RED, if reduced then 6 else 20, 16, 0.4)
+				ctx.fx.flash(center - u * ORBIT_R, RED, 2.5)
+				ctx.fx.burst(center - u * ORBIT_R, RED, if reduced then 4 else 10, 12, 0.3)
 				redSparks.Rate = if reduced then 30 else 110
 			end
 			if at("squeeze", 1.1, t) then
@@ -447,10 +463,28 @@ return {
 				end
 			end
 
-			-- the violet sphere churns in front of the winner until the cut
+			-- the violet sphere churns in front of the winner, then shrinks away to nothing
+			if at("shrink", SHRINK, t) then
+				-- a whoosh that gets quieter (and rises) as the sphere vanishes
+				for _, layer in { { "swordlunge.wav", 0.9, 0.5 }, { "bass.wav", 0.7, 0.45 } } do
+					local snd = Instance.new("Sound")
+					snd.SoundId = "rbxasset://sounds/" .. layer[1]
+					snd.Volume = layer[2]
+					snd.PlaybackSpeed = layer[3]
+					snd.Parent = ctx.folder
+					snd:Play()
+					local fadeOut = TweenInfo.new(CUT - SHRINK, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+					TweenService:Create(snd, fadeOut, { Volume = 0, PlaybackSpeed = layer[3] * 1.6 }):Play()
+					task.delay(CUT - SHRINK, function()
+						snd:Destroy()
+					end)
+				end
+			end
 			if sphere and t < CUT then
 				local s = math.clamp((t - CONTACT) / 0.12, 0, 1)
-				local size = (2.4 + 0.15 * math.sin(t * 40)) * (0.4 + 0.6 * s)
+				local gone = math.clamp((t - SHRINK) / (CUT - SHRINK - 0.03), 0, 1)
+				local size = (2.4 + 0.15 * math.sin(t * 40)) * (0.4 + 0.6 * s) * (1 - gone ^ 1.5)
+				sphere.light.Brightness = 10 * (1 - gone)
 				sizeOrb(sphere, size, 1.6)
 				moveOrb(sphere, CFrame.new(center) * CFrame.Angles(t * 13, t * 17, t * 5))
 				for i, b in tendrils do
@@ -676,7 +710,8 @@ return {
 			local wide = lineMid + side * (lineLen * 0.55 + 18) + UP * (lineLen * 0.2 + 8)
 			local camPos: Vector3, lookAt: Vector3, fov: number
 			if t < CUT then
-				-- front shot on the winner, pushing in as the spiral tightens
+				-- front shot on the winner, pushing in as the spiral tightens, then slowly pulling
+				-- back from the violet sphere
 				local p = math.clamp(t / CONTACT, 0, 1)
 				local e = ctx.ease(p)
 				camPos = (K + dir * 11 + UP * 2.2):Lerp(K + dir * 7.5 + side * 0.8 + UP * 1.4, e)
@@ -684,9 +719,10 @@ return {
 				local warp = math.clamp((t - ORBIT) / (CONTACT - ORBIT), 0, 1)
 				fov = 60 + (if reduced then 0 else 22 * warp ^ 3 + 2 * math.sin(t * 50) * warp ^ 2)
 				if t >= CONTACT then
-					local s = math.clamp((t - CONTACT) / 0.25, 0, 1)
-					fov = 84 - 30 * (1 - (1 - s) ^ 3)
-					camPos = camPos:Lerp(center + dir * 4.5 + UP * 0.3, s * 0.45)
+					local s = math.clamp((t - CONTACT) / (CUT - CONTACT), 0, 1)
+					s = 1 - (1 - s) ^ 2
+					fov = 56 + 8 * s
+					camPos = camPos:Lerp(K + dir * 13 + side * 0.4 + UP * 2.4, s)
 				elseif not reduced and warp > 0.6 then
 					-- fringe: alternating green/magenta tint as the space between them bends
 					mood.TintColor = if math.floor(t * 40) % 2 == 0
