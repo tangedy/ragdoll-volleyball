@@ -251,42 +251,44 @@ local function build()
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
 	}, feedFrame)
 
-	-- Profile chip (top left): coin + coins, level badge + XP bar
+	-- Profile chip (bottom left, big): coin balance, level badge + XP bar
 	local chip = Theme.panel(gui, {
 		Name = "Chip",
-		Position = UDim2.fromOffset(10, 8),
-		Size = UDim2.fromOffset(196, 56),
-	}, 16)
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 12, 1, -14),
+		Size = UDim2.fromOffset(270, 80),
+	}, 20)
 	refs.chip = chip
 	local coin = Theme.new("Frame", {
-		Position = UDim2.fromOffset(8, 8),
-		Size = UDim2.fromOffset(26, 26),
+		Position = UDim2.fromOffset(12, 10),
+		Size = UDim2.fromOffset(44, 44),
 		BackgroundColor3 = Color3.new(1, 1, 1),
 	}, chip)
 	Theme.round(coin)
 	Theme.gradient(coin, C.Gold, C.GoldDark)
-	Theme.stroke(coin, Theme.darken(C.GoldDark, 0.5), 2)
-	Theme.label(coin, { Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), Text = "C" }, 1.5)
+	Theme.stroke(coin, Theme.darken(C.GoldDark, 0.5), 3)
+	Theme.label(coin, { Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.15, 0.15), Text = "C" }, 2)
 	refs.coins = Theme.label(chip, {
-		Position = UDim2.fromOffset(40, 6),
-		Size = UDim2.new(1, -100, 0, 30),
+		Position = UDim2.fromOffset(64, 8),
+		Size = UDim2.new(1, -140, 0, 48),
 		Text = "0",
 		TextColor3 = C.Gold,
 		TextXAlignment = Enum.TextXAlignment.Left,
-	})
+	}, 3)
 	local lvl = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -8, 0, 6),
-		Size = UDim2.fromOffset(46, 32),
+		Position = UDim2.new(1, -10, 0, 10),
+		Size = UDim2.fromOffset(64, 44),
 		BackgroundColor3 = Color3.new(1, 1, 1),
 	}, chip)
-	Theme.corner(lvl, 10)
+	Theme.corner(lvl, 12)
 	Theme.gradient(lvl, Theme.lighten(C.Purple, 0.2), C.Purple)
-	Theme.stroke(lvl, C.Ink, 2)
-	refs.level = Theme.label(lvl, { Size = UDim2.new(1, -6, 1, -6), Position = UDim2.fromOffset(3, 3), Text = "1" }, 2)
+	Theme.stroke(lvl, C.Ink, 2.5)
+	Theme.body(lvl, { Size = UDim2.new(1, 0, 0, 12), Position = UDim2.fromOffset(0, 3), Text = "LEVEL", TextColor3 = Color3.new(1, 1, 1) })
+	refs.level = Theme.label(lvl, { Size = UDim2.new(1, -8, 1, -18), Position = UDim2.fromOffset(4, 15), Text = "1" }, 2)
 	local xpBack = Theme.new("Frame", {
-		Position = UDim2.new(0, 8, 1, -14),
-		Size = UDim2.new(1, -16, 0, 7),
+		Position = UDim2.new(0, 12, 1, -16),
+		Size = UDim2.new(1, -24, 0, 9),
 		BackgroundColor3 = C.Ink,
 	}, chip)
 	Theme.round(xpBack)
@@ -297,7 +299,8 @@ local function build()
 	Theme.round(refs.xpBar)
 	Theme.gradient(refs.xpBar, Color3.fromRGB(140, 240, 255), Color3.fromRGB(70, 160, 255), 0)
 	refs.saveWarn = Theme.body(gui, {
-		Position = UDim2.fromOffset(12, 68),
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 14, 1, -98),
 		Size = UDim2.fromOffset(200, 16),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = Color3.fromRGB(255, 170, 120),
@@ -494,8 +497,8 @@ local function build()
 	-- Lobby switches
 	local lobby = Theme.new("Frame", {
 		Name = "Lobby",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 10, 1, -12),
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -12, 1, -12),
 		Size = UDim2.fromOffset(200, 132),
 		BackgroundTransparency = 1,
 	}, gui)
@@ -920,6 +923,8 @@ local function update()
 	refs.phase.Text = phase
 	refs.phasePill.Visible = phase ~= ""
 	refs.lobby.Visible = not live or not inMatch
+	-- on touch screens the action buttons own the bottom-right corner: sit above them
+	refs.lobby.Position = if AimController.lastInput == "Touch" then UDim2.new(1, -12, 1, -250) else UDim2.new(1, -12, 1, -12)
 
 	-- reticle + charge
 	local holding = AimController.holding()

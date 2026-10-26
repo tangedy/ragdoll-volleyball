@@ -307,6 +307,8 @@ return {
 		-- Shot 1: the winner ------------------------------------------------------------------
 		ctx.sound("MeteorCharge")
 		if killerRoot then
+			-- the winner is played by a stand-in wearing their avatar (the real character is hidden)
+			local hero = ctx.standIn(ctx.killer) or ctx.killer
 			local K = killerRoot.Position
 			local look = killerRoot.CFrame.LookVector
 			local f = Vector3.new(look.X, 0, look.Z)
@@ -349,7 +351,7 @@ return {
 				cam.CFrame = CFrame.lookAt(camA:Lerp(camB, e), lookA:Lerp(lookB, e))
 				if not posed and t > 0.25 then
 					posed = true
-					ctx.pose(ctx.killer, "CrossArms", 0.55)
+					ctx.pose(hero, "CrossArms", 0.55)
 				end
 				-- light swells behind the clouds, then the meteor tears through
 				if t > 0.7 then

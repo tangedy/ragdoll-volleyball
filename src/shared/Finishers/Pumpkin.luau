@@ -102,44 +102,51 @@ local function makePumpkin(ctx: any): (Rig, PointLight, { BasePart })
 	return rig, light, carved
 end
 
--- Bat: body, two flapping wings, red eyes.
-type Bat = { body: Part, wings: { Part }, eyes: { Part }, phase: number, radius: number, speed: number, height: number }
+-- Bat: a small dark body and two flapping wings. Each one bursts from just behind the camera and
+-- flies to a perch spot on one side of the frame, behind the victim, then flutters there.
+type Bat = { body: Part, wings: { Part }, phase: number, from: Vector3, to: Vector3, launch: number, travel: number }
 
-local function makeBat(ctx: any, rng: Random): Bat
-	local black = Color3.fromRGB(20, 16, 26)
-	local body = part({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.7, Color = black }, ctx.folder)
+local function makeBat(ctx: any, rng: Random, from: Vector3, to: Vector3, launch: number): Bat
+	local dark = Color3.fromRGB(46, 30, 62) -- deep purple reads against the night sky
+	local body = part({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.45, Color = dark }, ctx.folder)
 	local wings = {}
 	for _ = 1, 2 do
-		table.insert(wings, part({ Size = Vector3.new(1.5, 0.08, 0.8), Color = black }, ctx.folder))
+		table.insert(wings, part({ Size = Vector3.new(0.95, 0.05, 0.42), Color = dark }, ctx.folder))
 	end
-	local eyes = {}
-	for _ = 1, 2 do
-		table.insert(eyes, part({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.14, Color = Color3.fromRGB(255, 40, 40), Material = Enum.Material.Neon }, ctx.folder))
-	end
+	local eye = part({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.12, Color = Color3.fromRGB(255, 40, 40), Material = Enum.Material.Neon }, ctx.folder)
+	table.insert(wings, eye) -- moved with the body below
 	return {
 		body = body,
 		wings = wings,
-		eyes = eyes,
 		phase = rng:NextNumber(0, math.pi * 2),
-		radius = rng:NextNumber(3.5, 8),
-		speed = rng:NextNumber(1.6, 3) * (if rng:NextNumber() < 0.5 then -1 else 1),
-		height = rng:NextNumber(5, 11),
+		from = from,
+		to = to,
+		launch = launch,
+		travel = rng:NextNumber(0.7, 1.05),
 	}
 end
 
-local function moveBat(b: Bat, center: Vector3, t: number)
-	local a = b.phase + t * b.speed
-	local pos = center + Vector3.new(math.cos(a) * b.radius, b.height + math.sin(t * 3 + b.phase) * 1.2, math.sin(a) * b.radius)
-	local tangent = Vector3.new(-math.sin(a), 0, math.cos(a)) * math.sign(b.speed)
-	local cf = CFrame.lookAt(pos, pos + tangent)
-	b.body.CFrame = cf
-	local flap = math.sin(t * 26 + b.phase) * 0.9
-	for i, w in b.wings do
-		local s = if i == 1 then 1 else -1
-		w.CFrame = cf * CFrame.new(0.3 * s, 0, 0) * CFrame.Angles(0, 0, flap * s) * CFrame.new(0.75 * s, 0, 0)
+local function moveBat(b: Bat, t: number)
+	local u = math.clamp((t - b.launch) / b.travel, 0, 1)
+	local e = 1 - (1 - u) ^ 2
+	-- arc slightly upward on the way, then hover-flutter at the perch
+	local pos = b.from:Lerp(b.to, e) + Vector3.new(0, math.sin(u * math.pi) * 2, 0)
+	if u >= 1 then
+		pos = b.to + Vector3.new(math.cos(t * 3 + b.phase) * 0.8, math.sin(t * 5 + b.phase) * 0.5, math.sin(t * 3 + b.phase) * 0.8)
 	end
-	for i, e in b.eyes do
-		e.CFrame = cf * CFrame.new(if i == 1 then 0.14 else -0.14, 0.1, -0.3)
+	local dir = (b.to - b.from).Unit
+	local cf = CFrame.lookAt(pos, pos + dir)
+	b.body.CFrame = cf
+	b.body.Transparency = if t < b.launch then 1 else 0
+	local flap = math.sin(t * 30 + b.phase) * 0.9
+	for i, w in b.wings do
+		if i > 2 then
+			w.CFrame = cf * CFrame.new(0, 0.08, -0.2) -- eyes, facing the way it flies
+		else
+			local sgn = if i == 1 then 1 else -1
+			w.CFrame = cf * CFrame.new(0.15 * sgn, 0, 0) * CFrame.Angles(0, 0, flap * sgn) * CFrame.new(0.47 * sgn, 0, 0)
+		end
+		w.Transparency = b.body.Transparency
 	end
 end
 
@@ -230,8 +237,9 @@ return {
 		local t0 = os.clock()
 		local rng = Random.new()
 		local cam = ctx.camera
-		local killer = ctx.killer
-		local killerRoot = ctx.rootOf(killer)
+		-- the winner is played by a stand-in wearing their avatar (the real character is hidden)
+		local killerRoot = ctx.rootOf(ctx.killer)
+		local killer = if killerRoot then (ctx.standIn(ctx.killer) or ctx.killer) else ctx.killer
 		local victimRoot = ctx.rootOf(ctx.victim)
 		local baseFov = cam.FieldOfView
 
@@ -274,7 +282,13 @@ return {
 					cam.FieldOfView = baseFov + (40 - baseFov) * z
 					camPos = camPos:Lerp(lookAt + f * 4.5 + Vector3.new(0, 0.6, 0), z * 0.35)
 				end
-				cam.CFrame = CFrame.lookAt(camPos, lookAt + Vector3.new(0, if t >= REVEAL then 0.3 else 0, 0))
+				-- on the reveal the frame also rolls ~35 degrees, like rotating the picture
+				local roll = 0
+				if t >= REVEAL then
+					local r = math.min(1, (t - REVEAL) / 0.22)
+					roll = math.rad(35) * (1 - (1 - r) ^ 3)
+				end
+				cam.CFrame = CFrame.lookAt(camPos, lookAt + Vector3.new(0, if t >= REVEAL then 0.3 else 0, 0)) * CFrame.Angles(0, 0, roll)
 
 				-- choreography
 				if stage == 0 and t >= 0.55 then
@@ -368,21 +382,32 @@ return {
 			fog.Parent = a
 			fog:Emit(4)
 		end
+		-- camera: head-on in front of the victim, at foot level, tilted slightly up; slow push-in
+		local camA = G - o * 13 + Vector3.new(0, 0.7, 0)
+		local camB = G - o * 9.5 + Vector3.new(0, 0.7, 0)
+		-- bats burst from just behind the camera and split to two perches either side of the frame,
+		-- behind the victim
 		local bats: { Bat } = {}
-		for _ = 1, (if ctx.reducedMotion then 5 else 12) do
-			table.insert(bats, makeBat(ctx, rng))
+		local n = if ctx.reducedMotion then 4 else 10
+		for i = 1, n do
+			local left = i % 2 == 0
+			local from = camA - o * 3 + Vector3.new(0, rng:NextNumber(0.5, 2), 0) + s * rng:NextNumber(-0.8, 0.8)
+			local perch = G + o * 5 + s * (if left then 7.5 else -7.5) + Vector3.new(0, 3.6, 0)
+			local to = perch + Vector3.new(rng:NextNumber(-1.2, 1.2), rng:NextNumber(-1, 1), rng:NextNumber(-1.2, 1.2))
+			table.insert(bats, makeBat(ctx, rng, from, to, 0.05 + (i - 1) * 0.08))
 		end
-		-- undead arms: two grabbers at the feet, the rest clawing around
+		-- undead arms: two grabbers at the feet, the rest clawing out to the sides and behind (never
+		-- between the camera and the victim)
+		local clawSpots = { Vector2.new(0.3, 3.3), Vector2.new(0.3, -3.3), Vector2.new(2.6, 2.3), Vector2.new(2.6, -2.3) }
 		local arms: { { rig: Rig, at: Vector3, grab: boolean, phase: number } } = {}
 		for i = 1, 6 do
 			local grab = i <= 2
+			local spot = clawSpots[i - 2]
 			local at = if grab
 				then G + o * 0.9 + s * (if i == 1 then 0.45 else -0.45)
-				else G + (o * math.cos(i * 1.3) + s * math.sin(i * 1.3)) * rng:NextNumber(2.5, 4.5)
+				else G + o * spot.X + s * spot.Y
 			table.insert(arms, { rig = makeArm(ctx, rng), at = at, grab = grab, phase = rng:NextNumber(0, 6) })
 		end
-		local camA = G - o * 4 + s * 22 + Vector3.new(0, 7, 0)
-		local camB = G + o * 5 + s * 15 + Vector3.new(0, 4, 0)
 		ctx.sound("UndeadRise", G)
 		ctx.fx.burst(G, DIRT, if ctx.reducedMotion then 15 else 45, 22, 1.2)
 		ctx.fx.shake(0.25)
@@ -399,7 +424,7 @@ return {
 			local t = os.clock() - shotStart
 			-- slow zoom for the whole shot
 			local e = ctx.ease(alpha)
-			cam.FieldOfView = baseFov + (58 - baseFov) * e
+			cam.FieldOfView = baseFov + (55 - baseFov) * e
 
 			-- the grab: swap in the puppet and pull the victim down onto their front
 			if not puppet and t >= 0.5 then
@@ -505,13 +530,12 @@ return {
 			end
 
 			-- bats circle the scene, drifting along with the drag
-			local center = G:Lerp(feet, 0.5)
 			for _, b in bats do
-				moveBat(b, center, t)
+				moveBat(b, t)
 			end
 
 			-- camera: slow zoom in the whole shot, eyes on the victim
-			local focus = (if proot then proot.Position else G + Vector3.new(0, 3, 0)) + Vector3.new(0, 1, 0)
+			local focus = if proot then proot.Position + Vector3.new(0, 0.6, 0) else G + Vector3.new(0, 3.2, 0)
 			cam.CFrame = CFrame.lookAt(camA:Lerp(camB, e), focus)
 		end)
 		tint:Destroy()

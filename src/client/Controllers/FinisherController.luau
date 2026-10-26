@@ -201,6 +201,60 @@ local function hideLocal(model: any, headOnly: boolean?)
 		end
 	end
 end
+-- Stand-in: hide the real character and put a copy wearing the same avatar in its place. The copy
+-- has no scripts (no Animate fighting us), an anchored root, free-hanging limbs on their joints,
+-- and is purely local (no physics owner, no network). Poses, or a premade animation loaded on its
+-- Animator (e.g. exported from Moon Animator), drive it; it's destroyed when the finisher ends.
+local function standIn(model: any, parent: Instance): Model?
+	if typeof(model) ~= "Instance" or not model:IsA("Model") then
+		return nil
+	end
+	local was = model.Archivable
+	model.Archivable = true
+	local ok, copy = pcall(function()
+		return model:Clone()
+	end)
+	model.Archivable = was
+	if not ok or not copy then
+		return nil
+	end
+	for _, d in copy:GetDescendants() do
+		if d:IsA("LuaSourceContainer") or d:IsA("BillboardGui") or d:IsA("ForceField") then
+			d:Destroy()
+		elseif d:IsA("BasePart") then
+			d.Anchored = d.Name == "HumanoidRootPart"
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.Massless = true
+			d.LocalTransparencyModifier = 0
+		elseif d:IsA("AnimationConstraint") then
+			d.Enabled = true
+			-- rigid: limbs follow the pose exactly (no sag or wobble from gravity/forces)
+			pcall(function()
+				(d :: any).IsKinematic = true
+			end)
+		elseif d:IsA("Motor6D") then
+			d.Enabled = true
+		elseif d:IsA("BallSocketConstraint") then
+			d.Enabled = false -- ragdoll sockets off: the stand-in is posed, not ragdolled
+		end
+	end
+	local h = copy:FindFirstChildOfClass("Humanoid")
+	if h then
+		pcall(function()
+			h.EvaluateStateMachine = false
+		end)
+		h.PlatformStand = true
+		h.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	end
+	copy.Name = model.Name .. "_StandIn"
+	copy:PivotTo(model:GetPivot())
+	copy.Parent = parent
+	hideLocal(model, false)
+	return copy
+end
+
 local function unhideAll()
 	for part, prev in hidden do
 		if part.Parent then
@@ -368,6 +422,9 @@ local function play(def: any, d: any, preview: boolean)
 		runFor = runFor,
 		rootOf = rootOf,
 		pose = holdPose,
+		standIn = function(model: any): Model?
+			return standIn(model, folder)
+		end,
 		hideHead = function(model: any)
 			hideLocal(model, true)
 		end,
