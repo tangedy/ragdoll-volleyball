@@ -31,6 +31,7 @@ local overtime = false
 local teamSize = 3
 local devSkip = false
 local devOvertime = false
+local devFinisherBy: any? = nil -- Studio T key: end the match with this player's finisher
 -- the most recent void elimination this round: who fell and who (if anyone) gets the credit
 local lastElim: { victim: any, credit: any? }? = nil
 local staging = false -- a finisher is staging the victim; don't move them to jail/lobby
@@ -114,6 +115,20 @@ function MatchService.start()
 			local c = S.PlayerStateService.get(player)
 			if c then
 				S.CombatService.debugLaunch(c, 1)
+			end
+		elseif p.cmd == "GiveCoins" then
+			local c = S.PlayerStateService.get(player)
+			if c and c.profile then
+				c.profile.Coins += 1000000
+				S.DataService.push(c)
+				S.NetService.send(player, "Hint", { text = "+1,000,000 coins (dev)", duration = 1.5 })
+			end
+		elseif p.cmd == "SkipToFinisher" then
+			local c = S.PlayerStateService.get(player)
+			if c and c.inMatch and c.team then
+				devFinisherBy = c
+			else
+				S.NetService.send(player, "Hint", { text = "Join a match first (dev T)", duration = 1.5 })
 			end
 		end
 	end)
@@ -283,7 +298,11 @@ local function eliminate(c: any)
 		feed(("%s fell off!"):format(tag(c)))
 	end
 	if c.player then
-		S.NetService.send(c.player, "Banner", { text = "KNOCKED OUT!", color = Color3.fromRGB(255, 90, 80), duration = 1.4, sound = "KnockedOut" })
+		S.NetService.send(
+			c.player,
+			"Banner",
+			{ text = "KNOCKED OUT!", color = Color3.fromRGB(255, 90, 80), duration = 1.4, sound = "KnockedOut" }
+		)
 	end
 	-- everyone: rim pulse + void splash; the eliminator also gets the ELIMINATION! moment
 	local fallPos = if c.root then c.root.Position else c.lastCourtPos
@@ -335,14 +354,23 @@ function MatchService.onJailHit(thrower: any, target: any)
 	if target == thrower.eliminatedBy then
 		thrower.stats.revenges += 1
 		if thrower.player then
-			S.NetService.send(thrower.player, "Banner", { text = "REVENGE!", color = Color3.fromRGB(255, 200, 40), duration = 1.5, sound = "Revenge" })
+			S.NetService.send(
+				thrower.player,
+				"Banner",
+				{ text = "REVENGE!", color = Color3.fromRGB(255, 200, 40), duration = 1.5, sound = "Revenge" }
+			)
 		end
 		feed(("%s got REVENGE on %s!"):format(tag(thrower), tag(target)))
 		S.AnalyticsService.event(thrower, "RevengeHit")
 	end
 	local thisRound = roundId
 	task.delay(J.ReturnDelay, function()
-		if roundId ~= thisRound or (thrower.status :: string) ~= "Returning" or not MatchService.isRoundLive() or overtime then
+		if
+			roundId ~= thisRound
+			or (thrower.status :: string) ~= "Returning"
+			or not MatchService.isRoundLive()
+			or overtime
+		then
 			return
 		end
 		if thrower.heldBall then
@@ -400,7 +428,9 @@ local function courtStep()
 					local sign = ArenaLayout.teamSign(c.team)
 					local rel = pos - Config.Arena.Origin
 					if rel.Z * sign < -0.5 and pos.Y > ArenaLayout.SurfaceY - 2 then
-						c.character:PivotTo(CFrame.new(pos.X, pos.Y, Config.Arena.Origin.Z + sign * 1.5) * c.root.CFrame.Rotation)
+						c.character:PivotTo(
+							CFrame.new(pos.X, pos.Y, Config.Arena.Origin.Z + sign * 1.5) * c.root.CFrame.Rotation
+						)
 					end
 				end
 			end
@@ -429,7 +459,12 @@ local function courtStep()
 			if n == 1 then
 				for _, c in roster do
 					if c.team == team and c.status == "Active" and c.player then
-						S.NetService.send(c.player, "Banner", { text = "LAST PLAYER!", color = Color3.fromRGB(255, 220, 60), duration = 1.5, sound = "LastPlayer" })
+						S.NetService.send(c.player, "Banner", {
+							text = "LAST PLAYER!",
+							color = Color3.fromRGB(255, 220, 60),
+							duration = 1.5,
+							sound = "LastPlayer",
+						})
 					end
 				end
 			end
@@ -597,6 +632,32 @@ local function playRound(): (string, boolean)
 		if shouldAbort() then
 			return "Abort", false
 		end
+		-- dev T: this player's team wins now, ending on their finisher over a random enemy
+		local dev = devFinisherBy
+		if dev then
+			devFinisherBy = nil
+			local enemies = {}
+			for _, e in roster do
+				if e.team ~= dev.team and S.PlayerStateService.isAlive(e) then
+					table.insert(enemies, e)
+				end
+			end
+			if #enemies > 0 and dev.team then
+				local victim = enemies[rng:NextInteger(1, #enemies)]
+				if victim.character and S.RagdollService.isRagdolled(victim.character) then
+					S.RagdollService.recover(victim.character, nil)
+				end
+				-- stage them where they stand if that's on the court, else at their spawn
+				local pos = victim.root.Position
+				if not ArenaLayout.onHalf(victim.team, pos, S.ArenaService.getOvertimeSteps(), 0) then
+					pos = spawnFor(victim)
+				end
+				victim.lastCourtPos = pos
+				lastElim = { victim = victim, credit = dev }
+				wins[dev.team] = M.RoundsToWin - 1
+				return dev.team, true
+			end
+		end
 		local red, blue = activeCounts()
 		if red == 0 and blue == 0 then
 			return "Draw", true -- simultaneous final eliminations resolve together
@@ -655,7 +716,8 @@ local function playFinisher(killer: any, victim: any, winner: string)
 	end
 	local moduleName = S.ShopService.finisherModule(killer)
 	local folder = Shared:FindFirstChild("Finishers")
-	local moduleScript = folder and (folder:FindFirstChild(moduleName) or folder:FindFirstChild(Config.Finisher.DefaultId))
+	local moduleScript = folder
+		and (folder:FindFirstChild(moduleName) or folder:FindFirstChild(Config.Finisher.DefaultId))
 	if not moduleScript then
 		return
 	end
@@ -674,7 +736,9 @@ local function playFinisher(killer: any, victim: any, winner: string)
 	if victim.character and S.PlayerStateService.isAlive(victim) and from then
 		local outward = Vector3.new(from.X - Config.Arena.Origin.X, 0, from.Z - Config.Arena.Origin.Z)
 		outward = if outward.Magnitude > 0.1 then outward.Unit else Vector3.zAxis
-		S.CharacterService.teleport(victim, from + Vector3.new(0, 3, 0), from + Vector3.new(0, 3, 0) - outward)
+		-- standing on the court surface (finishers treat the court as their set)
+		local stand = Vector3.new(from.X, ArenaLayout.SurfaceY + 3, from.Z)
+		S.CharacterService.teleport(victim, stand, stand - outward)
 		local delay = tonumber(stage.LaunchDelay) or 0.8
 		local launch = outward * (tonumber(stage.Out) or 45) + Vector3.new(0, tonumber(stage.Up) or 60, 0)
 		-- Stage.Launch = false: the finisher moves the victim itself (client-side puppet)
@@ -704,7 +768,6 @@ local function playFinisher(killer: any, victim: any, winner: string)
 	waitPhase(duration, nil)
 	staging = false
 end
-
 
 local function runMatch(queued: { any })
 	matchId += 1

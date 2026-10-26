@@ -22,18 +22,40 @@ local S = "rbxasset://sounds/"
 local Cues: { [string]: { Layer } } = {
 	-- Combat
 	Throw = {
-		{ id = S .. "swordlunge.wav", volume = 0.45, pitch = 1.25, jitter = 0.08, eq = { low = -6, mid = 0, high = 3 } },
+		{
+			id = S .. "swordlunge.wav",
+			volume = 0.45,
+			pitch = 1.25,
+			jitter = 0.08,
+			eq = { low = -6, mid = 0, high = 3 },
+		},
 	},
 	Hit = {
 		-- body: a deep, slightly crunchy thump
-		{ id = S .. "bass.wav", volume = 1.0, pitch = 1.9, jitter = 0.05, eq = { low = 8, mid = 2, high = -4 }, distortion = 0.35, stopAfter = 0.35 },
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 1.9,
+			jitter = 0.05,
+			eq = { low = 8, mid = 2, high = -4 },
+			distortion = 0.35,
+			stopAfter = 0.35,
+		},
 		-- transient: the crack you feel
 		{ id = S .. "snap.wav", volume = 0.75, pitch = 0.8, jitter = 0.06, eq = { low = 0, mid = 3, high = 4 } },
 		-- slap tail
 		{ id = S .. "hit.wav", volume = 0.5, pitch = 1.2, jitter = 0.06, delay = 0.01 },
 	},
 	HitHeavy = {
-		{ id = S .. "bass.wav", volume = 1.0, pitch = 1.4, jitter = 0.04, eq = { low = 10, mid = 0, high = -6 }, distortion = 0.5, stopAfter = 0.5 },
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 1.4,
+			jitter = 0.04,
+			eq = { low = 10, mid = 0, high = -6 },
+			distortion = 0.5,
+			stopAfter = 0.5,
+		},
 		{ id = S .. "snap.wav", volume = 0.8, pitch = 0.6, jitter = 0.05 },
 		{ id = S .. "metal.ogg", volume = 0.35, pitch = 0.7, delay = 0.02 },
 	},
@@ -50,7 +72,14 @@ local Cues: { [string]: { Layer } } = {
 	-- Eliminations
 	Elimination = {
 		-- the eliminator's sting: big boom + glassy sparkle + rising ping
-		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.9, eq = { low = 10, mid = 0, high = -3 }, distortion = 0.4, stopAfter = 0.8 },
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.9,
+			eq = { low = 10, mid = 0, high = -3 },
+			distortion = 0.4,
+			stopAfter = 0.8,
+		},
 		{ id = S .. "glassbreak.wav", volume = 0.35, pitch = 1.3, delay = 0.02 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.6, pitch = 1.5, delay = 0.08 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 2.0, delay = 0.2 },
@@ -88,7 +117,14 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 0.75, delay = 0.18 },
 	},
 	SuddenDeath = {
-		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.45, eq = { low = 10, mid = 0, high = -10 }, distortion = 0.6, reverb = true },
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.45,
+			eq = { low = 10, mid = 0, high = -10 },
+			distortion = 0.6,
+			reverb = true,
+		},
 		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 0.55, delay = 0.1 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 0.55, delay = 0.45 },
 	},
@@ -106,13 +142,28 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "victory.wav", volume = 0.35, pitch = 0.7 },
 	},
 	Finisher = {
-		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.7, eq = { low = 10, mid = 0, high = -4 }, distortion = 0.5, reverb = true },
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.7,
+			eq = { low = 10, mid = 0, high = -4 },
+			distortion = 0.5,
+			reverb = true,
+		},
 		{ id = S .. "glassbreak.wav", volume = 0.4, pitch = 0.9, delay = 0.05 },
 		{ id = S .. "victory.wav", volume = 0.5, pitch = 1.1, delay = 0.35 },
 	},
 	-- Meteor Strike finisher
 	MeteorCharge = {
-		{ id = S .. "bass.wav", volume = 0.9, pitch = 0.35, eq = { low = 10, mid = 0, high = -10 }, distortion = 0.4, reverb = true, stopAfter = 1.4 },
+		{
+			id = S .. "bass.wav",
+			volume = 0.9,
+			pitch = 0.35,
+			eq = { low = 10, mid = 0, high = -10 },
+			distortion = 0.4,
+			reverb = true,
+			stopAfter = 1.4,
+		},
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 0.45, delay = 0.25, reverb = true },
 	},
 	MeteorFall = {
@@ -121,7 +172,14 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "bass.wav", volume = 0.6, pitch = 0.5, delay = 0.6, distortion = 0.5, stopAfter = 0.9 },
 	},
 	MeteorImpact = {
-		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.55, eq = { low = 12, mid = 2, high = -6 }, distortion = 0.7, reverb = true },
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.55,
+			eq = { low = 12, mid = 2, high = -6 },
+			distortion = 0.7,
+			reverb = true,
+		},
 		{ id = S .. "collide.wav", volume = 0.8, pitch = 0.6, distortion = 0.3 },
 		{ id = S .. "glassbreak.wav", volume = 0.45, pitch = 0.7, delay = 0.03 },
 		{ id = S .. "impact_water.mp3", volume = 0.4, pitch = 0.6, delay = 0.05, stopAfter = 1.2 },
@@ -135,7 +193,15 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "bass.wav", volume = 0.5, pitch = 1.2, stopAfter = 0.25 },
 	},
 	PumpkinReveal = {
-		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.4, eq = { low = 10, mid = 0, high = -8 }, distortion = 0.5, reverb = true, stopAfter = 1.2 },
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.4,
+			eq = { low = 10, mid = 0, high = -8 },
+			distortion = 0.5,
+			reverb = true,
+			stopAfter = 1.2,
+		},
 		{ id = S .. "HalloweenGhost.wav", volume = 0.7, pitch = 1.0, reverb = true, stopAfter = 2.2 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 0.4, delay = 0.05, reverb = true },
 	},
@@ -197,6 +263,40 @@ local Cues: { [string]: { Layer } } = {
 		-- distant thunder roll, then the air whipping back into the trench
 		{ id = S .. "bass.wav", volume = 0.8, pitch = 0.25, eq = { low = 10, mid = -4, high = -10 }, reverb = true, stopAfter = 1.4 },
 		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.4, delay = 0.45, reverb = true },
+	},
+	-- Black Hole finisher
+	BallWhoosh = {
+		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.9 },
+		{ id = S .. "swordlunge.wav", volume = 0.35, pitch = 0.6, delay = 0.15 },
+	},
+	BlackHoleForm = {
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.3,
+			eq = { low = 12, mid = 0, high = -10 },
+			distortion = 0.7,
+			reverb = true,
+			stopAfter = 1.2,
+		},
+		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 0.3, reverb = true },
+		{ id = S .. "glassbreak.wav", volume = 0.3, pitch = 0.5, delay = 0.03 },
+	},
+	BlackHoleThrow = {
+		{ id = S .. "swordlunge.wav", volume = 0.8, pitch = 0.55 },
+		{ id = S .. "bass.wav", volume = 0.6, pitch = 0.8, stopAfter = 0.4, distortion = 0.3 },
+	},
+	BlackHoleSuck = {
+		{
+			id = S .. "bass.wav",
+			volume = 0.9,
+			pitch = 0.25,
+			eq = { low = 12, mid = -2, high = -12 },
+			reverb = true,
+			stopAfter = 2.4,
+		},
+		{ id = S .. "swordlunge.wav", volume = 0.5, pitch = 0.3, delay = 0.4, reverb = true },
+		{ id = S .. "HalloweenGhost.wav", volume = 0.3, pitch = 0.5, delay = 0.6, stopAfter = 1.8 },
 	},
 	PowerUp = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.8 },

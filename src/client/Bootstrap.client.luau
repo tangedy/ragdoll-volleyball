@@ -52,6 +52,10 @@ if RunService:IsStudio() then
 			C.Net.request(C.Net.Actions.Dev, { cmd = "RunTests" })
 		elseif input.KeyCode == Enum.KeyCode.F10 then
 			C.Net.request(C.Net.Actions.Dev, { cmd = "LaunchMe" })
+		elseif input.KeyCode == Enum.KeyCode.G then
+			C.Net.request(C.Net.Actions.Dev, { cmd = "GiveCoins" })
+		elseif input.KeyCode == Enum.KeyCode.T then
+			C.Net.request(C.Net.Actions.Dev, { cmd = "SkipToFinisher" })
 		end
 	end)
 end

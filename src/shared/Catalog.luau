@@ -17,7 +17,15 @@ export type Item = {
 
 local items: { Item } = {
 	-- Ball skins: color/material of YOUR Standard ball while held and in flight.
-	{ Id = "Skin_Classic", Category = "BallSkin", Name = "Classic", Price = 0, RobuxProductId = 0, Default = true, Data = {} },
+	{
+		Id = "Skin_Classic",
+		Category = "BallSkin",
+		Name = "Classic",
+		Price = 0,
+		RobuxProductId = 0,
+		Default = true,
+		Data = {},
+	},
 	{
 		Id = "Skin_Bubblegum",
 		Category = "BallSkin",
@@ -84,15 +92,66 @@ local items: { Item } = {
 		},
 	},
 	-- Titles shown on your name tag.
-	{ Id = "Title_None", Category = "Title", Name = "None", Price = 0, RobuxProductId = 0, Default = true, Data = { Text = "" } },
-	{ Id = "Title_Rookie", Category = "Title", Name = "Rookie", Price = 150, RobuxProductId = 0, Data = { Text = "Rookie" } },
-	{ Id = "Title_DodgeMaster", Category = "Title", Name = "Dodge Master", Price = 1000, RobuxProductId = 0, Data = { Text = "Dodge Master" } },
-	{ Id = "Title_SkyLauncher", Category = "Title", Name = "Sky Launcher", Price = 1500, RobuxProductId = 0, Data = { Text = "Sky Launcher" } },
-	{ Id = "Title_Untouchable", Category = "Title", Name = "Untouchable", Price = 3000, RobuxProductId = 0, Data = { Text = "Untouchable" } },
+	{
+		Id = "Title_None",
+		Category = "Title",
+		Name = "None",
+		Price = 0,
+		RobuxProductId = 0,
+		Default = true,
+		Data = { Text = "" },
+	},
+	{
+		Id = "Title_Rookie",
+		Category = "Title",
+		Name = "Rookie",
+		Price = 150,
+		RobuxProductId = 0,
+		Data = { Text = "Rookie" },
+	},
+	{
+		Id = "Title_DodgeMaster",
+		Category = "Title",
+		Name = "Dodge Master",
+		Price = 1000,
+		RobuxProductId = 0,
+		Data = { Text = "Dodge Master" },
+	},
+	{
+		Id = "Title_SkyLauncher",
+		Category = "Title",
+		Name = "Sky Launcher",
+		Price = 1500,
+		RobuxProductId = 0,
+		Data = { Text = "Sky Launcher" },
+	},
+	{
+		Id = "Title_Untouchable",
+		Category = "Title",
+		Name = "Untouchable",
+		Price = 3000,
+		RobuxProductId = 0,
+		Data = { Text = "Untouchable" },
+	},
 	-- Finishers: the cutscene everyone in the match watches when you score the final knockout.
 	-- Data.Module names a module in ReplicatedStorage.Shared.Finishers.
-	{ Id = "Finisher_Default", Category = "Finisher", Name = "Final Knockout", Price = 0, RobuxProductId = 0, Default = true, Data = { Module = "Default" } },
-	{ Id = "Finisher_Spotlight", Category = "Finisher", Name = "Spotlight", Price = 2000, RobuxProductId = 0, Data = { Module = "Spotlight" } },
+	{
+		Id = "Finisher_Default",
+		Category = "Finisher",
+		Name = "Final Knockout",
+		Price = 0,
+		RobuxProductId = 0,
+		Default = true,
+		Data = { Module = "Default" },
+	},
+	{
+		Id = "Finisher_Spotlight",
+		Category = "Finisher",
+		Name = "Spotlight",
+		Price = 2000,
+		RobuxProductId = 0,
+		Data = { Module = "Spotlight" },
+	},
 	{
 		Id = "Finisher_Meteor",
 		Category = "Finisher",
@@ -116,6 +175,14 @@ local items: { Item } = {
 		Price = 4000,
 		RobuxProductId = 0,
 		Data = { Module = "PurpleFlash", Icon = "🟣" },
+	},
+	{
+		Id = "Finisher_BlackHole",
+		Category = "Finisher",
+		Name = "Black Hole",
+		Price = 4000,
+		RobuxProductId = 0,
+		Data = { Module = "BlackHole", Icon = "🕳️" },
 	},
 }
 

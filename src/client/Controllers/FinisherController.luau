@@ -98,6 +98,23 @@ local POSES: { [string]: PoseDef } = {
 		Left = REST_L,
 	},
 	BowHead = { Right = REST_R, Left = REST_L, neck = -60 },
+	-- right arm straight out in front, palm toward something arriving
+	ReachOut = {
+		Right = { upper = Vector3.new(0.12, -0.02, -1), fore = Vector3.new(0.02, 0.06, -1) },
+		Left = REST_L,
+	},
+	-- right arm cocked up and back, left arm forward for balance
+	WindUp = {
+		Right = { upper = Vector3.new(0.45, 0.55, 0.7), fore = Vector3.new(0.05, 1, 0.35) },
+		Left = { upper = Vector3.new(-0.25, -0.15, -0.95), fore = Vector3.new(-0.1, 0.1, -1) },
+		neck = 5,
+	},
+	-- follow-through after the throw
+	ThrowFollow = {
+		Right = { upper = Vector3.new(-0.25, -0.25, -0.93), fore = Vector3.new(-0.35, -0.45, -0.82) },
+		Left = { upper = Vector3.new(-0.3, -0.6, 0.55), fore = Vector3.new(-0.2, -0.9, 0.4) },
+		neck = -8,
+	},
 	LookUp = { Right = REST_R, Left = REST_L, neck = 12 },
 }
 
@@ -299,7 +316,8 @@ local function localLaunch(model: Model, velocity: Vector3)
 	local rng = Random.new()
 	for _, d in model:GetDescendants() do
 		if d:IsA("BasePart") then
-			d.AssemblyLinearVelocity = velocity + Vector3.new(rng:NextNumber(-8, 8), rng:NextNumber(-2, 6), rng:NextNumber(-8, 8))
+			d.AssemblyLinearVelocity = velocity
+				+ Vector3.new(rng:NextNumber(-8, 8), rng:NextNumber(-2, 6), rng:NextNumber(-8, 8))
 			d.AssemblyAngularVelocity = Vector3.new(rng:NextNumber(-8, 8), rng:NextNumber(-8, 8), rng:NextNumber(-8, 8))
 		end
 	end
@@ -309,7 +327,7 @@ end
 
 -- Cinematic black bars that slide in from the top and bottom.
 local LETTERBOX = 0.11 -- fraction of screen height per bar
-local function letterbox(): (() -> ())
+local function letterbox(): () -> ()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "Letterbox"
 	gui.IgnoreGuiInset = true
@@ -385,10 +403,10 @@ local function play(def: any, d: any, preview: boolean)
 	camera.CameraType = Enum.CameraType.Scriptable
 	local fov = camera.FieldOfView
 	local closeBars = letterbox()
-	-- hide name tags (level/name billboards) for a clean cinematic
+	-- hide world billboards (name tags, pad "?" and jail labels) for a clean cinematic
 	local hiddenTags: { BillboardGui } = {}
 	for _, d in Workspace:GetDescendants() do
-		if d:IsA("BillboardGui") and d.Name == "NameTag" and d.Enabled then
+		if d:IsA("BillboardGui") and d.Enabled then
 			d.Enabled = false
 			table.insert(hiddenTags, d)
 		end
@@ -462,9 +480,14 @@ local function play(def: any, d: any, preview: boolean)
 		task.delay(tonumber(stage.LaunchDelay) or 1, function()
 			local kr, vr = rootOf(d.killer), rootOf(d.victim)
 			if vr and vr.Parent then
-				local away = if kr then Vector3.new(vr.Position.X - kr.Position.X, 0, vr.Position.Z - kr.Position.Z) else Vector3.zAxis
+				local away = if kr
+					then Vector3.new(vr.Position.X - kr.Position.X, 0, vr.Position.Z - kr.Position.Z)
+					else Vector3.zAxis
 				away = if away.Magnitude > 0.1 then away.Unit else Vector3.zAxis
-				localLaunch(d.victim :: Model, away * (tonumber(stage.Out) or 40) + Vector3.new(0, tonumber(stage.Up) or 60, 0))
+				localLaunch(
+					d.victim :: Model,
+					away * (tonumber(stage.Out) or 40) + Vector3.new(0, tonumber(stage.Up) or 60, 0)
+				)
 			end
 		end)
 	end
@@ -522,7 +545,11 @@ function FinisherController.preview(moduleName: string): boolean
 	local lo = Config.Arena.LobbyOrigin
 	local half = Config.Arena.LobbySize / 2 - Vector3.new(6, 0, 6)
 	local spot = root.Position + look * 18
-	spot = Vector3.new(math.clamp(spot.X, lo.X - half.X, lo.X + half.X), lo.Y + 3, math.clamp(spot.Z, lo.Z - half.Z, lo.Z + half.Z))
+	spot = Vector3.new(
+		math.clamp(spot.X, lo.X - half.X, lo.X + half.X),
+		lo.Y + 3,
+		math.clamp(spot.Z, lo.Z - half.Z, lo.Z + half.Z)
+	)
 	standIn:PivotTo(CFrame.lookAt(spot, Vector3.new(root.Position.X, spot.Y, root.Position.Z)))
 	standIn.Parent = Workspace
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
