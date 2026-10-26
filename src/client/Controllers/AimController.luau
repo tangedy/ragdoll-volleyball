@@ -21,6 +21,12 @@ local AimController = {}
 AimController.charging = false
 AimController.chargeStartedAt = 0
 AimController.lastInput = "Mouse" -- "Mouse" | "Touch" | "Gamepad"
+-- Hub practice is client-side: PracticeController sets these so charging and releasing a practice
+-- ball never talk to the server.
+AimController.localHeld = function(): boolean
+	return false
+end
+AimController.localThrow = function(_dir: Vector3, _origin: Vector3, _speed: number, _charge: number) end
 
 local throwId = 0
 local previewFolder: Folder
@@ -60,6 +66,11 @@ local function excludeList(): { Instance }
 	local balls = Workspace:FindFirstChild("Balls")
 	if balls then
 		table.insert(list, balls)
+	end
+	local lobby = Workspace:FindFirstChild("Lobby")
+	local practice = lobby and lobby:FindFirstChild("Practice")
+	if practice then
+		table.insert(list, practice) -- don't aim at your own practice balls
 	end
 	return list
 end
@@ -162,7 +173,9 @@ function AimController.begin()
 	end
 	AimController.charging = true
 	AimController.chargeStartedAt = os.clock()
-	Net.request(Net.Actions.ChargeStart)
+	if not AimController.localHeld() then
+		Net.request(Net.Actions.ChargeStart)
+	end
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
@@ -188,7 +201,14 @@ function AimController.release()
 	end
 	local dir, origin, speed = AimController.computeDirection()
 	local ballType = attr("HeldBall") or "Standard"
+	local charge = ProjectileMath.chargeFromHold(os.clock() - AimController.chargeStartedAt)
 	stopCharging()
+	if AimController.localHeld() then
+		if dir and origin then
+			AimController.localThrow(dir, origin, speed, charge)
+		end
+		return
+	end
 	if dir and origin then
 		throwId += 1
 		Net.request(Net.Actions.Throw, { dir = dir, throwId = throwId })
@@ -201,7 +221,9 @@ end
 function AimController.cancel()
 	if AimController.charging then
 		stopCharging()
-		Net.request(Net.Actions.CancelAim) -- cancelling keeps the ball
+		if not AimController.localHeld() then
+			Net.request(Net.Actions.CancelAim) -- cancelling keeps the ball
+		end
 	end
 end
 

@@ -88,6 +88,7 @@ function SpectatorController.init()
 	}, gui)
 	Theme.round(bar)
 	Theme.stroke(bar, Color3.new(1, 1, 1), 2, 0.8)
+	Theme.autoScale(bar)
 	local function arrow(text: string, left: boolean, delta: number)
 		local b = Theme.button(bar, text, Theme.Colors.Purple, {
 			AnchorPoint = Vector2.new(if left then 0 else 1, 0.5),

@@ -192,11 +192,26 @@ function Theme.shadow(f: GuiObject, radius: number?)
 	end)
 end
 
--- Scale-pop an element (uses/creates a UIScale).
+-- Every element has at most one UIScale (Roblox applies only one). Its "Base" attribute is the
+-- element's resting scale (set by Theme.autoScale); animations scale relative to it.
+local function scaleOf(inst: GuiObject): UIScale
+	local sc = inst:FindFirstChildOfClass("UIScale")
+	if not sc then
+		sc = Theme.new("UIScale", nil, inst)
+	end
+	return sc :: UIScale
+end
+local function baseOf(sc: UIScale): number
+	local b = sc:GetAttribute("Base")
+	return if type(b) == "number" then b else 1
+end
+
+-- Scale-pop an element (uses/creates its UIScale).
 function Theme.pop(inst: GuiObject, from: number?, duration: number?)
-	local scale = inst:FindFirstChildOfClass("UIScale") or Theme.new("UIScale", nil, inst)
-	scale.Scale = from or 0.6
-	TweenService:Create(scale, TweenInfo.new(duration or 0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	local scale = scaleOf(inst)
+	local base = baseOf(scale)
+	scale.Scale = (from or 0.6) * base
+	TweenService:Create(scale, TweenInfo.new(duration or 0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = base }):Play()
 end
 
 local clickSound: ((string) -> ())? = nil
@@ -263,6 +278,216 @@ function Theme.button(parent: Instance?, text: string, color: Color3, props: { [
 	end)
 	b.Parent = parent
 	return b
+end
+
+-- Layout tokens -------------------------------------------------------------------------------------
+-- One spacing / radius / type scale for every screen, so gaps and corners line up everywhere.
+
+Theme.Space = { XS = 4, S = 8, M = 12, L = 18, XL = 24 }
+Theme.Radius = { S = 10, M = 14, L = 18, XL = 22 }
+Theme.TextSize = { Caption = 13, Body = 16, Title = 22 }
+Theme.Motion = { Fast = 0.12, Base = 0.22, Slow = 0.4 }
+
+-- Rarity colors come from Config so the hub wheel, the shop and the spin panel always agree.
+Theme.Rarity = Config.Spin.RarityColors :: { [string]: Color3 }
+
+function Theme.tween(inst: Instance, t: number, props: { [string]: any }, style: Enum.EasingStyle?, dir: Enum.EasingDirection?): Tween
+	local tw = TweenService:Create(inst, TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+	tw:Play()
+	return tw
+end
+
+-- Responsive scale: 1 on a 1280x720-or-bigger screen, down to 0.62 on small phones. Elements
+-- registered with Theme.autoScale keep a UIScale in sync as the window/device changes.
+local scaled: { [UIScale]: number } = {}
+function Theme.uiScale(): number
+	local camera = workspace.CurrentCamera
+	local vp = if camera then camera.ViewportSize else Vector2.new(1280, 720)
+	return math.clamp(math.min(vp.X / 1280, vp.Y / 720) * 1.08, 0.62, 1)
+end
+
+-- Is this a small (phone-sized) screen? Layouts switch to their compact arrangement.
+function Theme.isCompact(): boolean
+	local camera = workspace.CurrentCamera
+	local vp = if camera then camera.ViewportSize else Vector2.new(1280, 720)
+	return vp.X < 900 or vp.Y < 520
+end
+
+local function rescaleAll()
+	local s = Theme.uiScale()
+	for sc, factor in scaled do
+		if sc.Parent then
+			sc:SetAttribute("Base", s * factor)
+			sc.Scale = s * factor
+		else
+			scaled[sc] = nil
+		end
+	end
+end
+
+-- Keep `inst` scaled to the screen (factor lets an element shrink a bit more or less than the rest).
+function Theme.autoScale(inst: GuiObject, factor: number?): UIScale
+	local sc = scaleOf(inst)
+	scaled[sc] = factor or 1
+	sc:SetAttribute("Base", Theme.uiScale() * (factor or 1))
+	sc.Scale = baseOf(sc)
+	return sc
+end
+
+task.defer(function()
+	local function watch(camera: Camera?)
+		if camera then
+			camera:GetPropertyChangedSignal("ViewportSize"):Connect(rescaleAll)
+		end
+		rescaleAll()
+	end
+	watch(workspace.CurrentCamera)
+	workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+		watch(workspace.CurrentCamera)
+	end)
+end)
+
+-- Panel transitions -----------------------------------------------------------------------------------
+-- Every pop-up opens and closes the same way: a quick scale + fade in with a little overshoot, and a
+-- faster shrink + fade out. The optional backdrop dims the game behind modal panels.
+
+function Theme.show(panel: GuiObject, backdrop: GuiObject?)
+	local closing = panel.Visible and panel:GetAttribute("ThemeOpen") == false
+	local wasOpen = panel.Visible and not closing
+	panel:SetAttribute("ThemeOpen", true)
+	panel.Visible = true
+	if backdrop then
+		if not backdrop.Visible then
+			backdrop.BackgroundTransparency = 1
+		end
+		backdrop.Visible = true
+		Theme.tween(backdrop, Theme.Motion.Base, { BackgroundTransparency = 0.45 })
+	end
+	if wasOpen then
+		return
+	end
+	local sc = scaleOf(panel)
+	if not closing then
+		sc.Scale = 0.82 * baseOf(sc)
+	end
+	Theme.tween(sc, Theme.Motion.Slow * 0.8, { Scale = baseOf(sc) }, Enum.EasingStyle.Back)
+end
+
+function Theme.hide(panel: GuiObject, backdrop: GuiObject?)
+	if not panel.Visible or panel:GetAttribute("ThemeOpen") == false then
+		return -- already closed or closing
+	end
+	panel:SetAttribute("ThemeOpen", false)
+	if backdrop and backdrop.Visible then
+		Theme.tween(backdrop, Theme.Motion.Fast, { BackgroundTransparency = 1 }).Completed:Once(function(state)
+			-- a panel opening meanwhile restarts the backdrop tween, which cancels this one
+			if state == Enum.PlaybackState.Completed then
+				backdrop.Visible = false
+			end
+		end)
+	end
+	local sc = scaleOf(panel)
+	local base = baseOf(sc)
+	Theme.tween(sc, Theme.Motion.Fast, { Scale = 0.86 * base }, Enum.EasingStyle.Quad, Enum.EasingDirection.In).Completed:Once(function()
+		-- only finish closing if nothing reopened it meanwhile
+		if panel:GetAttribute("ThemeOpen") == false then
+			panel.Visible = false
+			sc.Scale = baseOf(sc)
+		end
+	end)
+end
+
+-- Full-screen dim layer behind modal panels; clicking it calls onClose.
+function Theme.backdrop(parent: Instance, onClose: (() -> ())?): TextButton
+	local b = Theme.new("TextButton", {
+		Name = "Backdrop",
+		Text = "",
+		AutoButtonColor = false,
+		Size = UDim2.new(1, 0, 1, 80),
+		Position = UDim2.fromOffset(0, -60),
+		BackgroundColor3 = C.Ink,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 0,
+	}, parent)
+	if onClose then
+		b.Activated:Connect(onClose)
+	end
+	return b
+end
+
+-- Small widgets -----------------------------------------------------------------------------------------
+
+-- Red "!" notification dot on the corner of a button.
+function Theme.badge(parent: GuiObject, text: string?): Frame
+	local dot = Theme.new("Frame", {
+		Name = "Badge",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(1, -6, 0, 6),
+		Size = UDim2.fromOffset(28, 28),
+		BackgroundColor3 = C.Danger,
+		Visible = false,
+		ZIndex = (parent.ZIndex or 1) + 5,
+	}, parent)
+	Theme.round(dot)
+	Theme.stroke(dot, Color3.new(1, 1, 1), 2.5)
+	Theme.label(dot, {
+		Size = UDim2.fromScale(0.7, 0.7),
+		Position = UDim2.fromScale(0.15, 0.15),
+		Text = text or "!",
+		ZIndex = dot.ZIndex + 1,
+	}, 1.5)
+	return dot
+end
+
+-- A rounded stat tile: big value over a small caption, tinted by color.
+function Theme.statChip(parent: Instance, caption: string, color: Color3, props: { [string]: any }?): TextLabel
+	local f = Theme.new("Frame", {
+		BackgroundColor3 = Color3.new(1, 1, 1),
+	}, nil)
+	if props then
+		for k, v in props do
+			(f :: any)[k] = v
+		end
+	end
+	Theme.corner(f, Theme.Radius.S)
+	Theme.gradient(f, Theme.darken(color, 0.35), Theme.darken(color, 0.7))
+	Theme.stroke(f, Theme.lighten(color, 0.2), 2, 0.3)
+	local value = Theme.label(f, {
+		Name = "Value",
+		Position = UDim2.fromOffset(Theme.Space.XS, Theme.Space.XS),
+		Size = UDim2.new(1, -Theme.Space.S, 0.6, -Theme.Space.XS),
+		Text = "0",
+	}, 2)
+	Theme.body(f, {
+		Name = "Caption",
+		Position = UDim2.fromScale(0, 0.62),
+		Size = UDim2.fromScale(1, 0.3),
+		Text = caption,
+		TextColor3 = Theme.lighten(color, 0.5),
+	})
+	f.Parent = parent
+	return value
+end
+
+-- Coin icon (gold disc with a "C").
+function Theme.coin(parent: Instance, size: number, props: { [string]: any }?): Frame
+	local coin = Theme.new("Frame", {
+		Size = UDim2.fromOffset(size, size),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+	}, nil)
+	if props then
+		for k, v in props do
+			(coin :: any)[k] = v
+		end
+	end
+	Theme.round(coin)
+	Theme.gradient(coin, C.Gold, C.GoldDark)
+	Theme.stroke(coin, Theme.darken(C.GoldDark, 0.5), math.max(1.5, size / 16))
+	Theme.label(coin, { Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.15, 0.15), Text = "C", ZIndex = coin.ZIndex + 1 }, 1.5)
+	coin.Parent = parent
+	return coin
 end
 
 -- Recolor a Theme.button (e.g. owned -> equipped states).

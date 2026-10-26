@@ -23,6 +23,7 @@ Every request is rate-limited to `Config.Net.MaxActionsPerSecond` per player and
 | `BuyItem` | `{ id: string }` | Hub only. The item must exist, cost more than 0, be unowned and be affordable. It's equipped on purchase. |
 | `EquipItem` | `{ id: string }` | Hub only. The item must be owned or a default. |
 | `ClaimDaily` | `{}` | Once per UTC day; repeat requests are refused. |
+| `Spin` | `{ paid: boolean? }` | Hub only. Free: once per UTC day. Paid: `Config.Spin.ExtraSpinCost` coins, at most `MaxPaidPerDay` per day. The server rolls, grants (or pays duplicate coins) and saves. |
 | `Dev` | `{ cmd: "SkipIntermission" \| "ForceOvertime" \| "RunTests" }` | Honoured only in Studio. Bound to F6, F7 (sudden death) and F9 (test suite). |
 
 ## Server → client: `Net.Feedback` (RemoteEvent)
@@ -45,6 +46,11 @@ Signature: `FireClient(kind: string, data: table)`.
 | `BallLaunched` | `{ id, origin, vel, ballType, t0, thrower, throwId, look? }` | Lets clients render the arc locally; `look` holds the owner's skin and trail (Standard balls only). |
 | `Finisher` | `{ module, killer, victim, killerName, victimName, winner, duration }` | Plays the finisher cutscene; sent only to players in the match. |
 | `Tutorial` | `{ step }` | Tutorial card. |
+| `SpinResult` | `{ ok, index, slots, id, rarity, duplicate, coins, how }` or `{ ok = false, message }` | Lands the spin wheel on `slots[index]` and reveals the prize. |
+| `FaceCourt` | `{ focus }` | After a hub or jail placement: swing the camera behind the character to look at `focus`. |
+| `Victory` | `{ winner, members = { { model, pose } }, center, facing, duration, cinematic }` | Victory poses on every client; the camera moment only when `cinematic` (players in the match). |
+
+`Profile` also carries `spin = { free, paidLeft, cost, slots, robux }`. `BallLaunched` also carries `context` (`"Match"` or `"Lobby"`).
 
 ## Replicated state (attributes)
 

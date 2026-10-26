@@ -1,6 +1,11 @@
 --!strict
--- Fill-in bots (Amendment A2). Simple and beatable; they act only through CombatService's do*
--- functions, so they follow the same rules, projectile pipeline and knockback as players.
+-- Fill-in bots (Amendment A2). They act only through CombatService's do* functions, so they follow
+-- the same rules, projectile pipeline and knockback as players. Each bot has a difficulty profile
+-- (Config.Bots.Profiles): it picks targets (edge-standers, players who just got up), times its
+-- charge and release, sidesteps while aiming, dodges and tries catches after a human-ish reaction
+-- time (catches can be mistimed), shares balls with teammates and backs away from edges. Every
+-- profile misses and mistimes, so bots stay beatable, and a held ball is always thrown within
+-- StallThrow seconds so a round can never stall on a bot.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -44,7 +49,7 @@ end
 -- Fetch the bot avatars' display names and HumanoidDescriptions (web calls, so off the main path).
 -- A user that fails to load is skipped; with none loaded, bots keep the gray default look.
 local function loadProfiles()
-	local ids = B.Avatars or {}
+	local ids: { number } = B.Avatars or {}
 	if #ids == 0 then
 		return
 	end
@@ -164,7 +169,7 @@ local function playAnim(c: any, key: string, speed: number?)
 	end
 end
 
-function BotService.create(team: string, roster: { any }): any
+function BotService.create(team: string, roster: { any }, difficulty: string?): any
 	local profile = nil
 	if #profiles > 0 then
 		nameIndex = nameIndex % #profiles + 1
@@ -173,13 +178,15 @@ function BotService.create(team: string, roster: { any }): any
 		nameIndex = nameIndex % #B.Names + 1
 	end
 	local c = S.PlayerStateService.create(if profile then profile.name else B.Names[nameIndex], nil, true, false)
+	local level = difficulty or "Easy"
 	c.bot = {
-		aimUntil = nil,
+		plan = nil, -- the current throw plan while holding a ball
+		claim = nil, -- id of the ball this bot is going for
 		nextWanderAt = 0,
 		wander = nil,
 		reacted = {},
-		catchFor = nil,
-		difficulty = B.Difficulty,
+		difficulty = level,
+		profile = B.Profiles[level] or B.Profiles.Easy,
 	}
 	S.PlayerStateService.setTeam(c, team)
 	local spawn = ArenaLayout.spawnPoints(team, 1)[1]
@@ -199,6 +206,9 @@ function BotService.create(team: string, roster: { any }): any
 		desc.RightLegColor = gray
 	end
 	S.CharacterService.spawn(c, desc, CFrame.new(spawn))
+	if c.character then
+		c.character:SetAttribute("BotDifficulty", level) -- shown in the F8 debug overlay
+	end
 	setupAnimation(c)
 	c.inMatch = true
 	table.insert(roster, c)
@@ -211,6 +221,15 @@ function BotService.fill(roster: { any }, teamSize: number)
 		return
 	end
 	local existing = #bots()
+	-- bot difficulty follows the real players' average level
+	local levels, count = 0, 0
+	for _, c in roster do
+		if c.player and c.profile then
+			levels += c.profile.Level
+			count += 1
+		end
+	end
+	local avgLevel = if count > 0 then levels / count else 1
 	for _, team in { "Red", "Blue" } do
 		local n = 0
 		for _, c in roster do
@@ -219,7 +238,7 @@ function BotService.fill(roster: { any }, teamSize: number)
 			end
 		end
 		while n < teamSize and existing < B.MaxPerServer do
-			BotService.create(team, roster)
+			BotService.create(team, roster, BotService.pickDifficulty(avgLevel))
 			n += 1
 			existing += 1
 		end
@@ -267,24 +286,96 @@ local function face(c: any, point: Vector3)
 	end
 end
 
-local function nearestEnemy(c: any): any?
-	local best, bestDist = nil, math.huge
+local function profileOf(c: any): any
+	return c.bot.profile or B.Profiles.Easy
+end
+
+local function between(range: { number }): number
+	return rng:NextNumber(range[1], range[2])
+end
+
+-- Pick a difficulty for a new bot from the mix row that fits the real players' average level.
+function BotService.pickDifficulty(avgLevel: number): string
+	local rows = (B.Mix :: any) :: { { MaxLevel: number, Weights: { [string]: number } } }
+	local weights = rows[#rows].Weights
+	for _, r in rows do
+		if avgLevel <= r.MaxLevel then
+			weights = r.Weights
+			break
+		end
+	end
+	local total = 0
+	local names: { string } = {}
+	for name, w in weights do
+		total += w
+		table.insert(names, name)
+	end
+	table.sort(names) -- deterministic order for the weighted pick
+	local roll = rng:NextNumber() * total
+	for _, name in names do
+		roll -= weights[name]
+		if roll <= 0 then
+			return name
+		end
+	end
+	return names[#names]
+end
+
+-- How far a court position is from the nearest edge it could fall off (sides and its back line).
+local function edgeDistance(team: string, pos: Vector3): number
+	local rel = pos - Config.Arena.Origin
+	local hw = ArenaLayout.safeHalfWidth(S.ArenaService.getOvertimeSteps())
+	local depth = rel.Z * ArenaLayout.teamSign(team)
+	return math.min(hw - math.abs(rel.X), ArenaLayout.HalfLength - depth)
+end
+BotService.edgeDistance = edgeDistance
+
+local function visible(from: Vector3, to: Vector3): boolean
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = S.ArenaService.sceneryList()
+	params.FilterDescendantsInstances = S.ArenaService.sceneryList("Match")
+	return Workspace:Raycast(from + Vector3.new(0, 1.5, 0), to - from, params) == nil
+end
+
+-- Lower is better. Smart picks favour enemies near an edge (a hit can knock them off), enemies who
+-- just got up, and avoid empty-handed enemies facing us (they might catch it).
+function BotService.targetScore(c: any, o: any, smart: boolean): number
+	local d = (o.root.Position - c.root.Position).Magnitude
+	if not smart then
+		return d
+	end
+	local score = d
+	local edge = edgeDistance(o.team, o.root.Position)
+	score -= B.TargetEdgeBonus * math.clamp(1 - edge / B.EdgeBonusRange, 0, 1)
+	if o.recoveredAt and now() - o.recoveredAt < 1.5 then
+		score -= B.TargetGotUpBonus
+	end
+	if not o.heldBall then
+		local toUs = c.root.Position - o.root.Position
+		local look = o.root.CFrame.LookVector
+		if toUs.Magnitude > 0.1 and look:Dot(toUs.Unit) > 0.6 then
+			score += B.TargetCatchPenalty
+		end
+	end
+	return score
+end
+
+-- Best enemy to throw at: active, hittable (not immune), and in sight unless `anySight`.
+function BotService.pickTarget(c: any, smart: boolean, anySight: boolean?): any?
+	local best, bestScore = nil, math.huge
+	local t = now()
 	for _, o in S.MatchService.roster() do
-		if o.team ~= c.team and o.status == "Active" and o.root and o.root.Parent then
-			local d = (o.root.Position - c.root.Position).Magnitude
-			if d < bestDist then
-				-- visible: no scenery between bot and target
-				local hit = Workspace:Raycast(
-					c.root.Position + Vector3.new(0, 1.5, 0),
-					o.root.Position - c.root.Position,
-					params
-				)
-				if not hit then
-					best, bestDist = o, d
-				end
+		if
+			o.team ~= c.team
+			and o.status == "Active"
+			and o.root
+			and o.root.Parent
+			and t >= o.immuneUntil
+			and (anySight or visible(c.root.Position, o.root.Position))
+		then
+			local score = BotService.targetScore(c, o, smart)
+			if score < bestScore then
+				best, bestScore = o, score
 			end
 		end
 	end
@@ -302,6 +393,7 @@ local function safeFor(c: any, pos: Vector3): boolean
 	local z = rel.Z * sign
 	return math.abs(rel.X) <= hw - B.VoidAvoid and z >= 0.5 and z <= ArenaLayout.HalfLength - B.VoidAvoid
 end
+BotService.safeFor = safeFor
 
 local function wanderPoint(c: any): Vector3
 	if c.status == "Jailed" then
@@ -310,126 +402,233 @@ local function wanderPoint(c: any): Vector3
 	return ArenaLayout.randomPointOnHalf(c.team, S.ArenaService.getOvertimeSteps(), B.EdgeAvoid, rng)
 end
 
-local function aimDirection(c: any, target: any): Vector3
+-- A point a few studs further from the edges than `pos` (toward the middle of the bot's half).
+local function inward(c: any, pos: Vector3): Vector3
+	local center = ArenaLayout.halfCenter(c.team)
+	local dir = Vector3.new(center.X - pos.X, 0, center.Z - pos.Z)
+	return if dir.Magnitude > 0.1 then pos + dir.Unit * 8 else center
+end
+
+local function aimDirection(c: any, target: any, chargeHold: number): Vector3
 	local root = c.root :: BasePart
 	local ballType = if c.heldBall then c.heldBall.type else "Standard"
 	local tp = target.root.Position + target.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1) * 0.25
 	local flatTo = Vector3.new(tp.X - root.Position.X, 0, tp.Z - root.Position.Z)
 	local forward = if flatTo.Magnitude > 0.1 then flatTo.Unit else root.CFrame.LookVector
 	local origin = root.Position + Vector3.new(0, Config.Ball.SpawnUp, 0) + forward * Config.Ball.SpawnForward
-	local hold = if c.chargeStart then now() - c.chargeStart else 0
-	local speed = ProjectileMath.throwSpeed(ProjectileMath.chargeFromHold(hold), ballType)
+	local speed = ProjectileMath.throwSpeed(ProjectileMath.chargeFromHold(chargeHold), ballType)
 	local g = ProjectileMath.gravity(ballType)
 	local dir = (tp - origin).Unit
 	for _ = 1, 2 do
 		local t = (tp - origin).Magnitude / speed
 		dir = (tp + Vector3.new(0, 0.5 * g * t * t, 0) - origin).Unit
 	end
-	local err = (B.AimErrorDeg :: any)[c.bot.difficulty] or 8
-	return ProjectileMath.randomInCone(dir, err, rng)
+	return ProjectileMath.randomInCone(dir, profileOf(c).AimErrorDeg, rng)
+end
+
+-- Holding a ball: pick a target, aim (strafing a little), charge for a chosen time, release.
+-- A bot never sits on a ball: with no clear shot it throws at the nearest enemy after StallThrow.
+local function thinkHolding(c: any, t: number)
+	local brain = c.bot
+	local prof = profileOf(c)
+	local humanoid = c.humanoid :: Humanoid
+	if not brain.plan then
+		local haste = if S.MatchService.isOvertime() then 1 - B.SuddenDeathHaste else 1
+		local quick = rng:NextNumber() < prof.QuickThrowChance
+		local aim = if quick then rng:NextNumber(0.15, 0.3) else between(prof.AimDelay) * haste
+		local hold = math.min(between(prof.ChargeHold), aim)
+		brain.plan = {
+			heldAt = t,
+			releaseAt = t + aim,
+			chargeAt = t + aim - hold,
+			hold = hold,
+			strafeDir = if rng:NextNumber() < 0.5 then 1 else -1,
+			target = nil,
+			retargetAt = 0,
+		}
+	end
+	local plan = brain.plan
+	if t >= plan.retargetAt or not (plan.target and plan.target.status == "Active") then
+		plan.retargetAt = t + 0.4
+		plan.target = BotService.pickTarget(c, rng:NextNumber() < prof.TargetSmarts, false)
+	end
+	local stalled = t - plan.heldAt > B.StallThrow
+	local target = plan.target or (if stalled then BotService.pickTarget(c, false, true) else nil)
+	if not target then
+		-- nobody in sight: drift toward the middle of our half for a better angle
+		humanoid:MoveTo(if c.status == "Jailed" then wanderPoint(c) else ArenaLayout.halfCenter(c.team) + Vector3.new(0, 3, 0))
+		return
+	end
+	face(c, target.root.Position)
+	-- sidestep while aiming (never toward an edge)
+	if c.status == "Active" and prof.Strafe > 0 then
+		local to = target.root.Position - c.root.Position
+		local side = Vector3.new(-to.Z, 0, to.X)
+		side = if side.Magnitude > 0.1 then side.Unit * plan.strafeDir else Vector3.zero
+		local step = c.root.Position + side * 4 * prof.Strafe
+		if not safeFor(c, step) then
+			plan.strafeDir = -plan.strafeDir
+			step = c.root.Position - side * 4 * prof.Strafe
+		end
+		humanoid:MoveTo(if safeFor(c, step) then step else inward(c, c.root.Position))
+	else
+		humanoid:MoveTo(c.root.Position)
+	end
+	if t >= plan.chargeAt and c.action == "Idle" and not c.chargeStart then
+		S.CombatService.doChargeStart(c)
+	end
+	if t >= plan.releaseAt or stalled then
+		local hold = if c.chargeStart then now() - c.chargeStart else 0
+		S.CombatService.doThrow(c, aimDirection(c, target, hold), 0)
+		brain.plan = nil
+	end
+end
+
+-- Empty-handed: back off a dangerous edge first, then go for a ball nobody else is chasing,
+-- otherwise wander the safe middle of the half.
+local claims: { [number]: any } = {} -- ball id -> the bot chasing it
+
+local function thinkFree(c: any, t: number)
+	local brain = c.bot
+	local prof = profileOf(c)
+	local humanoid = c.humanoid :: Humanoid
+	if c.status == "Active" and edgeDistance(c.team, c.root.Position) < math.min(prof.EdgeCaution, B.VoidAvoid + 3) then
+		humanoid:MoveTo(inward(c, c.root.Position))
+		return
+	end
+	local bestBall, bestDist = nil, math.huge
+	for _, ball in S.BallService.all() do
+		if (ball.state == "Resting" or ball.state == "Spent") and ball.context == "Match" then
+			local pos = ball.part.Position
+			if safeFor(c, pos) and S.CombatService.canPickup(c, ball, pos) then
+				local d = (pos - c.root.Position).Magnitude
+				-- leave it to a teammate who's already going for it, unless we're much closer
+				local other = claims[ball.id]
+				if other and other ~= c and other.root and other.bot and other.bot.claim == ball.id then
+					local theirs = (pos - other.root.Position).Magnitude
+					if theirs <= d + B.ClaimRadius then
+						d = math.huge
+					end
+				end
+				if d < bestDist then
+					bestBall, bestDist = ball, d
+				end
+			end
+		end
+	end
+	if brain.claim and claims[brain.claim] == c and (not bestBall or bestBall.id ~= brain.claim) then
+		claims[brain.claim] = nil
+	end
+	if bestBall then
+		brain.claim = bestBall.id
+		claims[bestBall.id] = c
+		humanoid:MoveTo(bestBall.part.Position)
+		return
+	end
+	brain.claim = nil
+	if t >= brain.nextWanderAt or not brain.wander then
+		brain.wander = wanderPoint(c)
+		brain.nextWanderAt = t + rng:NextNumber(B.WanderInterval[1], B.WanderInterval[2])
+	end
+	humanoid:MoveTo(brain.wander)
+end
+
+-- One decision step for one bot (also used directly by the F9 tests).
+function BotService.tickOne(c: any)
+	if not (c.isBot and (c.status == "Active" or c.status == "Jailed") and S.PlayerStateService.isAlive(c)) then
+		return
+	end
+	local t = now()
+	local brain = c.bot
+	if c.action == "Ragdolled" then
+		brain.plan = nil
+		brain.wasDown = true
+		return
+	end
+	if brain.wasDown then
+		brain.wasDown = false
+		c.recoveredAt = t
+	end
+	if c.heldBall then
+		thinkHolding(c, t)
+	else
+		brain.plan = nil
+		thinkFree(c, t)
+	end
 end
 
 function BotService.tick()
 	if not S.MatchService.isRoundLive() then
 		return
 	end
-	local t = now()
 	for _, c in S.MatchService.roster() do
-		if c.isBot and (c.status == "Active" or c.status == "Jailed") and S.PlayerStateService.isAlive(c) then
-			local brain = c.bot
-			local humanoid = c.humanoid :: Humanoid
-			if c.action == "Ragdolled" then
-				brain.aimUntil = nil
-				continue
-			end
-			if c.heldBall then
-				if brain.aimUntil == nil then
-					brain.aimUntil = t + rng:NextNumber(B.AimDelayMin, B.AimDelayMax)
-					S.CombatService.doChargeStart(c)
-					humanoid:MoveTo(c.root.Position)
-				end
-				local target = nearestEnemy(c)
-				if target then
-					face(c, target.root.Position)
-					if t >= brain.aimUntil then
-						S.CombatService.doThrow(c, aimDirection(c, target), 0)
-						brain.aimUntil = nil
-					end
-				end
-				continue
-			end
-			brain.aimUntil = nil
-			-- walk to the nearest free, safely placed ball
-			local bestBall, bestDist = nil, math.huge
-			for _, ball in S.BallService.all() do
-				if ball.state == "Resting" and ball.context == "Match" then
-					local pos = ball.part.Position
-					if safeFor(c, pos) and S.CombatService.canPickup(c, ball, pos) then
-						local d = (pos - c.root.Position).Magnitude
-						if d < bestDist then
-							bestBall, bestDist = ball, d
-						end
-					end
-				end
-			end
-			if bestBall then
-				humanoid:MoveTo(bestBall.part.Position)
-			else
-				if t >= brain.nextWanderAt or not brain.wander then
-					brain.wander = wanderPoint(c)
-					brain.nextWanderAt = t + rng:NextNumber(B.WanderInterval[1], B.WanderInterval[2])
-				end
-				humanoid:MoveTo(brain.wander)
-			end
-		end
+		BotService.tickOne(c)
 	end
 end
 
--- Per-frame reactions to incoming balls: dodge 25%, catch 10% (decided once per throw).
+-- Per-frame reactions to incoming balls. Each throw gets one decision per bot, made after the
+-- bot's reaction time: dodge sideways (toward the middle), try a catch (pressed with a timing
+-- error, so it can fail), or do nothing. A ball that arrives before the bot reacts just hits.
 function BotService.react()
 	if not S.MatchService.isRoundLive() then
 		return
 	end
+	local t = now()
 	for _, c in S.MatchService.roster() do
 		if c.isBot and c.status == "Active" and c.root and c.action ~= "Ragdolled" then
 			local brain = c.bot
+			local prof = profileOf(c)
 			for _, ball in S.BallService.all() do
 				if ball.state == "InFlight" and ball.lastTeam ~= c.team then
 					local rel = c.root.Position - ball.pos
 					local v = ball.vel
 					local vv = v:Dot(v)
 					if vv > 1 and rel.Magnitude < B.ReactRange then
-						local tc = rel:Dot(v) / vv
+						local tc = rel:Dot(v) / vv -- seconds until closest approach
 						local miss = (rel - v * tc).Magnitude
-						if tc > 0 and tc < 0.7 and miss < 4 then
-							local key = ball.id
-								.. ":"
-								.. tostring(ball.lastThrower and ball.lastThrower.id)
-								.. ":"
-								.. math.floor(ball.stateAt * 10)
-							if brain.reacted[key] == nil then
+						if tc > 0 and tc < 1 and miss < 4.5 then
+							local key = ("%d:%s:%d"):format(ball.id, tostring(ball.lastThrower and ball.lastThrower.id), math.floor(ball.stateAt * 10))
+							local r = brain.reacted[key]
+							if r == nil then
+								-- first sight of this throw: decide now, act after the reaction time
 								local roll = rng:NextNumber()
-								brain.reacted[key] = if roll < B.DodgeChance
-									then "Dodge"
-									elseif roll < B.DodgeChance + B.CatchChance then "Catch"
-									else "None"
-								if brain.reacted[key] == "Dodge" then
-									local side = Vector3.new(-v.Z, 0, v.X)
-									if side.Magnitude > 0.1 then
-										side = side.Unit * (if rng:NextNumber() < 0.5 then 1 else -1)
-										-- prefer the side that keeps the bot away from the edge
-										if not safeFor(c, c.root.Position + side * 8) then
-											side = -side
-										end
+								r = {
+									at = t + between(prof.ReactionTime),
+									choice = if roll < prof.DodgeChance
+										then "Dodge"
+										elseif roll < prof.DodgeChance + prof.CatchChance then "Catch"
+										else "None",
+									catchAt = 0,
+								}
+								brain.reacted[key] = r
+							end
+							if t >= r.at and r.choice == "Dodge" then
+								r.choice = "Done"
+								local side = Vector3.new(-v.Z, 0, v.X)
+								if side.Magnitude > 0.1 then
+									side = side.Unit
+									-- dodge toward the middle of the half when both sides are safe
+									local toMid = ArenaLayout.halfCenter(c.team) - c.root.Position
+									if side:Dot(toMid) < 0 then
+										side = -side
+									end
+									if not safeFor(c, c.root.Position + side * 8) then
+										side = -side
+									end
+									if safeFor(c, c.root.Position + side * 8) then
 										S.CombatService.doDodge(c, side)
 									end
 								end
-							end
-							if brain.reacted[key] == "Catch" and not c.heldBall then
+							elseif t >= r.at and r.choice == "Catch" and not c.heldBall then
 								face(c, ball.pos)
-								if tc < 0.15 then
+								if r.catchAt == 0 then
+									-- aim to have the arrival in the middle of the catch window, give or take
+									local err = rng:NextNumber() + rng:NextNumber() + rng:NextNumber() - 1.5 -- ~N(0, 0.5)
+									r.catchAt = t + tc - Config.Player.CatchWindow / 2 + err * 2 * prof.CatchTimingError
+								end
+								if t >= r.catchAt then
 									S.CombatService.doCatch(c)
-									brain.reacted[key] = "Done"
+									r.choice = "Done"
 								end
 							end
 						end

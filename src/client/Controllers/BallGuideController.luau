@@ -112,9 +112,16 @@ function BallGuideController.start()
 			hideAll()
 			return
 		end
-		local arena = Workspace:FindFirstChild("Arena")
-		local collidable = arena and arena:FindFirstChild("Collidable")
-		floorParams.FilterDescendantsInstances = if collidable then { collidable } else {}
+		-- floors: the court and jails, plus the hub deck when you're in the hub
+		local floors = {}
+		for _, name in { "Arena", "Lobby" } do
+			local container = Workspace:FindFirstChild(name)
+			local collidable = container and container:FindFirstChild("Collidable")
+			if collidable then
+				table.insert(floors, collidable)
+			end
+		end
+		floorParams.FilterDescendantsInstances = floors
 		local ball = nearestBall(root.Position)
 		if not ball then
 			hideAll()

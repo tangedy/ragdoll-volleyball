@@ -17,6 +17,7 @@ local Config = require(Shared.Config)
 local BallDefinitions = require(Shared.BallDefinitions)
 local ProjectileMath = require(Shared.ProjectileMath)
 local Net = require(script.Parent.Net)
+local HubController = require(script.Parent.HubController)
 
 local player = Players.LocalPlayer
 
@@ -32,6 +33,7 @@ type Visual = {
 	throwId: number?,
 	stoppedAt: Vector3?,
 	createdAt: number,
+	lobby: boolean, -- a practice throw in the hub (collides with hub scenery, not the court)
 }
 
 local BallVisualController = {}
@@ -129,6 +131,7 @@ function BallVisualController.predict(throwId: number, origin: Vector3, vel: Vec
 		throwId = throwId,
 		stoppedAt = nil,
 		createdAt = os.clock(),
+		lobby = (player:GetAttribute("Team") or "") == "",
 	}
 	visuals[v] = true
 	predicted[throwId] = v
@@ -167,6 +170,10 @@ local function onLaunched(d: any)
 	if old then
 		remove(old)
 	end
+	local lobby = d.context == "Lobby"
+	if lobby and HubController.lobbyHidden then
+		return -- you're on the court and the hub is hidden: don't draw practice throws
+	end
 	local v: Visual = {
 		part = makePart(d.ballType, ProjectileMath.positionAt(d.origin, d.vel, g, math.max(serverNow - d.t0, 0))),
 		origin = d.origin,
@@ -179,6 +186,7 @@ local function onLaunched(d: any)
 		throwId = nil,
 		stoppedAt = nil,
 		createdAt = os.clock(),
+		lobby = lobby,
 	}
 	visuals[v] = true
 	byBallId[d.id] = v
@@ -275,12 +283,17 @@ function BallVisualController.start()
 		end
 	end)
 
+	-- court throws stop at court scenery; hub practice throws at the hub deck and its ball net
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
+	local lobbyParams = RaycastParams.new()
+	lobbyParams.FilterType = Enum.RaycastFilterType.Include
 	RunService.RenderStepped:Connect(function()
 		local arena = Workspace:FindFirstChild("Arena")
 		local collidable = arena and arena:FindFirstChild("Collidable")
 		params.FilterDescendantsInstances = if collidable then { collidable } else {}
+		local lobby = Workspace:FindFirstChild("Lobby")
+		lobbyParams.FilterDescendantsInstances = if lobby then lobby:GetChildren() else {}
 		local serverNow = Workspace:GetServerTimeNow()
 		for v in visuals do
 			local t = serverNow - v.t0
@@ -298,7 +311,7 @@ function BallVisualController.start()
 			local last = v.part.Position
 			local delta = pos - last
 			if delta.Magnitude > 1e-3 and (os.clock() - v.createdAt) > 0.05 then
-				local hit = Workspace:Spherecast(last, v.part.Size.X / 2, delta, params)
+				local hit = Workspace:Spherecast(last, v.part.Size.X / 2, delta, if v.lobby then lobbyParams else params)
 				if hit then
 					pos = hit.Position + hit.Normal * (v.part.Size.X / 2)
 					v.stoppedAt = pos

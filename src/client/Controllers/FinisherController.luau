@@ -12,10 +12,12 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local ArenaLayout = require(Shared.ArenaLayout)
 local Net = require(script.Parent.Net)
 local HUDController = require(script.Parent.HUDController)
 local EffectsController = require(script.Parent.EffectsController)
 local SoundController = require(script.Parent.SoundController)
+local PoseKit = require(script.Parent.PoseKit)
 
 local player = Players.LocalPlayer
 local Finishers = Shared:WaitForChild("Finishers")
@@ -55,158 +57,13 @@ local function runFor(seconds: number, fn: (number, number) -> ())
 end
 
 -- Poses -------------------------------------------------------------------------------------------
--- A pose is a set of segment directions in UpperTorso space (+X = the character's right,
--- -Z = forward, +Y = up). Joint rotations are solved from the rig's own attachments, so poses fit
--- any body shape, on new (AnimationConstraint) and classic (Motor6D) R15 rigs alike.
+-- Solved and held by PoseKit (shared with victory poses). The finisher remembers what it started so
+-- restore() releases exactly those.
 
-type SegmentDirs = { upper: Vector3, fore: Vector3 }
--- arms are optional; `neck` tilts the head in degrees (+ = look up, - = bow down)
-type PoseDef = { Right: SegmentDirs?, Left: SegmentDirs?, neck: number? }
-
-local REST_R = { upper = Vector3.new(0.12, -1, 0.02), fore = Vector3.new(0.08, -1, -0.12) }
-local REST_L = { upper = Vector3.new(-0.12, -1, 0.02), fore = Vector3.new(-0.08, -1, -0.12) }
-
-local POSES: { [string]: PoseDef } = {
-	CrossArms = {
-		Right = { upper = Vector3.new(-0.02, -0.72, -0.7), fore = Vector3.new(-1, 0.2, 0.02) },
-		Left = { upper = Vector3.new(0.02, -0.8, -0.6), fore = Vector3.new(1, -0.02, -0.18) },
-	},
-	ArmsUp = {
-		Right = { upper = Vector3.new(0.35, 0.94, 0), fore = Vector3.new(0.2, 1, 0) },
-		Left = { upper = Vector3.new(-0.35, 0.94, 0), fore = Vector3.new(-0.2, 1, 0) },
-	},
-	-- hands out in front of the chest, ready to catch
-	Catch = {
-		Right = { upper = Vector3.new(0.3, -0.45, -0.85), fore = Vector3.new(-0.3, 0.2, -1) },
-		Left = { upper = Vector3.new(-0.3, -0.45, -0.85), fore = Vector3.new(0.3, 0.2, -1) },
-		neck = -10,
-	},
-	-- holding something up over a bowed head
-	RaiseOverhead = {
-		Right = { upper = Vector3.new(0.45, 0.88, -0.2), fore = Vector3.new(-0.65, 0.7, -0.15) },
-		Left = { upper = Vector3.new(-0.45, 0.88, -0.2), fore = Vector3.new(0.65, 0.7, -0.15) },
-		neck = -55,
-	},
-	-- arms flung wide to the sides, palms forward (an orb in each hand)
-	ArmsSpread = {
-		Right = { upper = Vector3.new(1, -0.15, -0.3), fore = Vector3.new(0.85, 0.2, -0.5) },
-		Left = { upper = Vector3.new(-1, -0.15, -0.3), fore = Vector3.new(-0.85, 0.2, -0.5) },
-	},
-	-- right arm straight out, finger pointed at the target
-	PointForward = {
-		Right = { upper = Vector3.new(0.12, -0.05, -1), fore = Vector3.new(0.02, 0.04, -1) },
-		Left = REST_L,
-	},
-	BowHead = { Right = REST_R, Left = REST_L, neck = -60 },
-	-- right arm straight out in front, palm toward something arriving
-	ReachOut = {
-		Right = { upper = Vector3.new(0.12, -0.02, -1), fore = Vector3.new(0.02, 0.06, -1) },
-		Left = REST_L,
-	},
-	-- right arm cocked up and back, left arm forward for balance
-	WindUp = {
-		Right = { upper = Vector3.new(0.45, 0.55, 0.7), fore = Vector3.new(0.05, 1, 0.35) },
-		Left = { upper = Vector3.new(-0.25, -0.15, -0.95), fore = Vector3.new(-0.1, 0.1, -1) },
-		neck = 5,
-	},
-	-- follow-through after the throw
-	ThrowFollow = {
-		Right = { upper = Vector3.new(-0.25, -0.25, -0.93), fore = Vector3.new(-0.35, -0.45, -0.82) },
-		Left = { upper = Vector3.new(-0.3, -0.6, 0.55), fore = Vector3.new(-0.2, -0.9, 0.4) },
-		neck = -8,
-	},
-	LookUp = { Right = REST_R, Left = REST_L, neck = 12 },
-}
-
-type JointInfo = { inst: Instance, f0: CFrame, f1: CFrame }
-
-local function findJoint(model: Model, name: string): JointInfo?
-	for _, d in model:GetDescendants() do
-		if d.Name == name then
-			if d:IsA("AnimationConstraint") and d.Attachment0 and d.Attachment1 then
-				return { inst = d :: Instance, f0 = d.Attachment0.CFrame, f1 = d.Attachment1.CFrame }
-			elseif d:IsA("Motor6D") then
-				return { inst = d :: Instance, f0 = d.C0, f1 = d.C1 }
-			end
-		end
-	end
-	return nil
-end
-
--- Solve a pose into joint Transforms. Returns { [jointInstance] = Transform }.
-local function solvePose(model: Model, poseName: string): { [Instance]: CFrame }
-	local pose = POSES[poseName]
-	local out: { [Instance]: CFrame } = {}
-	if not pose then
-		return out
-	end
-	for _, side in { "Right", "Left" } do
-		local dirs = (pose :: any)[side] :: SegmentDirs?
-		local sh = findJoint(model, side .. "Shoulder")
-		local el = findJoint(model, side .. "Elbow")
-		local wr = findJoint(model, side .. "Wrist")
-		if not (dirs and sh and el and wr) then
-			continue
-		end
-		-- rest direction of a segment in its joint frame: toward the next joint along the limb
-		local upperRest = sh.f1:VectorToObjectSpace(el.f0.Position - sh.f1.Position).Unit
-		local tS = CFrame.fromRotationBetweenVectors(upperRest, sh.f0:VectorToObjectSpace(dirs.upper.Unit))
-		out[sh.inst] = tS
-		local upperInTorso = sh.f0 * tS * sh.f1:Inverse()
-		local foreInUpper = upperInTorso:VectorToObjectSpace(dirs.fore.Unit)
-		local foreRest = el.f1:VectorToObjectSpace(wr.f0.Position - el.f1.Position).Unit
-		out[el.inst] = CFrame.fromRotationBetweenVectors(foreRest, el.f0:VectorToObjectSpace(foreInUpper))
-	end
-	if pose.neck then
-		local neck = findJoint(model, "Neck")
-		if neck then
-			-- pitch about the torso's right axis, expressed in the neck joint's frame
-			local axis = neck.f0:VectorToObjectSpace(Vector3.xAxis)
-			out[neck.inst] = CFrame.fromAxisAngle(axis, math.rad(pose.neck))
-		end
-	end
-	return out
-end
-
-local activePoses: { [() -> ()]: boolean } = {}
-local poseByModel: { [Instance]: () -> () } = {}
-
--- Hold a pose on a character, blending in from whatever it is doing now. Starting a new pose on
--- the same character replaces the old one. Returns a stop function (also called on cleanup).
+local finisherPoses: { [() -> ()]: boolean } = {}
 local function holdPose(model: any, poseName: string, blendIn: number?): () -> ()
-	if typeof(model) ~= "Instance" or not model:IsA("Model") then
-		return function() end
-	end
-	local previous = poseByModel[model]
-	local targets = solvePose(model, poseName)
-	local start = os.clock()
-	local blend = math.max(blendIn or 0.25, 0.01)
-	local from: { [Instance]: CFrame } = {}
-	for j in targets do
-		from[j] = (j :: any).Transform
-	end
-	if previous then
-		previous()
-	end
-	local conn = RunService.Stepped:Connect(function()
-		local a = math.clamp((os.clock() - start) / blend, 0, 1)
-		a = 1 - (1 - a) ^ 3
-		for j, cf in targets do
-			if j.Parent then
-				(j :: any).Transform = from[j]:Lerp(cf, a)
-			end
-		end
-	end)
-	local stop
-	stop = function()
-		conn:Disconnect()
-		activePoses[stop] = nil
-		if poseByModel[model] == stop then
-			poseByModel[model] = nil
-		end
-	end
-	activePoses[stop] = true
-	poseByModel[model] = stop
+	local stop = PoseKit.hold(model, poseName, blendIn)
+	finisherPoses[stop] = true
 	return stop
 end
 
@@ -417,9 +274,10 @@ local function letterbox(): () -> ()
 end
 
 local function restore(folder: Folder, fov: number, closeBars: () -> ())
-	for stop in activePoses do
+	for stop in finisherPoses do
 		stop()
 	end
+	table.clear(finisherPoses)
 	unhideAll()
 	folder:Destroy()
 	closeBars()
@@ -593,7 +451,7 @@ function FinisherController.preview(moduleName: string): boolean
 	if not def then
 		return false
 	end
-	local template = Workspace:FindFirstChild("Bots") and (Workspace :: any).Bots:FindFirstChild("Practice Dummy")
+	local template = game:GetService("ReplicatedStorage"):FindFirstChild(Config.Practice.TemplateName)
 	if not template then
 		return false
 	end
@@ -612,14 +470,8 @@ function FinisherController.preview(moduleName: string): boolean
 	-- stand it 18 studs in front of you, kept inside the hub
 	local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
 	look = if look.Magnitude > 0.1 then look.Unit else Vector3.zAxis
-	local lo = Config.Arena.LobbyOrigin
-	local half = Config.Arena.LobbySize / 2 - Vector3.new(6, 0, 6)
-	local spot = root.Position + look * 18
-	spot = Vector3.new(
-		math.clamp(spot.X, lo.X - half.X, lo.X + half.X),
-		lo.Y + 3,
-		math.clamp(spot.Z, lo.Z - half.Z, lo.Z + half.Z)
-	)
+	local spot = ArenaLayout.clampToLobby(root.Position + look * 18, 6)
+	spot = Vector3.new(spot.X, Config.Arena.LobbyOrigin.Y + 3, spot.Z)
 	standIn:PivotTo(CFrame.lookAt(spot, Vector3.new(root.Position.X, spot.Y, root.Position.Z)))
 	standIn.Parent = Workspace
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -642,6 +494,9 @@ function FinisherController.preview(moduleName: string): boolean
 	end)
 	return true
 end
+
+-- Shared with the victory camera moment.
+FinisherController.letterbox = letterbox
 
 function FinisherController.init() end
 

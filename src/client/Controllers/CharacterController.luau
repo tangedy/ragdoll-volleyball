@@ -31,6 +31,18 @@ local function onCharacter(character: Model)
 	camera.CameraType = Enum.CameraType.Custom
 end
 
+-- Put the camera behind `root`, looking past it at `focus` (same framing as the round start).
+function CharacterController.faceCameraAt(root: BasePart, focus: Vector3)
+	local camera = workspace.CurrentCamera
+	if camera.CameraType ~= Enum.CameraType.Custom then
+		return -- a cutscene owns the camera
+	end
+	local flat = Vector3.new(focus.X - root.Position.X, 0, focus.Z - root.Position.Z)
+	flat = if flat.Magnitude > 0.1 then flat.Unit else root.CFrame.LookVector
+	local camPos = root.Position - flat * 12 + Vector3.new(0, 5, 0)
+	camera.CFrame = CFrame.lookAt(camPos, Vector3.new(focus.X, root.Position.Y + 1, focus.Z))
+end
+
 function CharacterController.init() end
 
 function CharacterController.start()
@@ -64,6 +76,23 @@ function CharacterController.start()
 			local camera = workspace.CurrentCamera
 			camera.CFrame = CFrame.lookAt(root.Position - flat * 12 + Vector3.new(0, 5, 0), root.Position + flat * 10)
 		end
+	end)
+	-- spawning into the hub, or (re)spawning after an elimination: the server faces the character at
+	-- the court; swing the camera in behind it so the action is the first thing you see
+	local faceToken = 0
+	Net.on("FaceCourt", function(d)
+		if typeof(d.focus) ~= "Vector3" then
+			return
+		end
+		faceToken += 1
+		local token = faceToken
+		local character = player.Character or player.CharacterAdded:Wait()
+		local root = character:WaitForChild("HumanoidRootPart", 5) :: BasePart?
+		task.wait(0.15) -- let the server's teleport replicate first
+		if not root or token ~= faceToken or player.Character ~= character then
+			return
+		end
+		CharacterController.faceCameraAt(root, d.focus)
 	end)
 	Net.on("DodgeAccepted", function(d)
 		local character = player.Character

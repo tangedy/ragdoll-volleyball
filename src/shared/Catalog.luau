@@ -1,9 +1,13 @@
 --!strict
--- Every cosmetic, its coins price and (later) its Robux product id. Cosmetics never change
+-- Every cosmetic (ball skins, trails, titles, finishers, victory poses), its coins price and (later)
+-- its Robux product id. Cosmetics never change
 -- competitive stats: skins apply only to Standard balls so power-up types always stay readable,
 -- and nothing here touches radius, speed, knockback or catch timing (spec §13).
 
-export type Category = "BallSkin" | "Trail" | "Title" | "Finisher"
+local Config = require(script.Parent.Config)
+
+export type Category = "BallSkin" | "Trail" | "Title" | "Finisher" | "Pose"
+export type Rarity = "Common" | "Rare" | "Epic" | "Legendary"
 
 export type Item = {
 	Id: string,
@@ -184,12 +188,41 @@ local items: { Item } = {
 		RobuxProductId = 0,
 		Data = { Module = "BlackHole", Icon = "🕳️" },
 	},
+	-- Victory poses: what you do in the post-match camera moment when your team wins.
+	-- Data.Pose names a pose in Shared.VictoryPoses.
+	{
+		Id = "Pose_Cheer",
+		Category = "Pose",
+		Name = "Fist Pump",
+		Price = 0,
+		RobuxProductId = 0,
+		Default = true,
+		Data = { Pose = "Cheer", Icon = "✊" },
+	},
+	{ Id = "Pose_Wave", Category = "Pose", Name = "Big Wave", Price = 600, RobuxProductId = 0, Data = { Pose = "Wave", Icon = "👋" } },
+	{ Id = "Pose_Flex", Category = "Pose", Name = "Flex", Price = 1200, RobuxProductId = 0, Data = { Pose = "Flex", Icon = "💪" } },
+	{
+		Id = "Pose_Point",
+		Category = "Pose",
+		Name = "You're Next",
+		Price = 1500,
+		RobuxProductId = 0,
+		Data = { Pose = "Point", Icon = "👉" },
+	},
+	{ Id = "Pose_Bow", Category = "Pose", Name = "Take a Bow", Price = 2500, RobuxProductId = 0, Data = { Pose = "Bow", Icon = "🙇" } },
+	{ Id = "Pose_Dab", Category = "Pose", Name = "Dab", Price = 3000, RobuxProductId = 0, Data = { Pose = "Dab", Icon = "😎" } },
 }
 
 local Catalog = {}
 
-Catalog.Categories = { "BallSkin", "Trail", "Title", "Finisher" } :: { Category }
-Catalog.CategoryNames = { BallSkin = "Ball Skins", Trail = "Trails", Title = "Titles", Finisher = "Finishers" }
+Catalog.Categories = { "BallSkin", "Trail", "Title", "Finisher", "Pose" } :: { Category }
+Catalog.CategoryNames = {
+	BallSkin = "Ball Skins",
+	Trail = "Trails",
+	Title = "Titles",
+	Finisher = "Finishers",
+	Pose = "Victory Poses",
+}
 Catalog.Items = items
 
 local byId: { [string]: Item } = {}
@@ -218,6 +251,16 @@ function Catalog.inCategory(category: string): { Item }
 		end
 	end
 	return list
+end
+
+-- Rarity tier by coin price (Config.Spin.RarityByPrice). Used by the shop tags and the daily spin.
+function Catalog.rarity(item: Item): Rarity
+	for _, tier in Config.Spin.RarityByPrice do
+		if item.Price >= tier.Min then
+			return tier.Rarity :: Rarity
+		end
+	end
+	return "Common"
 end
 
 -- The equipped item for a category from a profile's Equipped map, falling back to the default.

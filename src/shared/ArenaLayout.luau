@@ -92,13 +92,48 @@ function ArenaLayout.randomPointOnHalf(team: string, overtimeSteps: number, edge
 	return A.Origin + Vector3.new(x, 3, z)
 end
 
-function ArenaLayout.lobbySpawn(rng: Random): Vector3
-	local o = A.LobbyOrigin
-	return o + Vector3.new(rng:NextNumber(-12, 12), 4, rng:NextNumber(-20, -8))
+-- The hub deck's frame: centered on LobbyOrigin, LookVector pointing at the court (flat).
+local courtFlat = Vector3.new(A.Origin.X, A.LobbyOrigin.Y, A.Origin.Z)
+ArenaLayout.LobbyFrame = if (courtFlat - A.LobbyOrigin).Magnitude > 1
+	then CFrame.lookAt(A.LobbyOrigin, courtFlat)
+	else CFrame.new(A.LobbyOrigin)
+
+-- A point on the deck: x = right, y = up from the deck surface, f = forward toward the court.
+function ArenaLayout.lobbyPoint(x: number, y: number, f: number): Vector3
+	return ArenaLayout.LobbyFrame * Vector3.new(x, y, -f)
 end
 
+-- Is a world position over the hub deck (any height)? margin grows (+) or shrinks (-) the area.
+function ArenaLayout.inLobby(pos: Vector3, margin: number?): boolean
+	local m = margin or 0
+	local rel = ArenaLayout.LobbyFrame:PointToObjectSpace(pos)
+	return math.abs(rel.X) <= A.LobbySize.X / 2 + m and math.abs(rel.Z) <= A.LobbySize.Z / 2 + m
+end
+
+-- Clamp a world position onto the deck, `inset` studs in from the edges.
+function ArenaLayout.clampToLobby(pos: Vector3, inset: number): Vector3
+	local rel = ArenaLayout.LobbyFrame:PointToObjectSpace(pos)
+	local hx, hz = A.LobbySize.X / 2 - inset, A.LobbySize.Z / 2 - inset
+	return ArenaLayout.LobbyFrame * Vector3.new(math.clamp(rel.X, -hx, hx), rel.Y, math.clamp(rel.Z, -hz, hz))
+end
+
+function ArenaLayout.lobbySpawn(rng: Random): Vector3
+	local s = Config.Lobby.Spawn
+	return ArenaLayout.lobbyPoint(
+		s.X + rng:NextNumber(-s.Spread, s.Spread),
+		4,
+		s.F + rng:NextNumber(-s.Spread, s.Spread)
+	)
+end
+
+-- Where hub players face and look on (re)spawn: the middle of the court.
+ArenaLayout.CourtFocus = A.Origin + Vector3.new(0, 2, 0)
+
 ArenaLayout.LobbyVoidY = A.LobbyOrigin.Y - A.VoidDepth
-ArenaLayout.DummyHome = A.LobbyOrigin + Vector3.new(0, 4, A.LobbySize.Z / 2 - 6)
-ArenaLayout.PracticeBallHome = A.LobbyOrigin + Vector3.new(0, 2, 0)
+local practice = Config.Lobby.Practice
+ArenaLayout.DummyHome = ArenaLayout.lobbyPoint(practice.DummyX, 4, practice.F)
+ArenaLayout.PracticeBallHome = ArenaLayout.lobbyPoint(practice.BallX, 2, practice.F)
+-- the dummy faces back into the practice zone (it gets launched off the open end behind it)
+ArenaLayout.DummyFacing = ArenaLayout.lobbyPoint(practice.DummyX + 10, 4, practice.F)
 
 return ArenaLayout

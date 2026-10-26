@@ -74,7 +74,8 @@ function TutorialController.init()
 		BackgroundColor3 = Color3.new(1, 1, 1),
 		Visible = false,
 	}, gui)
-	Theme.corner(holder, 18)
+	Theme.corner(holder, Theme.Radius.L)
+	Theme.autoScale(holder)
 	Theme.gradient(holder, Theme.lighten(Theme.Colors.Gold, 0.3), Theme.Colors.GoldDark)
 	Theme.stroke(holder, Theme.Colors.Ink, 3.5)
 	card = Theme.label(holder, {

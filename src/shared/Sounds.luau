@@ -329,6 +329,29 @@ local Cues: { [string]: { Layer } } = {
 	Banner = {
 		{ id = S .. "swordslash.wav", volume = 0.25, pitch = 1.4, jitter = 0.05 },
 	},
+	-- Daily spin
+	SpinStart = {
+		{ id = S .. "switch.wav", volume = 0.45, pitch = 0.8 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 1.2, delay = 0.05 },
+	},
+	WheelTick = {
+		{ id = S .. "clickfast.wav", volume = 0.35, pitch = 1.5, jitter = 0.08 },
+	},
+	SpinReveal = {
+		{ id = S .. "victory.wav", volume = 0.5, pitch = 1.1 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.6, delay = 0.08 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 2.1, delay = 0.18 },
+	},
+	SpinLegendary = {
+		{ id = S .. "victory.wav", volume = 0.6, pitch = 0.95 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 1.4, delay = 0.06 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 1.9, delay = 0.16 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 2.5, delay = 0.28 },
+	},
+	-- Victory poses
+	Victory = {
+		{ id = S .. "victory.wav", volume = 0.55, pitch = 1 },
+	},
 }
 
 local Sounds = {}

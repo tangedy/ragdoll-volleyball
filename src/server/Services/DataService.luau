@@ -34,6 +34,8 @@ export type Profile = {
 	IndexOwned: { [string]: boolean },
 	CurrentWinStreak: number,
 	BestWinStreak: number,
+	-- schema v5: daily cosmetic spin counters (SpinService)
+	Spin: { date: string, freeUsed: boolean, paid: number, total: number, receipts: { string } },
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -54,6 +56,7 @@ local function default(): Profile
 		IndexOwned = {},
 		CurrentWinStreak = 0,
 		BestWinStreak = 0,
+		Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} },
 		Lock = nil,
 	}
 end
@@ -88,6 +91,10 @@ function DataService.migrate(old: any): Profile
 		data.Coins = tonumber(anyData.Pts) or tonumber(anyData.Coins) or 0
 		anyData.Pts = nil
 	end
+	if version < 5 then
+		-- v5: the daily cosmetic spin; everyone starts with today's free spin available
+		data.Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} }
+	end
 	data.SchemaVersion = D.SchemaVersion
 	return data
 end
@@ -114,6 +121,7 @@ local function pushProfile(c: any)
 		owned = p.OwnedCosmetics,
 		equipped = p.Equipped,
 		daily = S.ShopService.dailyStatus(c),
+		spin = S.SpinService.status(c),
 		level = p.Level,
 		xp = p.XP,
 		xpNext = Progression.xpToNext(p.Level),

@@ -1,5 +1,56 @@
 # Implementation status (Oct 24, 2026)
 
+## Oct 26 hub, bots, spin and victory pass
+
+None of this has been run in Studio yet. It passes `selene` (0 errors, the same 6 style warnings as before) and the strict `luau-lsp` check (no new errors; the only errors left are the 10 that were already in `PurpleFlash.luau`). The F9 suite now has **30 tests** (11 new).
+
+- **Rooftop hub** (`LobbyBuilder`, `Config.Lobby`): the hub is a neon rooftop at night. The deck is the top of a tower with lit windows that sinks into the void. It has paver tiles, parapets with purple neon, a glass railing on the court side with a cyan rail light, a water tower, a stairwell shed with an EXIT sign and a blinking antenna beacon, AC units, planters, benches, vending machines, lamp posts and party string lights. Everything is placed in a deck frame that faces the court (`ArenaLayout.LobbyFrame` / `lobbyPoint`), so moving `LobbyOrigin` moves the whole hub.
+- **Hub zones:**
+  - **Stations:** SHOP & LOCKER, DAILY SPIN (with a physical prize wheel) and DAILY REWARD are booth-style stations along the back, each with a canopy sign, a screen, a counter prompt and a "stand here" ring.
+  - **Leaderboard:** on the right end, top 8 on this server by wins.
+  - **Other zones:** bleachers ("watch zone") at the railing, a helipad spawn, a signpost, a practice banner and mat, and floor labels.
+  - **Animation:** `HubController` animates the wheel, beacon and fans.
+- **Hub beside the court:** `LobbyOrigin` is `(-110, 200, 0)`, level with the court, off its −X side across a 36-stud gap (`LobbyGap`). While you're on the court (Active, Jailed or Returning), the hub is taken out of your Workspace locally, so it doesn't render, collide, show prompts or light anything. Hub occupants (practice balls, the dummy, lobby players and spectators) are hidden too. Other changes:
+  - **Practice balls:** they collide only with hub scenery, the court-side `LobbyNet` keeps them off the court, and their throws aren't drawn for on-court players.
+  - **Match balls:** a match ball over the hub is out, and a stranded match ball is reset.
+  - **Floor arrows:** they also find the hub floor.
+- **UI:**
+  - **Theme:** gains spacing, radius, type and motion tokens; `show` / `hide` transitions with a backdrop; responsive `autoScale` (1 at 1280×720 down to 0.62); and badge, stat-chip and coin widgets.
+  - **HUD:** scales with the screen.
+  - **Results card:** coins count-up, three stat tiles, a level / XP / streak footer.
+  - **Settings:** camera shake and reduced motion moved behind a ⚙.
+  - **Shop:** a responsive grid, scrolling tabs, rarity tags and ✓ owned marks.
+  - **Daily ladder:** wraps to 4 + 3 on phones.
+  - **Hub buttons:** move to the left edge on touch.
+- **Bots** (`Config.Bots.Profiles`, `Mix`): Easy, Normal and Hard profiles, mixed by the real players' average level.
+  - **Reacting:** they react after a human reaction time. Dodges go toward the middle. Catches are pressed with a timing error, so they really fail.
+  - **Balls and edges:** they go for the nearest safe ball (teammates don't chase the same one) and back off edges.
+  - **Targeting:** they pick smart targets (enemies near an edge or just recovered; they avoid enemies who could catch).
+  - **Throwing:** they aim, then charge for a chosen time, sometimes snap-throw, and sidestep while aiming.
+  - **No stalling:** a held ball is always thrown within `StallThrow` (4 s), and aim time shrinks in sudden death.
+- **Daily spin** (`SpinService`, `SpinController`, `Config.Spin`):
+  - **How you spin:** one free spin per UTC day, plus up to 5 extra spins at 750 coins each. A Robux extra spin is built but stays off until `RobuxProductId` is set.
+  - **Fair odds:** the wheel has 12 slots drawn by rarity weight (60 / 28 / 10 / 2). It is seeded per player, day and spin, so the client shows exactly the wheel the server spins, and the server picks a slot uniformly.
+  - **Duplicates:** a prize you already own pays 100 / 250 / 500 / 1000 coins by rarity.
+  - **Saving:** save **schema v5** adds `Spin` (with a migration).
+  - **Presentation:** the panel shows that wheel's odds, a free-spin countdown, an ease-out spin with ticks, and a reveal with rays, confetti and an EQUIP button.
+- **Facing the court:** joining, respawning in the hub, falling off it, returning after a match, being sent to the hub after your last elimination and jail respawns all face the court. The camera swings in behind you (`FaceCourt`).
+- **Victory poses:**
+  - **Catalog:** a new Pose category: Fist Pump (free default), Big Wave, Flex, You're Next, Take a Bow and Dab. Each has a TRY button in the shop.
+  - **When it plays:** after the finisher and the "WINS!" banner, the new `Victory` state (4 s) lines the winning team up on its half, bots included. Everyone sees the poses; players in the match also get a letterboxed push-in. Then the results card.
+  - **How:** poses come from the shared `VictoryPoses` data and the new client `PoseKit`, which finishers now share. It solves arms, head and waist on the R15 AnimationConstraint rigs.
+
+### To check in Studio
+
+1. **Hub art:** play solo, then look around the deck, the tower edge and the lights. Set `Lighting.Technology = Future` for the neon.
+2. **Zones:** walk to each station. The prompts should open SHOP, SPIN and DAILY. Check the leaderboard fills in within 5 s and the floor labels read the right way round.
+3. **Beside the court:** from the bleachers you should watch the match across the gap. Once you're in a match, the hub, the dummy and lobby players should be gone. When you're eliminated for the round, they should come back. In a two-client test, check that someone in the hub can't be hit and doesn't see on-court players vanish.
+4. **UI:** resize the window and use the device emulator (phone landscape) on the HUD, results card (`RD_Gallery` `ResultsFinalKnockout`), shop, daily, spin and the ⚙ settings.
+5. **Bots:** watch a few matches. They should dodge some throws, sometimes whiff catches, avoid edges, focus players near edges, and vary their throws. Check the `BotDifficulty` attributes on bot models.
+6. **Spin:** spin free, then a paid spin with G dev coins. The wheel should land on the revealed prize. Owning everything should pay coins.
+7. **Facing:** join, fall off the hub, get eliminated twice in sudden death, and finish a match. Each time the camera should face the court.
+8. **Victory:** win a match (or press T). After the finisher you should see the line-up, the poses and the camera move, then the results card. Try each pose with TRY.
+
 ## Oct 25 polish pass
 
 - **Currency:** it's called coins everywhere: UI, code and save data (schema v4 migrates the v3 "Pts" field).

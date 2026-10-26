@@ -15,6 +15,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local ArenaLayout = require(Shared.ArenaLayout)
 local ProjectileMath = require(Shared.ProjectileMath)
+local Catalog = require(Shared.Catalog)
 
 local TestService = {}
 
@@ -409,6 +410,161 @@ test("an elimination pays the eliminator 25 coins instantly", function()
 	ready(victim, point(enemyTeam, 0, 20))
 end)
 
+test("victory poses: a free default, 3+ to unlock, every pose and frame defined", function()
+	local VictoryPoses = require(Shared.VictoryPoses)
+	local items = Catalog.inCategory("Pose")
+	local defaults, paid = 0, 0
+	for _, item in items do
+		if item.Default then
+			defaults += 1
+			assertTrue(item.Price == 0, "default pose isn't free")
+		else
+			paid += 1
+		end
+		local pose = VictoryPoses.Poses[item.Data.Pose]
+		assertTrue(pose ~= nil, item.Id .. " names an unknown pose")
+		for _, step in pose.Frames do
+			assertTrue(VictoryPoses.Frames[step.frame] ~= nil, item.Id .. " uses an unknown frame " .. step.frame)
+			assertTrue(step.hold > 0, item.Id .. " has a zero-length frame")
+		end
+	end
+	assertTrue(defaults == 1 and paid >= 3, ("%d default and %d paid poses"):format(defaults, paid))
+	-- equipping is server-checked like any cosmetic: owned or default only
+	local c: any = { profileLoaded = true, inMatch = false, status = "Lobby", profile = { Coins = 0, OwnedCosmetics = {}, Equipped = {}, Level = 1, CurrentWinStreak = 0 } }
+	assertTrue(S.ShopService.victoryPose(c) == VictoryPoses.Default, "default pose not used")
+	assertTrue(not S.ShopService.equip(c, "Pose_Dab"), "equipped an unowned pose")
+	c.profile.OwnedCosmetics.Pose_Dab = true
+	assertTrue(S.ShopService.equip(c, "Pose_Dab") and S.ShopService.victoryPose(c) == "Dab", "owned pose not equipped")
+end)
+
+test("bots: difficulty mix uses real profiles; new players mostly get Easy bots", function()
+	local profiles = Config.Bots.Profiles :: { [string]: any }
+	for _, row in (Config.Bots.Mix :: any) :: { { Weights: { [string]: number } } } do
+		for name in row.Weights do
+			assertTrue(profiles[name] ~= nil, "mix names unknown profile " .. name)
+		end
+	end
+	local easy = 0
+	for _ = 1, 200 do
+		if S.BotService.pickDifficulty(1) == "Easy" then
+			easy += 1
+		end
+	end
+	assertTrue(easy > 120, ("only %d/200 Easy bots for level-1 players"):format(easy))
+	for name, prof in profiles do
+		-- beatable: every profile misses a little and reacts slower than a frame
+		assertTrue(prof.AimErrorDeg >= 2 and prof.ReactionTime[1] >= 0.1, name .. " profile is superhuman")
+	end
+end)
+
+test("bots: a smart bot targets the enemy at the edge over a closer one in the middle", function()
+	local bot = bots("Red")[1]
+	local blue = bots("Blue")
+	assertTrue(bot and #blue >= 2, "need a red bot and 2 blue bots")
+	for _, c in S.MatchService.roster() do
+		if c.team == "Blue" and c ~= blue[1] and c ~= blue[2] then
+			S.PlayerStateService.setStatus(c, "Spectating")
+		end
+	end
+	ready(bot, point("Red", 0, 12))
+	ready(blue[1], point("Blue", 0, 14)) -- closest, safe in the middle
+	ready(blue[2], point("Blue", 28, 20)) -- farther, 4 studs from the side edge
+	task.wait(0.3)
+	local smart = S.BotService.pickTarget(bot, true, false)
+	local naive = S.BotService.pickTarget(bot, false, false)
+	for _, c in S.MatchService.roster() do
+		if c.team == "Blue" then
+			S.PlayerStateService.setStatus(c, "Active")
+		end
+	end
+	ready(blue[2], point("Blue", 0, 20))
+	assertTrue(naive == blue[1], "naive pick isn't the nearest enemy")
+	assertTrue(smart == blue[2], "smart pick ignored the enemy at the edge")
+end)
+
+test("bots: a bot holding a ball always throws (never stalls the round)", function()
+	local bot = bots("Blue")[1]
+	local enemy = bots("Red")[1]
+	ready(bot, point("Blue", 0, 20))
+	ready(enemy, point("Red", 0, 20))
+	task.wait(0.3)
+	local throws = bot.stats.throws
+	giveBall(bot)
+	bot.bot.plan = nil
+	local deadline = os.clock() + Config.Bots.StallThrow + 1
+	while os.clock() < deadline and bot.heldBall do
+		S.BotService.tickOne(bot)
+		task.wait(Config.Bots.TickInterval)
+	end
+	assertTrue(bot.heldBall == nil and bot.stats.throws == throws + 1, "bot kept the ball")
+	task.wait(1) -- let the throw land
+	ready(enemy, point("Red", 0, 20))
+end)
+
+test("bots: dodges go toward the middle, never off the edge", function()
+	local bot = bots("Red")[1]
+	ready(bot, point("Red", 26, 24)) -- 6 from the right edge
+	task.wait(0.3)
+	local inside = S.BotService.safeFor(bot, bot.root.Position + Vector3.new(-8, 0, 0))
+	local outside = S.BotService.safeFor(bot, bot.root.Position + Vector3.new(8, 0, 0))
+	assertTrue(inside and not outside, "edge safety check is wrong")
+	assertTrue(S.BotService.edgeDistance("Red", bot.root.Position) < 7, "edge distance is wrong")
+end)
+
+test("hub: every station has a prompt; spawn, dummy and practice ball are on the deck", function()
+	local lobby = Workspace:FindFirstChild("Lobby")
+	assertTrue(lobby ~= nil, "no Workspace.Lobby")
+	local stations = (lobby :: Instance):FindFirstChild("Stations") :: Instance
+	for _, def in Config.Lobby.Stations do
+		local model = stations:FindFirstChild(def.Id .. "Station")
+		assertTrue(model ~= nil, "missing station " .. def.Id)
+		local prompt = (model :: Instance):FindFirstChild(def.Id .. "Prompt", true)
+		assertTrue(prompt and prompt:IsA("ProximityPrompt"), "station " .. def.Id .. " has no prompt")
+		local anchor = (prompt :: Instance).Parent :: BasePart
+		assertTrue(ArenaLayout.inLobby(anchor.Position), "station " .. def.Id .. " is off the deck")
+	end
+	local board = stations:FindFirstChild("Leaderboard")
+	assertTrue(board and board:FindFirstChild("Board"), "no leaderboard")
+	local rng = Random.new(1)
+	for _ = 1, 20 do
+		assertTrue(ArenaLayout.inLobby(ArenaLayout.lobbySpawn(rng), -2), "lobby spawn off the deck")
+	end
+	assertTrue(ArenaLayout.inLobby(ArenaLayout.PracticeBallHome, -1), "practice ball off the deck")
+	assertTrue(ArenaLayout.inLobby(ArenaLayout.DummyHome, 0), "dummy off the deck")
+end)
+
+test("spawning into the hub faces the court", function()
+	local bot = bots("Red")[1]
+	local spot = ArenaLayout.lobbySpawn(Random.new(3))
+	S.CharacterService.placeFacing(bot, spot, ArenaLayout.CourtFocus)
+	local look = bot.root.CFrame.LookVector
+	local want = Vector3.new(ArenaLayout.CourtFocus.X - spot.X, 0, ArenaLayout.CourtFocus.Z - spot.Z).Unit
+	local dot = look:Dot(want)
+	ready(bot, point("Red", 0, 20))
+	assertTrue(dot > 0.98, ("hub spawn faces %.0f° away from the court"):format(math.deg(math.acos(math.clamp(dot, -1, 1)))))
+end)
+
+test("hub sits level with the court, beside it, across the void gap", function()
+	local A = Config.Arena
+	assertTrue(math.abs(A.LobbyOrigin.Y - A.Origin.Y) < 1, "hub is not level with the court")
+	-- no deck corner may come within LobbyGap of the court or either jail strip
+	local hx, hz = A.LobbySize.X / 2, A.LobbySize.Z / 2
+	local courtHalfZ = ArenaLayout.HalfLength + Config.Jail.Gap + Config.Jail.StripDepth
+	for _, c in { { -hx, -hz }, { hx, -hz }, { -hx, hz }, { hx, hz } } do
+		local p = ArenaLayout.LobbyFrame * Vector3.new(c[1], 0, c[2])
+		local rel = p - A.Origin
+		local dx = math.max(0, math.abs(rel.X) - ArenaLayout.HalfWidth)
+		local dz = math.max(0, math.abs(rel.Z) - courtHalfZ)
+		assertTrue(math.max(dx, dz) >= A.LobbyGap - 0.5, ("deck corner only %.1f from the court"):format(math.max(dx, dz)))
+	end
+	-- and it's next to the court: the court-side edge faces the middle of the court within the gap
+	local front = ArenaLayout.lobbyPoint(0, 0, hz)
+	local toCourt = (Vector3.new(A.Origin.X, front.Y, A.Origin.Z) - front).Magnitude
+	assertTrue(toCourt <= ArenaLayout.HalfWidth + A.LobbyGap + 1, ("hub is %.0f studs from the court centre"):format(toCourt))
+	-- a match ball over the hub is out; the ball net only stops practice balls
+	assertTrue(ArenaLayout.inLobby(ArenaLayout.CourtFocus) == false, "court centre counts as hub")
+end)
+
 test("no constraint, ball or bot build-up", function()
 	local rigs, sockets = 0, 0
 	for _, d in Workspace:GetDescendants() do
@@ -499,6 +655,81 @@ test("daily reward: pays once per UTC day, ladder advances, missed day resets", 
 	assertTrue(c.profile.LoginStreak.day == 1, "day 7 did not wrap to day 1")
 end)
 
+test("daily spin: one free spin a day, paid spins cost coins and are capped, duplicates pay coins", function()
+	local SP = Config.Spin
+	local c: any = {
+		id = 900001,
+		profileLoaded = true,
+		inMatch = false,
+		status = "Lobby",
+		profile = { Coins = 0, OwnedCosmetics = {}, Equipped = {}, Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} } },
+	}
+	local preview = S.SpinService.wheel(c)
+	assertTrue(#preview == SP.Slots, "wheel has the wrong number of slots")
+	local r1 = S.SpinService.spin(c, "Free")
+	assertTrue(r1 and r1.ok, "free spin refused")
+	assertTrue(r1.slots[r1.index] == r1.id and r1.id == preview[r1.index], "prize isn't the wheel slot the client was shown")
+	assertTrue(c.profile.OwnedCosmetics[r1.id] == true, "prize not granted")
+	assertTrue(S.SpinService.spin(c, "Free") == nil, "second free spin the same day")
+	assertTrue(S.SpinService.spin(c, "Coins") == nil, "paid spin with no coins")
+	c.profile.Coins = SP.ExtraSpinCost * (SP.MaxPaidPerDay + 1)
+	local before = c.profile.Coins
+	assertTrue(S.SpinService.spin(c, "Coins") ~= nil, "paid spin refused")
+	assertTrue(c.profile.Coins <= before - SP.ExtraSpinCost + SP.DuplicateCoins.Legendary, "paid spin didn't cost coins")
+	for _ = 2, SP.MaxPaidPerDay do
+		S.SpinService.spin(c, "Coins")
+	end
+	assertTrue(S.SpinService.spin(c, "Coins") == nil, "paid spins aren't capped")
+	-- own everything: a spin pays duplicate coins and grants nothing new
+	c.profile.Spin.date = "2000-01-01" -- a new UTC day: the free spin is back
+	for _, item in Catalog.Items do
+		c.profile.OwnedCosmetics[item.Id] = true
+	end
+	local coins = c.profile.Coins
+	local r2 = S.SpinService.spin(c, "Free")
+	assertTrue(r2 and r2.duplicate and r2.coins == SP.DuplicateCoins[r2.rarity], "duplicate didn't pay coins")
+	assertTrue(c.profile.Coins == coins + r2.coins, "duplicate coins not added")
+	-- only the hub
+	c.status, c.inMatch = "Active", true
+	c.profile.Spin.date = "2000-01-01"
+	assertTrue(S.SpinService.spin(c, "Free") == nil, "spun during a match")
+end)
+
+test("daily spin: wheels follow the rarity weights", function()
+	local counts: { [string]: number } = { Common = 0, Rare = 0, Epic = 0, Legendary = 0 }
+	local total = 0
+	for i = 1, 400 do
+		local c: any = { id = 800000 + i, profile = { Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} } } }
+		for _, id in S.SpinService.wheel(c) do
+			counts[Catalog.rarity(Catalog.get(id) :: any)] += 1
+			total += 1
+		end
+	end
+	local W = Config.Spin.RarityWeights
+	local sum = W.Common + W.Rare + W.Epic + W.Legendary
+	for r, n in counts do
+		local want = W[r] / sum
+		local got = n / total
+		assertTrue(math.abs(got - want) < 0.04, ("%s is %.1f%% of slots, expected %.1f%%"):format(r, got * 100, want * 100))
+	end
+end)
+
+test("save schema v5 migration keeps v4 data and adds the daily spin", function()
+	local migrated = S.DataService.migrate({
+		SchemaVersion = 4,
+		Coins = 1234,
+		OwnedCosmetics = { Skin_Lime = true },
+		Equipped = { BallSkin = "Skin_Lime" },
+		Level = 7,
+	})
+	assertTrue(migrated.SchemaVersion == Config.Data.SchemaVersion and Config.Data.SchemaVersion >= 5, "schema not bumped")
+	assertTrue(migrated.Coins == 1234 and migrated.Level == 7, "v4 data lost")
+	assertTrue(migrated.OwnedCosmetics.Skin_Lime == true and migrated.Equipped.BallSkin == "Skin_Lime", "cosmetics lost")
+	assertTrue(type(migrated.Spin) == "table" and migrated.Spin.freeUsed == false, "no spin state")
+	local v1 = S.DataService.migrate({ SchemaVersion = 1, Coins = 5 })
+	assertTrue(v1.Spin ~= nil and v1.LoginStreak ~= nil, "v1 profile not fully migrated")
+end)
+
 test("sudden death: jail closes (no returns, no new prisoners)", function()
 	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
 	S.MatchService.debugForceSuddenDeath()
@@ -542,9 +773,18 @@ test("finisher plays on the match-ending knockout, then the match ends", functio
 	assertTrue(waitUntil(function()
 		return ms:GetAttribute("State") == "Finisher"
 	end, 2), "no finisher phase")
+	-- then the winners' victory poses, lined up on their half, before the match ends
+	assertTrue(waitUntil(function()
+		return ms:GetAttribute("State") == "Victory"
+	end, 12), "no victory moment after the finisher")
+	for _, c in S.MatchService.roster() do
+		if c.team == "Red" and S.PlayerStateService.isAlive(c) then
+			assertTrue(ArenaLayout.onHalf("Red", c.root.Position, 0, -1), c.name .. " not lined up on the winning half")
+		end
+	end
 	assertTrue(waitUntil(function()
 		return ms:GetAttribute("State") == "Intermission" or ms:GetAttribute("MatchId") ~= matchId
-	end, 15), "match did not end after the finisher")
+	end, Config.Victory.Duration + 4), "match did not end after the victory poses")
 end)
 
 -- Knockback probe (tuning): real throws at a bot standing at several spots on its half, at min and

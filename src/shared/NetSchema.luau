@@ -22,6 +22,8 @@ NetSchema.Actions = {
 	BuyItem = "BuyItem",
 	EquipItem = "EquipItem",
 	ClaimDaily = "ClaimDaily",
+	Spin = "Spin",
+	Practice = "Practice",
 	Dev = "Dev",
 }
 
@@ -112,6 +114,19 @@ NetSchema.Validators = {
 	end,
 	ClaimDaily = function(_p: any): any
 		return {}
+	end,
+	Spin = function(p: any): any
+		-- paid = true spends coins on an extra spin; otherwise it's the free daily spin
+		if not isTable(p) or (p.paid ~= nil and type(p.paid) ~= "boolean") then
+			return nil
+		end
+		return { paid = p.paid == true }
+	end,
+	Practice = function(p: any): any
+		if not isTable(p) or (p.event ~= "Pickup" and p.event ~= "Throw" and p.event ~= "HitDummy") then
+			return nil
+		end
+		return { event = p.event }
 	end,
 	Dev = function(p: any): any
 		if not isTable(p) or type(p.cmd) ~= "string" or #p.cmd > 32 then

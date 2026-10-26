@@ -221,4 +221,17 @@ function CharacterService.teleport(c: any, pos: Vector3, lookAt: Vector3?)
 	character:PivotTo(CFrame.lookAt(pos, flat))
 end
 
+-- Put someone in the hub (or jail) facing the court, and swing their camera round to look at it
+-- too, so they see the action straight away instead of whatever way they were facing.
+function CharacterService.placeFacing(c: any, pos: Vector3, focus: Vector3)
+	CharacterService.teleport(c, pos, focus)
+	CharacterService.faceCamera(c, focus)
+end
+
+function CharacterService.faceCamera(c: any, focus: Vector3)
+	if c.player then
+		S.NetService.send(c.player, "FaceCourt", { focus = focus })
+	end
+end
+
 return CharacterService

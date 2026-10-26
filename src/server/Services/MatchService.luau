@@ -256,7 +256,7 @@ function MatchService.moveToLobby(c: any)
 		c.humanoid.WalkSpeed = Config.Player.WalkSpeed
 		c.humanoid.JumpPower = Config.Player.JumpPower
 	end
-	S.CharacterService.teleport(c, ArenaLayout.lobbySpawn(rng))
+	S.CharacterService.placeFacing(c, ArenaLayout.lobbySpawn(rng), ArenaLayout.CourtFocus)
 end
 
 local function jailSpot(c: any): Vector3
@@ -326,7 +326,8 @@ local function eliminate(c: any)
 		task.delay(J.RespawnDelay, function()
 			-- the 1.5 s fall-and-splash beat keeps the clippable fall visible
 			if roundId == thisRound and c.status == "Jailed" and not staging and S.PlayerStateService.isAlive(c) then
-				S.CharacterService.teleport(c, jailSpot(c), faceCenter(jailSpot(c)))
+				local spot = jailSpot(c)
+				S.CharacterService.placeFacing(c, spot, faceCenter(spot))
 				S.PlayerStateService.setAction(c, "Idle")
 			end
 		end)
@@ -334,7 +335,7 @@ local function eliminate(c: any)
 		S.PlayerStateService.setStatus(c, "Spectating")
 		task.delay(J.RespawnDelay, function()
 			if c.status == "Spectating" and not staging and S.PlayerStateService.isAlive(c) then
-				S.CharacterService.teleport(c, ArenaLayout.lobbySpawn(rng))
+				S.CharacterService.placeFacing(c, ArenaLayout.lobbySpawn(rng), ArenaLayout.CourtFocus)
 				S.PlayerStateService.setAction(c, "Idle")
 				if c.player then
 					S.NetService.send(c.player, "Hint", { text = "Next round soon", duration = 3 })
@@ -779,6 +780,58 @@ local function playFinisher(killer: any, victim: any, winner: string)
 	staging = false
 end
 
+-- Victory: line the winning team up on its half (facing the center line, where the camera is)
+-- and have everyone strike their equipped pose. Players in the match get a short camera moment;
+-- everyone else just sees the poses. Runs after the finisher and the "WINS!" banner, before results.
+local function playVictory(winner: string)
+	local V = Config.Victory
+	if not V.Enabled then
+		return
+	end
+	local winners = {}
+	for _, c in roster do
+		if c.team == winner and S.PlayerStateService.isAlive(c) then
+			table.insert(winners, c)
+		end
+	end
+	if #winners == 0 then
+		return
+	end
+	setState("Victory", V.Duration)
+	freeze(true)
+	local sign = ArenaLayout.teamSign(winner)
+	local center = ArenaLayout.halfCenter(winner) + Vector3.new(0, 3, 0)
+	local facing = Vector3.new(0, 0, -sign) -- toward the center line
+	local members = {}
+	for i, c in winners do
+		if c.heldBall then
+			S.BallService.drop(c)
+		end
+		-- jailed and spectating winners come back for the photo (an on-court status also keeps them
+		-- visible to players on the court, see HubController)
+		if c.status ~= "Active" then
+			S.PlayerStateService.setStatus(c, "Active")
+		end
+		S.PlayerStateService.setAction(c, "Idle")
+		local x = (i - (#winners + 1) / 2) * V.Spacing
+		local pos = center + Vector3.new(x, 0, 0)
+		S.CharacterService.teleport(c, pos, pos + facing * 10) -- also stands them up if ragdolled
+		table.insert(members, { model = c.character, pose = S.ShopService.victoryPose(c) })
+	end
+	task.wait(0.15) -- let the line-up replicate before clients frame it
+	for _, c in S.PlayerStateService.realPlayers() do
+		S.NetService.send(c.player, "Victory", {
+			winner = winner,
+			members = members,
+			center = center,
+			facing = facing,
+			duration = V.Duration,
+			cinematic = c.inMatch, -- only players in the match get the camera moment
+		})
+	end
+	waitPhase(V.Duration, nil)
+end
+
 local function runMatch(queued: { any })
 	matchId += 1
 	MatchService.setAttr("MatchId", matchId)
@@ -887,7 +940,10 @@ local function runMatch(queued: { any })
 		end
 	end
 	-- the winner banner already played during the final round's resolution, and that wait outlasts
-	-- it, so the results card below never overlaps it
+	-- it, so the results card below never overlaps it. Then the winners' victory poses.
+	if winner then
+		playVictory(winner)
+	end
 	if aborted then
 		banner("MATCH ABORTED", Color3.new(1, 1, 1), 2)
 	end

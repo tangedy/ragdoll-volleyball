@@ -295,6 +295,11 @@ local function onElimination(d: any)
 	end
 end
 
+-- Client-side hits (hub practice dummy) get the same impact effects as server hits.
+function EffectsController.localImpact(d: any)
+	onImpact(d)
+end
+
 -- Studio UI gallery hooks: replay effects with fake event data.
 function EffectsController.previewHit(pos: Vector3, model: Instance?)
 	onImpact({ kind = "Hit", position = pos, ballType = "Standard", direction = Vector3.zAxis, targetModel = model })

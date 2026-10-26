@@ -5,10 +5,12 @@ local CollectionService = game:GetService("CollectionService")
 local Workspace = game:GetService("Workspace")
 
 local ArenaBuilder = require(script.Parent.ArenaBuilder)
+local LobbyBuilder = require(script.Parent.LobbyBuilder)
 
 local ArenaService = {}
 
 local arena: Folder
+local lobby: Folder
 local overtimeSteps = 0
 local stripState: { [BasePart]: { color: Color3, cframe: CFrame } } = {}
 local rimHome: { [BasePart]: CFrame } = {}
@@ -50,6 +52,7 @@ ArenaService.Collidable = nil :: Folder?
 function ArenaService.init(services: any)
 	S = services
 	arena = ArenaBuilder.build()
+	lobby = LobbyBuilder.build()
 	-- The default place template's Baseplate/SpawnLocation sit far below and ruin the floating-void
 	-- look. Hide them for this session only (nothing in the saved place is changed).
 	for _, name in { "Baseplate", "SpawnLocation" } do
@@ -91,9 +94,17 @@ function ArenaService.getOvertimeSteps(): number
 	return overtimeSteps
 end
 
--- Parts a projectile treats as solid scenery.
-function ArenaService.sceneryList(): { Instance }
+-- Parts a projectile treats as solid scenery: the court for match balls, the hub deck for
+-- practice balls. The two never see each other's scenery.
+function ArenaService.sceneryList(context: string?): { Instance }
+	if context == "Lobby" then
+		return { lobby:FindFirstChild("Collidable") :: Instance, lobby:FindFirstChild("Barriers") :: Instance }
+	end
 	return { arena:FindFirstChild("Collidable") :: Instance }
+end
+
+function ArenaService.lobbyFolder(): Folder
+	return lobby
 end
 
 -- Highlight the next unsafe strips (one-second warning), then retract them.

@@ -325,6 +325,7 @@ function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: 
 		t0 = ball.stateAt,
 		thrower = c.player,
 		throwId = throwId,
+		context = ball.context,
 	})
 	-- Explicit initial-overlap handling: a target already inside the ball's sphere is hit now.
 	local targets = S.CombatService.targetsFor(ball)
@@ -373,7 +374,7 @@ local function simulate(ball: Ball, dt: number)
 	local catcher, catchPos = S.CombatService.findCatcher(ball, from, to)
 
 	local targets = S.CombatService.targetsFor(ball)
-	local include: { Instance } = table.clone(S.ArenaService.sceneryList())
+	local include: { Instance } = table.clone(S.ArenaService.sceneryList(ball.context))
 	for _, t in targets do
 		if t.proxy then
 			table.insert(include, t.proxy)
@@ -416,7 +417,9 @@ local function simulate(ball: Ball, dt: number)
 	ball.flightT += dt
 	ball.part.CFrame = CFrame.new(to)
 	local voidY = if ball.context == "Lobby" then ArenaLayout.LobbyVoidY else ArenaLayout.VoidY
-	if ball.flightT > Config.Ball.MaxFlightTime or to.Y < voidY then
+	-- a wild match throw that sails over the hub deck is out (it never flies through hub players)
+	local overHub = ball.context == "Match" and ArenaLayout.inLobby(to, 2) and to.Y < ArenaLayout.SurfaceY + 30
+	if ball.flightT > Config.Ball.MaxFlightTime or to.Y < voidY or overHub then
 		BallService.reset(ball)
 	end
 end
@@ -570,7 +573,9 @@ function BallService.settleTick()
 		if ball.state == "Spent" or ball.state == "Resting" then
 			local part = ball.part
 			local voidY = if ball.context == "Lobby" then ArenaLayout.LobbyVoidY else ArenaLayout.VoidY
-			if part.Position.Y < voidY then
+			-- below the void, or a match ball settled somewhere nobody can reach: put it back in play
+			local stranded = ball.context == "Match" and ball.state == "Resting" and zoneOf(part.Position) == nil
+			if part.Position.Y < voidY or stranded then
 				BallService.reset(ball)
 			elseif
 				ball.state == "Spent"

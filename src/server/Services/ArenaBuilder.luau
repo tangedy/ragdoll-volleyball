@@ -1,5 +1,5 @@
 --!strict
--- Idempotent graybox arena builder (spec §6). Safe to run at server start or from the Studio
+-- Idempotent graybox arena builder (spec §6). The hub deck is built separately by LobbyBuilder. Safe to run at server start or from the Studio
 -- command bar (see tools/BuildGrayboxArena.luau). Rebuilding replaces Workspace.Arena entirely.
 
 local PhysicsService = game:GetService("PhysicsService")
@@ -15,7 +15,7 @@ local J = Config.Jail
 
 local ArenaBuilder = {}
 
-local GROUPS = { "Characters", "Ragdoll", "Barrier", "PlayerWall", "Ball", "EdgeWall", "Ejected" }
+local GROUPS = { "Characters", "Ragdoll", "Barrier", "PlayerWall", "Ball", "EdgeWall", "Ejected", "LobbyNet" }
 
 function ArenaBuilder.setupCollisionGroups()
 	for _, g in GROUPS do
@@ -55,6 +55,13 @@ function ArenaBuilder.setupCollisionGroups()
 	set("Ejected", "Ejected", false)
 	set("Ejected", "Ball", false)
 	set("Ejected", "PlayerWall", false)
+	-- LobbyNet: the hub's court-side ball net. Only balls hit it, so practice throws never land on
+	-- the court, while walkers and flung bodies are unaffected.
+	for _, g in GROUPS do
+		set("LobbyNet", g, false)
+	end
+	set("LobbyNet", "Default", false)
+	set("LobbyNet", "Ball", true)
 end
 
 local function part(props: { [string]: any }, parent: Instance): Part
@@ -464,86 +471,6 @@ function ArenaBuilder.build(): Folder
 		Material = Enum.Material.Neon,
 		Transparency = 0.45,
 	}, decorFolder)
-
-	-- Lobby and practice area.
-	local lo = A.LobbyOrigin
-	local ls = A.LobbySize
-	part({
-		Name = "LobbyFloor",
-		Size = ls,
-		CFrame = CFrame.new(lo.X, lo.Y - ls.Y / 2, lo.Z),
-		Color = Color3.fromRGB(120, 210, 140),
-		Material = Enum.Material.Grass,
-	}, collidable)
-	local wallH = 5
-	for _, spec in
-		{
-			{ Vector3.new(ls.X, wallH, 1), Vector3.new(0, wallH / 2, -ls.Z / 2) },
-			{ Vector3.new(1, wallH, ls.Z), Vector3.new(-ls.X / 2, wallH / 2, 0) },
-			{ Vector3.new(1, wallH, ls.Z), Vector3.new(ls.X / 2, wallH / 2, 0) },
-		}
-	do
-		part({
-			Name = "LobbyWall",
-			Size = spec[1],
-			CFrame = CFrame.new(lo + spec[2]),
-			Color = Color3.fromRGB(90, 170, 110),
-		}, collidable)
-	end
-	-- characters stop before the practice edge; the dummy stands past it, near the open drop
-	part({
-		Name = "LobbyBarrier",
-		Size = Vector3.new(ls.X, A.BarrierHeight, 0.6),
-		CFrame = CFrame.new(lo.X, lo.Y + A.BarrierHeight / 2, lo.Z + ls.Z / 2 - 12),
-		Transparency = 1,
-		CanQuery = false,
-		CanTouch = false,
-		CollisionGroup = "PlayerWall",
-	}, barriers)
-	-- purple neon trim around the hub floor
-	local hubColor = Color3.fromRGB(170, 110, 255)
-	local hubEdges: { { offset: Vector3, length: number, alongZ: boolean } } = {
-		{ offset = Vector3.new(0, 0, -ls.Z / 2), length = ls.X, alongZ = false },
-		{ offset = Vector3.new(0, 0, ls.Z / 2), length = ls.X, alongZ = false },
-		{ offset = Vector3.new(-ls.X / 2, 0, 0), length = ls.Z, alongZ = true },
-		{ offset = Vector3.new(ls.X / 2, 0, 0), length = ls.Z, alongZ = true },
-	}
-	for _, e in hubEdges do
-		rimPiece("HubRim", lo + e.offset + Vector3.new(0, -0.05, 0), e.length, e.alongZ, hubColor, 4, 1.8)
-	end
-
-	-- Hub kiosks: walk up and press the prompt (the same panels open from the HUD buttons).
-	for _, k in
-		{
-			{ name = "ShopKiosk", prompt = "ShopPrompt", text = "SHOP", action = "Open shop", x = -22, color = Color3.fromRGB(230, 120, 40) },
-			{ name = "DailyKiosk", prompt = "DailyPrompt", text = "DAILY", action = "Daily reward", x = 22, color = Color3.fromRGB(60, 150, 230) },
-		}
-	do
-		local kiosk = part({
-			Name = k.name,
-			Size = Vector3.new(8, 7, 3),
-			CFrame = CFrame.new(lo + Vector3.new(k.x, 3.5, -ls.Z / 2 + 4)),
-			Color = k.color,
-			Material = Enum.Material.SmoothPlastic,
-		}, collidable)
-		label(kiosk, k.text, Color3.new(1, 1, 1))
-		local prompt = Instance.new("ProximityPrompt")
-		prompt.Name = k.prompt
-		prompt.ActionText = k.action
-		prompt.ObjectText = k.text
-		prompt.HoldDuration = 0
-		prompt.MaxActivationDistance = 12
-		prompt.RequiresLineOfSight = false
-		prompt.Parent = kiosk
-	end
-
-	local sign = decor({
-		Name = "PracticeSign",
-		Size = Vector3.new(1, 1, 1),
-		Transparency = 1,
-		CFrame = CFrame.new(lo.X, lo.Y + 9, lo.Z + ls.Z / 2 - 6),
-	}, decorFolder)
-	label(sign, "LAUNCH THE DUMMY!", Color3.fromRGB(255, 240, 120))
 
 	arena.Parent = Workspace
 	return arena

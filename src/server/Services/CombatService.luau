@@ -266,6 +266,7 @@ local function scheduleRecovery(c: any)
 			if point then
 				S.RagdollService.recover(c.character, point)
 				S.PlayerStateService.setAction(c, "Idle")
+				c.recoveredAt = now() -- bots single out players who just got up
 				S.AnalyticsService.hitResolved(c, "Recovered")
 				return
 			end

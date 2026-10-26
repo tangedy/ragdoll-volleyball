@@ -170,10 +170,13 @@ local function build()
 	-- Scoreboard
 	local board = Theme.new("Frame", {
 		Name = "Board",
-		Size = UDim2.new(1, 0, 0, 90),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromScale(0.5, 0),
+		Size = UDim2.fromOffset(560, 90),
 		BackgroundTransparency = 1,
 	}, gui)
 	refs.board = board
+	Theme.autoScale(board)
 	teamPlate("Red", board, -44, 1)
 	teamPlate("Blue", board, 44, 0)
 	local timer = Theme.new("Frame", {
@@ -207,6 +210,8 @@ local function build()
 		BackgroundTransparency = 0.35,
 	}, gui)
 	Theme.round(phase)
+	Theme.stroke(phase, Color3.new(1, 1, 1), 1.5, 0.85)
+	Theme.autoScale(phase)
 	refs.phasePill = phase
 	refs.phase = Theme.label(phase, {
 		Size = UDim2.new(1, -24, 1, -8),
@@ -251,10 +256,11 @@ local function build()
 	feedFrame = Theme.new("Frame", {
 		Name = "Feed",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -10, 0, 8),
+		Position = UDim2.new(1, -Theme.Space.M, 0, Theme.Space.S),
 		Size = UDim2.fromOffset(320, 170),
 		BackgroundTransparency = 1,
 	}, gui)
+	Theme.autoScale(feedFrame, 0.95)
 	Theme.new("UIListLayout", {
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Padding = UDim.new(0, 4),
@@ -265,10 +271,11 @@ local function build()
 	local chip = Theme.panel(gui, {
 		Name = "Chip",
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 12, 1, -14),
+		Position = UDim2.new(0, Theme.Space.M, 1, -Theme.Space.M),
 		Size = UDim2.fromOffset(270, 80),
-	}, 20)
+	}, Theme.Radius.L)
 	refs.chip = chip
+	Theme.autoScale(chip, 0.9)
 	local coin = Theme.new("Frame", {
 		Position = UDim2.fromOffset(12, 10),
 		Size = UDim2.fromOffset(44, 44),
@@ -316,7 +323,7 @@ local function build()
 	Theme.gradient(refs.xpBar, Color3.fromRGB(140, 240, 255), Color3.fromRGB(70, 160, 255), 0)
 	refs.saveWarn = Theme.body(gui, {
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 14, 1, -98),
+		Position = UDim2.new(0, Theme.Space.M, 1, -98),
 		Size = UDim2.fromOffset(200, 16),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = Color3.fromRGB(255, 170, 120),
@@ -411,6 +418,7 @@ local function build()
 		Visible = false,
 	}, gui)
 	Theme.round(held)
+	Theme.autoScale(held)
 	refs.held = held
 	refs.heldSwatch = Theme.new("Frame", {
 		Position = UDim2.fromOffset(5, 5),
@@ -427,11 +435,12 @@ local function build()
 	}, 2)
 	local chips = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -16),
+		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L),
 		Size = UDim2.fromOffset(250, 46),
 		BackgroundTransparency = 1,
 	}, gui)
 	refs.chips = chips
+	Theme.autoScale(chips)
 	local function keycap(name: string, key: string, text: string, x: number, color: Color3)
 		local f = Theme.new("Frame", {
 			Name = name,
@@ -480,15 +489,16 @@ local function build()
 	refs.dodgeChip, refs.dodgeKey = keycap("Dodge", "Q", "DODGE", 0, Color3.fromRGB(70, 130, 240))
 	refs.catchChip, refs.catchKey = keycap("Catch", "E", "CATCH", 0.52, Color3.fromRGB(60, 190, 100))
 
-	-- Results card (non-blocking)
+	-- Results card (non-blocking): ribbon title, coins counting up, three stat tiles, XP and streak.
 	local results = Theme.panel(gui, {
 		Name = "Results",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 126),
-		Size = UDim2.fromOffset(380, 200),
+		Size = UDim2.fromOffset(400, 236),
 		Visible = false,
-	}, 20)
+	}, Theme.Radius.XL)
 	refs.results = results
+	Theme.autoScale(results)
 	local ribbon = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.new(0.5, 0, 0, 0),
@@ -496,7 +506,7 @@ local function build()
 		BackgroundColor3 = Color3.new(1, 1, 1),
 		ZIndex = 3,
 	}, results)
-	Theme.corner(ribbon, 14)
+	Theme.corner(ribbon, Theme.Radius.M)
 	refs.ribbonGrad = Theme.gradient(ribbon, C.Gold, C.GoldDark)
 	Theme.stroke(ribbon, C.Ink, 3)
 	refs.resultTitle = Theme.label(ribbon, {
@@ -505,43 +515,115 @@ local function build()
 		Text = "",
 		ZIndex = 4,
 	}, 3)
-	refs.resultCoins = Theme.label(results, {
-		Position = UDim2.fromOffset(16, 34),
-		Size = UDim2.new(1, -32, 0, 50),
-		Text = "+0 COINS",
+	local coinRow = Theme.new("Frame", {
+		Position = UDim2.fromOffset(Theme.Space.L, 36),
+		Size = UDim2.new(1, -Theme.Space.L * 2, 0, 50),
+		BackgroundTransparency = 1,
+	}, results)
+	Theme.coin(coinRow, 40, { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0.5, -110, 0.5, 0) })
+	refs.resultCoins = Theme.label(coinRow, {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0.5, -62, 0.5, 0),
+		Size = UDim2.new(0.5, 62, 1, 0),
+		Text = "+0",
 		TextColor3 = C.Gold,
+		TextXAlignment = Enum.TextXAlignment.Left,
 	}, 3)
-	refs.resultBody = Theme.body(results, {
-		Position = UDim2.fromOffset(16, 90),
-		Size = UDim2.new(1, -32, 1, -100),
-		TextScaled = false,
-		TextSize = 17,
-		TextWrapped = true,
-		TextColor3 = C.Muted,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		Text = "",
+	local statRow = Theme.new("Frame", {
+		Position = UDim2.fromOffset(Theme.Space.L, 94),
+		Size = UDim2.new(1, -Theme.Space.L * 2, 0, 64),
+		BackgroundTransparency = 1,
+	}, results)
+	Theme.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		Padding = UDim.new(0, Theme.Space.S),
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	}, statRow)
+	local chipSize = UDim2.new(1 / 3, -Theme.Space.S * 2 / 3, 1, 0)
+	refs.statHits = Theme.statChip(statRow, "HITS", Color3.fromRGB(255, 120, 90), { Size = chipSize, LayoutOrder = 1 })
+	refs.statCatches = Theme.statChip(statRow, "CATCHES", C.Green, { Size = chipSize, LayoutOrder = 2 })
+	refs.statKOs = Theme.statChip(statRow, "KNOCKOUTS", C.Purple, { Size = chipSize, LayoutOrder = 3 })
+	-- XP + streak footer
+	local footer = Theme.new("Frame", {
+		Position = UDim2.new(0, Theme.Space.L, 1, -64),
+		Size = UDim2.new(1, -Theme.Space.L * 2, 0, 48),
+		BackgroundColor3 = C.Ink,
+		BackgroundTransparency = 0.35,
+	}, results)
+	Theme.corner(footer, Theme.Radius.S)
+	refs.resultLevel = Theme.label(footer, {
+		Position = UDim2.fromOffset(Theme.Space.M, 6),
+		Size = UDim2.new(0.5, -Theme.Space.M, 0, 22),
+		Text = "LEVEL 1",
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, 2)
+	refs.resultXP = Theme.body(footer, {
+		Position = UDim2.fromOffset(Theme.Space.M, 28),
+		Size = UDim2.new(0.5, -Theme.Space.M, 0, 14),
+		Text = "+0 XP",
+		TextColor3 = Color3.fromRGB(140, 240, 255),
+		TextXAlignment = Enum.TextXAlignment.Left,
 	})
+	refs.resultStreak = Theme.label(footer, {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -Theme.Space.M, 0.5, 0),
+		Size = UDim2.new(0.5, -Theme.Space.M, 0, 24),
+		Text = "",
+		TextColor3 = Color3.fromRGB(255, 170, 80),
+		TextXAlignment = Enum.TextXAlignment.Right,
+	}, 2)
+	-- kept for the gallery/debug text path (aborted matches etc.)
+	refs.resultBody = refs.resultXP
 
-	-- Lobby switches
+	-- Hub switches: "Play again" is always in reach; the comfort settings live behind the gear.
 	local lobby = Theme.new("Frame", {
 		Name = "Lobby",
 		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -12, 1, -12),
-		Size = UDim2.fromOffset(200, 132),
+		Position = UDim2.new(1, -Theme.Space.M, 1, -Theme.Space.M),
+		Size = UDim2.fromOffset(220, 150),
 		BackgroundTransparency = 1,
 	}, gui)
-	Theme.new("UIListLayout", { Padding = UDim.new(0, 6), VerticalAlignment = Enum.VerticalAlignment.Bottom }, lobby)
+	Theme.new("UIListLayout", {
+		Padding = UDim.new(0, Theme.Space.S),
+		VerticalAlignment = Enum.VerticalAlignment.Bottom,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, lobby)
 	refs.lobby = lobby
-	local function switch(name: string, initial: boolean, onChange: (boolean) -> ()): (boolean) -> ()
+	Theme.autoScale(lobby, 0.95)
+	-- (no parent at creation: a panel's drop shadow would become a layout item in the list)
+	local settingsCard = Theme.panel(nil, {
+		Name = "Settings",
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 104),
+		Visible = false,
+	}, Theme.Radius.M)
+	settingsCard.Parent = lobby
+	Theme.padding(settingsCard, Theme.Space.S)
+	Theme.new("UIListLayout", { Padding = UDim.new(0, Theme.Space.XS), SortOrder = Enum.SortOrder.LayoutOrder }, settingsCard)
+	Theme.body(settingsCard, {
+		LayoutOrder = 0,
+		Size = UDim2.new(1, 0, 0, 14),
+		Text = "SETTINGS",
+		TextColor3 = C.Gold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+	refs.settingsCard = settingsCard
+	local bottomRow = Theme.new("Frame", {
+		LayoutOrder = 2,
+		Size = UDim2.new(1, 0, 0, 38),
+		BackgroundTransparency = 1,
+	}, lobby)
+	local function switch(parent: Instance, name: string, initial: boolean, onChange: (boolean) -> ()): (boolean) -> ()
 		local state = initial
 		local row = Theme.new("TextButton", {
 			Name = name,
 			Text = "",
 			AutoButtonColor = false,
-			Size = UDim2.new(1, 0, 0, 38),
+			Size = if parent == bottomRow then UDim2.new(1, -46, 1, 0) else UDim2.new(1, 0, 0, 38),
+			LayoutOrder = 1,
 			BackgroundColor3 = C.Ink,
 			BackgroundTransparency = 0.3,
-		}, lobby)
+		}, parent)
 		Theme.round(row)
 		Theme.label(row, {
 			Position = UDim2.fromOffset(14, 9),
@@ -589,7 +671,7 @@ local function build()
 			end
 		end
 	end
-	local setQueue = switch("Play again", true, function(v)
+	local setQueue = switch(bottomRow, "Play again", true, function(v)
 		-- the player's explicit choice; the shop restores this (not a stale value) when it closes
 		player:SetAttribute("QueuePreference", v)
 		Net.request(Net.Actions.SetAutoQueue, { value = v })
@@ -597,11 +679,23 @@ local function build()
 	player:GetAttributeChangedSignal("AutoQueue"):Connect(function()
 		setQueue(player:GetAttribute("AutoQueue") ~= false)
 	end)
-	switch("Camera shake", true, function(v)
+	local gear = Theme.button(bottomRow, "⚙", C.PanelLight, {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.fromOffset(40, 38),
+	})
+	gear.Activated:Connect(function()
+		if settingsCard.Visible and settingsCard:GetAttribute("ThemeOpen") ~= false then
+			Theme.hide(settingsCard)
+		else
+			Theme.show(settingsCard)
+		end
+	end)
+	switch(settingsCard, "Camera shake", true, function(v)
 		HUDController.settings.CameraShake = v
 		Net.request(Net.Actions.SetSetting, { key = "CameraShake", value = v })
 	end)
-	switch("Reduced motion", false, function(v)
+	switch(settingsCard, "Reduced motion", false, function(v)
 		HUDController.settings.ReducedMotion = v
 		Net.request(Net.Actions.SetSetting, { key = "ReducedMotion", value = v })
 	end)
@@ -840,7 +934,10 @@ end
 
 -- Results card -------------------------------------------------------------------------------------
 
+local resultsToken = 0
 local function showResults(data: any, persist: boolean?)
+	resultsToken += 1
+	local token = resultsToken
 	local r = refs.results :: Frame
 	local title = if data.aborted
 		then "MATCH OVER"
@@ -854,41 +951,54 @@ local function showResults(data: any, persist: boolean?)
 		top, bottom = Color3.fromRGB(150, 140, 190), Color3.fromRGB(90, 80, 130)
 	end
 	refs.ribbonGrad.Color = ColorSequence.new(top, bottom)
-	-- the summary is just the title, the coins and the three combat stats
-	local lines = {
-		("Hits %d   ·   Catches %d   ·   Knockouts %d"):format(
-			data.stats.hits,
-			data.stats.catches,
-			data.stats.knockouts
-		),
-	}
-	refs.resultBody.Text = table.concat(lines, "\n")
-	r.Size = UDim2.fromOffset(380, 124)
-	r.Visible = true
-	Theme.pop(r, 0.5, 0.4)
-	-- count the coins up
-	local target = data.coins
+	local stats = data.stats or { hits = 0, catches = 0, knockouts = 0 }
+	refs.statHits.Text = tostring(stats.hits or 0)
+	refs.statCatches.Text = tostring(stats.catches or 0)
+	refs.statKOs.Text = tostring(stats.knockouts or 0)
+	refs.resultLevel.Text = if data.leveledUp then ("LEVEL UP!  %d"):format(data.level or 1) else ("LEVEL %d"):format(data.level or 1)
+	refs.resultLevel.TextColor3 = if data.leveledUp then C.Gold else Color3.new(1, 1, 1)
+	refs.resultXP.Text = ("+%d XP"):format(data.xp or 0)
+	local streak = tonumber(data.streak) or 0
+	refs.resultStreak.Text = if streak >= Config.Progression.StreakFlameAt then ("🔥 %d WIN STREAK"):format(streak) else ""
+	Theme.show(r)
+	-- count the coins up, then pop the stat tiles in one after another
+	local target = data.coins or 0
 	task.spawn(function()
 		local t0 = os.clock()
 		local dur = 0.8
-		while os.clock() - t0 < dur do
+		while os.clock() - t0 < dur and token == resultsToken do
 			local a = (os.clock() - t0) / dur
-			refs.resultCoins.Text = ("+%d COINS"):format(math.floor(target * (1 - (1 - a) ^ 3)))
+			refs.resultCoins.Text = ("+%d"):format(math.floor(target * (1 - (1 - a) ^ 3)))
 			task.wait()
 		end
-		refs.resultCoins.Text = ("+%d COINS"):format(target)
+		refs.resultCoins.Text = ("+%d"):format(target)
 	end)
+	if not HUDController.settings.ReducedMotion then
+		for i, v in { refs.statHits, refs.statCatches, refs.statKOs } do
+			local tile = (v :: TextLabel).Parent :: GuiObject
+			task.delay(0.25 + i * 0.12, function()
+				Theme.pop(tile, 0.5, 0.3)
+			end)
+		end
+		if data.leveledUp then
+			task.delay(0.8, function()
+				Theme.pop(refs.resultLevel, 1.6, 0.4)
+			end)
+		end
+	end
 	SoundController.play(if data.won then "Purchase" else "UIOpen")
 	if not persist then
 		task.delay(Config.Match.ResultsOverlay + 0.6, function()
-			r.Visible = false
+			if token == resultsToken then
+				Theme.hide(r)
+			end
 		end)
 	end
 end
 HUDController.showResults = showResults
 
 function HUDController.hideResults()
-	refs.results.Visible = false
+	Theme.hide(refs.results)
 end
 
 -- Per-frame update ------------------------------------------------------------------------------------
@@ -973,8 +1083,19 @@ local function update()
 	elseif status == "Jailed" then
 		phase = "JAIL: hit an enemy to get back in!"
 	end
+	if state == "Victory" then
+		phase = "🏆 Victory lap!"
+	end
+	if refs.phase.Text ~= phase and phase ~= "" and refs.phasePill.Visible then
+		Theme.pop(refs.phasePill, 0.92, 0.2)
+	end
 	refs.phase.Text = phase
 	refs.phasePill.Visible = phase ~= ""
+	-- stack under the scoreboard, which shrinks on small screens
+	local s = Theme.uiScale()
+	local below = if live then 92 * s else Theme.Space.S
+	refs.phasePill.Position = UDim2.new(0.5, 0, 0, below)
+	refs.results.Position = UDim2.new(0.5, 0, 0, below + (if refs.phasePill.Visible then 34 * s else 0) + 30 * s)
 	refs.lobby.Visible = not live or not inMatch
 	-- on touch screens the action buttons own the bottom-right corner: sit above them
 	refs.lobby.Position = if AimController.lastInput == "Touch"
