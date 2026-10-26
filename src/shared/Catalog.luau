@@ -109,6 +109,14 @@ local items: { Item } = {
 		RobuxProductId = 0,
 		Data = { Module = "Pumpkin", Icon = "🎃" },
 	},
+	{
+		Id = "Finisher_PurpleFlash",
+		Category = "Finisher",
+		Name = "Purple Flash",
+		Price = 4000,
+		RobuxProductId = 0,
+		Data = { Module = "PurpleFlash", Icon = "🟣" },
+	},
 }
 
 local Catalog = {}
