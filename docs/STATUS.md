@@ -1,5 +1,25 @@
 # Implementation status (Oct 24, 2026)
 
+## Oct 26 follow-ups (neon, practice, intro)
+
+- **Neon at 50%:** a client `NeonController` shows every Neon part at `Config.Visuals.NeonIntensity` (0.5), including parts that change colour later (rim pulses, strip warnings, effects, power balls, team bands). The arena's and hub's glow panels and lights are halved too. The server's colours are unchanged.
+- **Signpost:** the boards now hang on the helipad side of the pole, so the pole no longer shows through the text.
+- **Client-side practice** (`PracticeController`, `Config.Practice`):
+  - Each player has their own dummy and two practice balls, simulated locally inside `Workspace.Lobby.Practice`, so they vanish with the hub while you're on the court.
+  - The dummy is built from a template the server parks in `ReplicatedStorage`. Hits ragdoll it locally, with the normal knockback and hit effects. It's in the Default collision group, so no hub wall stops it: it flies off the open end, falls, and a new one stands up after 2 s. If it lands on the deck it stands back up.
+  - The server no longer runs a dummy or practice balls. The only network traffic is the `Practice` remote, which advances the tutorial and the funnel.
+- **Intro poses replace victory poses:**
+  - **When:** at the start of each match (first round only), everyone stands on their spawn doing their equipped intro pose. Match players get a letterboxed dolly across the **Blue** team (2 s), then the **Red** team (2 s), with a team caption and a stinger. Then the normal 3-2-1 countdown.
+  - **End of match:** the old post-match victory moment is gone.
+  - **Where:** `Config.Intro`, `Shared/IntroPoses`, `IntroController`; the shop tab is now "Intro Poses", and TRY still works.
+
+### To check in Studio (follow-ups)
+
+1. **Neon:** the rims, curtains, hub strips and balls should look about half as bright as before.
+2. **Signpost:** the boards should sit in front of the pole when seen from the helipad.
+3. **Practice:** walk to a practice ball, throw at the dummy, and watch it fly off the end and respawn. A second client shouldn't see your dummy or your balls. The tutorial should still advance on pickup, throw and hit.
+4. **Intro:** start a match. You should get 2 s on Blue, 2 s on Red, then 3-2-1, with everyone posing during the pans.
+
 ## Oct 26 hub, bots, spin and victory pass
 
 None of this has been run in Studio yet. It passes `selene` (0 errors, the same 6 style warnings as before) and the strict `luau-lsp` check (no new errors; the only errors left are the 10 that were already in `PurpleFlash.luau`). The F9 suite now has **30 tests** (11 new).

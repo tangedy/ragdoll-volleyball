@@ -654,14 +654,4 @@ function BallService.countPower(team: string): number
 	return n
 end
 
-function BallService.ensurePracticeBall()
-	for _, b in balls do
-		if b.context == "Lobby" then
-			return
-		end
-	end
-	BallService.spawn("Standard", ArenaLayout.PracticeBallHome, "Lobby")
-	BallService.spawn("Standard", ArenaLayout.PracticeBallHome + Vector3.new(6, 0, 0), "Lobby")
-end
-
 return BallService

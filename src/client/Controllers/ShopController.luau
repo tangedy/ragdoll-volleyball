@@ -205,7 +205,7 @@ local function renderGrid()
 				HUDController.hint(("Need %d more coins"):format(item.Price - (profile.coins or 0)), 1.5)
 			end
 		end)
-		-- victory poses can be tried on before buying: you strike it for a moment, locally
+		-- intro poses can be tried on before buying: you strike it for a moment, locally
 		if item.Category == "Pose" then
 			local try = Theme.button(card, "▶ TRY", C.Purple, {
 				AnchorPoint = Vector2.new(1, 0),
@@ -214,8 +214,8 @@ local function renderGrid()
 				ZIndex = 4,
 			})
 			try.Activated:Connect(function()
-				local VictoryController = require(script.Parent.VictoryController) :: any
-				VictoryController.preview(item.Data.Pose)
+				local IntroController = require(script.Parent.IntroController) :: any
+				IntroController.preview(item.Data.Pose)
 				ShopController.openShop(false)
 			end)
 		end

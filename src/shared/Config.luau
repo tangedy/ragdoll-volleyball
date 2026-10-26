@@ -323,15 +323,19 @@ Config.Finisher = {
 	MaxDuration = 5,
 }
 
--- Victory: after the match-winning round (and its finisher), the winning team, bots included, is
--- lined up on its half doing their equipped victory poses while everyone in the match gets a short
--- camera moment. Then the results card shows.
-Config.Victory = {
+-- Match intro (Splatoon-style): when a match starts, both teams stand on their spawns doing their
+-- equipped intro poses while the camera dollies across the first team, then the second, then the
+-- normal 3-2-1 countdown. Only the first round of a match gets the intro.
+Config.Intro = {
 	Enabled = true,
-	Duration = 4, -- seconds of the camera moment
-	Spacing = 5, -- studs between winners in the line-up
-	CameraFrom = { Back = 30, Up = 11 }, -- start: this far in front of the line and up
-	CameraTo = { Back = 15, Up = 4.5 }, -- end: push in to here
+	Order = { "Blue", "Red" },
+	BlueTime = 2,
+	RedTime = 2,
+	CameraBack = 9, -- studs in front of the line-up
+	CameraUp = 2.4, -- above the players' roots (about chest height)
+	PanOvershoot = 3, -- the pan starts/ends this far past the end players
+	LookAhead = 2.5, -- the camera looks this far ahead along the line as it moves
+	FieldOfView = 60,
 }
 
 Config.Net = {

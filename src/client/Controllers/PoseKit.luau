@@ -1,5 +1,5 @@
 --!strict
--- Pose toolkit shared by finishers and victory poses. A pose is a set of segment directions in
+-- Pose toolkit shared by finishers and intro poses. A pose is a set of segment directions in
 -- UpperTorso space (+X = the character's right, -Z = forward, +Y = up), plus optional head and waist
 -- angles. Joint rotations are solved from the rig's own attachments, so poses fit any body shape,
 -- on new (AnimationConstraint) and classic (Motor6D) R15 rigs alike. Holding a pose writes joint
@@ -9,7 +9,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local VictoryPoses = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("VictoryPoses"))
+local IntroPoses = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("IntroPoses"))
 
 local PoseKit = {}
 
@@ -174,8 +174,8 @@ function PoseKit.hold(model: any, poseName: string, blendIn: number?): () -> ()
 	return stop
 end
 
--- Victory pose frames live in Shared.VictoryPoses (shared so the server tests can check them).
-for name, frame in VictoryPoses.Frames do
+-- Intro pose frames live in Shared.IntroPoses (shared so the server tests can check them).
+for name, frame in IntroPoses.Frames do
 	POSES[name] = frame :: any
 end
 
@@ -190,9 +190,9 @@ function PoseKit.stopAll()
 	end
 end
 
--- Loop a victory pose's frames on a character until the returned stop function is called.
+-- Loop an intro pose's frames on a character until the returned stop function is called.
 function PoseKit.playSequence(model: any, poseId: string?): () -> ()
-	local pose = VictoryPoses.get(poseId)
+	local pose = IntroPoses.get(poseId)
 	local running = true
 	local current: (() -> ())? = nil
 	task.spawn(function()

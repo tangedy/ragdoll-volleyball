@@ -57,7 +57,7 @@ local function runFor(seconds: number, fn: (number, number) -> ())
 end
 
 -- Poses -------------------------------------------------------------------------------------------
--- Solved and held by PoseKit (shared with victory poses). The finisher remembers what it started so
+-- Solved and held by PoseKit (shared with intro poses). The finisher remembers what it started so
 -- restore() releases exactly those.
 
 local finisherPoses: { [() -> ()]: boolean } = {}
@@ -495,7 +495,7 @@ function FinisherController.preview(moduleName: string): boolean
 	return true
 end
 
--- Shared with the victory camera moment.
+-- Shared with the match intro camera.
 FinisherController.letterbox = letterbox
 
 function FinisherController.init() end

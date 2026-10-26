@@ -16,7 +16,7 @@ export type MatchStateName =
 	| "RoundActive"
 	| "RoundResolution"
 	| "Finisher"
-	| "Victory"
+	| "Intro"
 
 export type BallState = "Resting" | "Held" | "InFlight" | "Spent" | "Resetting"
 

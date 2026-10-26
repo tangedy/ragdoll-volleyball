@@ -54,12 +54,13 @@ local function dimGlow(d: Instance)
 	if d:GetAttribute("GlowDimmed") then
 		return
 	end
-	if d:IsA("SurfaceGui") and d.LightInfluence == 0 then
-		d:SetAttribute("GlowDimmed", true)
-		d.Brightness *= K
-	elseif d:IsA("PointLight") or d:IsA("SurfaceLight") or d:IsA("SpotLight") then
-		d:SetAttribute("GlowDimmed", true)
-		d.Brightness *= K
+	local glow = (d:IsA("SurfaceGui") and d.LightInfluence == 0)
+		or d:IsA("PointLight")
+		or d:IsA("SurfaceLight")
+		or d:IsA("SpotLight")
+	if glow then
+		d:SetAttribute("GlowDimmed", true);
+		(d :: any).Brightness *= K
 	end
 end
 

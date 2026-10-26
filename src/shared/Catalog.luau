@@ -1,5 +1,5 @@
 --!strict
--- Every cosmetic (ball skins, trails, titles, finishers, victory poses), its coins price and (later)
+-- Every cosmetic (ball skins, trails, titles, finishers, intro poses), its coins price and (later)
 -- its Robux product id. Cosmetics never change
 -- competitive stats: skins apply only to Standard balls so power-up types always stay readable,
 -- and nothing here touches radius, speed, knockback or catch timing (spec §13).
@@ -188,8 +188,8 @@ local items: { Item } = {
 		RobuxProductId = 0,
 		Data = { Module = "BlackHole", Icon = "🕳️" },
 	},
-	-- Victory poses: what you do in the post-match camera moment when your team wins.
-	-- Data.Pose names a pose in Shared.VictoryPoses.
+	-- Intro poses: what you do while the match-start camera pans across your team.
+	-- Data.Pose names a pose in Shared.IntroPoses.
 	{
 		Id = "Pose_Cheer",
 		Category = "Pose",
@@ -221,7 +221,7 @@ Catalog.CategoryNames = {
 	Trail = "Trails",
 	Title = "Titles",
 	Finisher = "Finishers",
-	Pose = "Victory Poses",
+	Pose = "Intro Poses",
 }
 Catalog.Items = items
 

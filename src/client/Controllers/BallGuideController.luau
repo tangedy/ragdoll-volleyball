@@ -63,16 +63,25 @@ local function eligible(ball: BasePart): boolean
 end
 
 local function nearestBall(from: Vector3): BasePart?
+	-- match balls, plus your own client-side practice balls in the hub
+	local containers = {}
 	local balls = Workspace:FindFirstChild("Balls")
-	if not balls then
-		return nil
+	if balls then
+		table.insert(containers, balls)
+	end
+	local lobby = Workspace:FindFirstChild("Lobby")
+	local practice = lobby and lobby:FindFirstChild("Practice")
+	if practice then
+		table.insert(containers, practice)
 	end
 	local best, bestD = nil, math.huge
-	for _, b in balls:GetChildren() do
-		if b:IsA("BasePart") and b.LocalTransparencyModifier < 1 and b.Transparency < 1 and eligible(b) then
-			local d = (b.Position - from).Magnitude
-			if d < bestD then
-				best, bestD = b, d
+	for _, container in containers do
+		for _, b in container:GetChildren() do
+			if b:IsA("BasePart") and b.LocalTransparencyModifier < 1 and b.Transparency < 1 and eligible(b) then
+				local d = (b.Position - from).Magnitude
+				if d < bestD then
+					best, bestD = b, d
+				end
 			end
 		end
 	end

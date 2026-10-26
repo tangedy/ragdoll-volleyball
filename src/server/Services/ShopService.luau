@@ -139,8 +139,8 @@ function ShopService.ballLook(c: any): { color: Color3?, material: Enum.Material
 	return { color = skin.Data.Color, material = skin.Data.Material, trail = trail.Data.Colors }
 end
 
--- The victory pose a combatant strikes when their team wins. Bots show off a random one.
-function ShopService.victoryPose(c: any): string
+-- The intro pose a combatant strikes in the match-start camera pan. Bots show off a random one.
+function ShopService.introPose(c: any): string
 	if c and c.isBot then
 		local poses = Catalog.inCategory("Pose")
 		c.botPose = c.botPose or poses[math.random(1, #poses)].Data.Pose

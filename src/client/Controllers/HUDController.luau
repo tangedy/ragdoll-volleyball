@@ -1083,8 +1083,8 @@ local function update()
 	elseif status == "Jailed" then
 		phase = "JAIL: hit an enemy to get back in!"
 	end
-	if state == "Victory" then
-		phase = "🏆 Victory lap!"
+	if state == "Intro" then
+		phase = "Match starting!"
 	end
 	if refs.phase.Text ~= phase and phase ~= "" and refs.phasePill.Visible then
 		Theme.pop(refs.phasePill, 0.92, 0.2)

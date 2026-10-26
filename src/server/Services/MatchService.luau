@@ -780,56 +780,52 @@ local function playFinisher(killer: any, victim: any, winner: string)
 	staging = false
 end
 
--- Victory: line the winning team up on its half (facing the center line, where the camera is)
--- and have everyone strike their equipped pose. Players in the match get a short camera moment;
--- everyone else just sees the poses. Runs after the finisher and the "WINS!" banner, before results.
-local function playVictory(winner: string)
-	local V = Config.Victory
-	if not V.Enabled then
+-- Intro (Splatoon-style): everyone is already on their spawn facing the center line (resetRound).
+-- Every client plays each player's equipped intro pose; players in the match also get the camera,
+-- which pans across one team, then the other (Config.Intro). The 3-2-1 countdown follows.
+local function playIntro()
+	local I = Config.Intro
+	if not I.Enabled then
 		return
 	end
-	local winners = {}
-	for _, c in roster do
-		if c.team == winner and S.PlayerStateService.isAlive(c) then
-			table.insert(winners, c)
+	local teams = {}
+	local total = 0
+	local times = {}
+	for _, team in I.Order do
+		local members = {}
+		local minX, maxX = math.huge, -math.huge
+		local sumZ, n = 0, 0
+		for _, c in roster do
+			if c.team == team and S.PlayerStateService.isAlive(c) then
+				local pos = c.root.Position
+				minX, maxX = math.min(minX, pos.X), math.max(maxX, pos.X)
+				sumZ += pos.Z
+				n += 1
+				table.insert(members, { model = c.character, pose = S.ShopService.introPose(c) })
+			end
 		end
-	end
-	if #winners == 0 then
-		return
-	end
-	setState("Victory", V.Duration)
-	freeze(true)
-	local sign = ArenaLayout.teamSign(winner)
-	local center = ArenaLayout.halfCenter(winner) + Vector3.new(0, 3, 0)
-	local facing = Vector3.new(0, 0, -sign) -- toward the center line
-	local members = {}
-	for i, c in winners do
-		if c.heldBall then
-			S.BallService.drop(c)
+		if n > 0 then
+			teams[team] = {
+				members = members,
+				center = Vector3.new((minX + maxX) / 2, ArenaLayout.SurfaceY + 3, sumZ / n),
+				facing = Vector3.new(0, 0, -ArenaLayout.teamSign(team)), -- toward the center line
+				halfWidth = (maxX - minX) / 2,
+			}
 		end
-		-- jailed and spectating winners come back for the photo (an on-court status also keeps them
-		-- visible to players on the court, see HubController)
-		if c.status ~= "Active" then
-			S.PlayerStateService.setStatus(c, "Active")
-		end
-		S.PlayerStateService.setAction(c, "Idle")
-		local x = (i - (#winners + 1) / 2) * V.Spacing
-		local pos = center + Vector3.new(x, 0, 0)
-		S.CharacterService.teleport(c, pos, pos + facing * 10) -- also stands them up if ragdolled
-		table.insert(members, { model = c.character, pose = S.ShopService.victoryPose(c) })
+		local t = if team == "Blue" then I.BlueTime else I.RedTime
+		table.insert(times, t)
+		total += t
 	end
-	task.wait(0.15) -- let the line-up replicate before clients frame it
+	setState("Intro", total)
 	for _, c in S.PlayerStateService.realPlayers() do
-		S.NetService.send(c.player, "Victory", {
-			winner = winner,
-			members = members,
-			center = center,
-			facing = facing,
-			duration = V.Duration,
-			cinematic = c.inMatch, -- only players in the match get the camera moment
+		S.NetService.send(c.player, "Intro", {
+			teams = teams,
+			order = I.Order,
+			times = times,
+			cinematic = c.inMatch, -- only players in the match get the camera
 		})
 	end
-	waitPhase(V.Duration, nil)
+	waitPhase(total, nil)
 end
 
 local function runMatch(queued: { any })
@@ -860,8 +856,11 @@ local function runMatch(queued: { any })
 		roundNumber += 1
 		MatchService.setAttr("Round", roundNumber)
 		resetRound()
-		setState("RoundCountdown", M.RoundCountdown)
 		freeze(true)
+		if roundNumber == 1 and draws == 0 then
+			playIntro() -- the first round of a match opens with the team intro
+		end
+		setState("RoundCountdown", M.RoundCountdown)
 		S.BotService.setPaused(false)
 		-- server-driven 3-2-1 so every client shows each tick, then GO! when the round goes live
 		local ok = true
@@ -940,10 +939,7 @@ local function runMatch(queued: { any })
 		end
 	end
 	-- the winner banner already played during the final round's resolution, and that wait outlasts
-	-- it, so the results card below never overlaps it. Then the winners' victory poses.
-	if winner then
-		playVictory(winner)
-	end
+	-- it, so the results card below never overlaps it
 	if aborted then
 		banner("MATCH ABORTED", Color3.new(1, 1, 1), 2)
 	end

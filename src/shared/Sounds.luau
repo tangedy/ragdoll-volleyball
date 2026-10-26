@@ -348,9 +348,10 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 1.9, delay = 0.16 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 2.5, delay = 0.28 },
 	},
-	-- Victory poses
-	Victory = {
-		{ id = S .. "victory.wav", volume = 0.55, pitch = 1 },
+	-- Match intro (each team's shot)
+	IntroStinger = {
+		{ id = S .. "swordslash.wav", volume = 0.35, pitch = 0.9 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 1.5, delay = 0.05 },
 	},
 }
 

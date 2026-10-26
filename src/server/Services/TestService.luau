@@ -410,8 +410,8 @@ test("an elimination pays the eliminator 25 coins instantly", function()
 	ready(victim, point(enemyTeam, 0, 20))
 end)
 
-test("victory poses: a free default, 3+ to unlock, every pose and frame defined", function()
-	local VictoryPoses = require(Shared.VictoryPoses)
+test("intro poses: a free default, 3+ to unlock, every pose and frame defined", function()
+	local IntroPoses = require(Shared.IntroPoses)
 	local items = Catalog.inCategory("Pose")
 	local defaults, paid = 0, 0
 	for _, item in items do
@@ -421,20 +421,24 @@ test("victory poses: a free default, 3+ to unlock, every pose and frame defined"
 		else
 			paid += 1
 		end
-		local pose = VictoryPoses.Poses[item.Data.Pose]
+		local pose = IntroPoses.Poses[item.Data.Pose]
 		assertTrue(pose ~= nil, item.Id .. " names an unknown pose")
 		for _, step in pose.Frames do
-			assertTrue(VictoryPoses.Frames[step.frame] ~= nil, item.Id .. " uses an unknown frame " .. step.frame)
+			assertTrue(IntroPoses.Frames[step.frame] ~= nil, item.Id .. " uses an unknown frame " .. step.frame)
 			assertTrue(step.hold > 0, item.Id .. " has a zero-length frame")
 		end
 	end
 	assertTrue(defaults == 1 and paid >= 3, ("%d default and %d paid poses"):format(defaults, paid))
 	-- equipping is server-checked like any cosmetic: owned or default only
 	local c: any = { profileLoaded = true, inMatch = false, status = "Lobby", profile = { Coins = 0, OwnedCosmetics = {}, Equipped = {}, Level = 1, CurrentWinStreak = 0 } }
-	assertTrue(S.ShopService.victoryPose(c) == VictoryPoses.Default, "default pose not used")
+	assertTrue(S.ShopService.introPose(c) == IntroPoses.Default, "default pose not used")
+	-- the intro pans Blue then Red for 2 s each, before the 3 s countdown
+	local I = Config.Intro
+	assertTrue(I.Order[1] == "Blue" and I.Order[2] == "Red", "intro order isn't Blue then Red")
+	assertTrue(I.BlueTime == 2 and I.RedTime == 2 and Config.Match.RoundCountdown == 3, "intro timings changed")
 	assertTrue(not S.ShopService.equip(c, "Pose_Dab"), "equipped an unowned pose")
 	c.profile.OwnedCosmetics.Pose_Dab = true
-	assertTrue(S.ShopService.equip(c, "Pose_Dab") and S.ShopService.victoryPose(c) == "Dab", "owned pose not equipped")
+	assertTrue(S.ShopService.equip(c, "Pose_Dab") and S.ShopService.introPose(c) == "Dab", "owned pose not equipped")
 end)
 
 test("bots: difficulty mix uses real profiles; new players mostly get Easy bots", function()
@@ -773,18 +777,9 @@ test("finisher plays on the match-ending knockout, then the match ends", functio
 	assertTrue(waitUntil(function()
 		return ms:GetAttribute("State") == "Finisher"
 	end, 2), "no finisher phase")
-	-- then the winners' victory poses, lined up on their half, before the match ends
-	assertTrue(waitUntil(function()
-		return ms:GetAttribute("State") == "Victory"
-	end, 12), "no victory moment after the finisher")
-	for _, c in S.MatchService.roster() do
-		if c.team == "Red" and S.PlayerStateService.isAlive(c) then
-			assertTrue(ArenaLayout.onHalf("Red", c.root.Position, 0, -1), c.name .. " not lined up on the winning half")
-		end
-	end
 	assertTrue(waitUntil(function()
 		return ms:GetAttribute("State") == "Intermission" or ms:GetAttribute("MatchId") ~= matchId
-	end, Config.Victory.Duration + 4), "match did not end after the victory poses")
+	end, 15), "match did not end after the finisher")
 end)
 
 -- Knockback probe (tuning): real throws at a bot standing at several spots on its half, at min and
