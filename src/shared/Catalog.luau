@@ -188,6 +188,22 @@ local items: { Item } = {
 		RobuxProductId = 0,
 		Data = { Module = "BlackHole", Icon = "🕳️" },
 	},
+	{
+		Id = "Finisher_DodgeballRush",
+		Category = "Finisher",
+		Name = "Dodgeball Rush",
+		Price = 4500,
+		RobuxProductId = 0,
+		Data = { Module = "DodgeballRush", Icon = "🥊" },
+	},
+	{
+		Id = "Finisher_OutOfThePark",
+		Category = "Finisher",
+		Name = "Out of the Park!",
+		Price = 5000,
+		RobuxProductId = 0,
+		Data = { Module = "OutOfThePark", Icon = "⚾" },
+	},
 	-- Intro poses: what you do while the match-start camera pans across your team.
 	-- Data.Pose names a pose in Shared.IntroPoses.
 	{
@@ -199,8 +215,22 @@ local items: { Item } = {
 		Default = true,
 		Data = { Pose = "Cheer", Icon = "✊" },
 	},
-	{ Id = "Pose_Wave", Category = "Pose", Name = "Big Wave", Price = 600, RobuxProductId = 0, Data = { Pose = "Wave", Icon = "👋" } },
-	{ Id = "Pose_Flex", Category = "Pose", Name = "Flex", Price = 1200, RobuxProductId = 0, Data = { Pose = "Flex", Icon = "💪" } },
+	{
+		Id = "Pose_Wave",
+		Category = "Pose",
+		Name = "Big Wave",
+		Price = 600,
+		RobuxProductId = 0,
+		Data = { Pose = "Wave", Icon = "👋" },
+	},
+	{
+		Id = "Pose_Flex",
+		Category = "Pose",
+		Name = "Flex",
+		Price = 1200,
+		RobuxProductId = 0,
+		Data = { Pose = "Flex", Icon = "💪" },
+	},
 	{
 		Id = "Pose_Point",
 		Category = "Pose",
@@ -209,8 +239,22 @@ local items: { Item } = {
 		RobuxProductId = 0,
 		Data = { Pose = "Point", Icon = "👉" },
 	},
-	{ Id = "Pose_Bow", Category = "Pose", Name = "Take a Bow", Price = 2500, RobuxProductId = 0, Data = { Pose = "Bow", Icon = "🙇" } },
-	{ Id = "Pose_Dab", Category = "Pose", Name = "Dab", Price = 3000, RobuxProductId = 0, Data = { Pose = "Dab", Icon = "😎" } },
+	{
+		Id = "Pose_Bow",
+		Category = "Pose",
+		Name = "Take a Bow",
+		Price = 2500,
+		RobuxProductId = 0,
+		Data = { Pose = "Bow", Icon = "🙇" },
+	},
+	{
+		Id = "Pose_Dab",
+		Category = "Pose",
+		Name = "Dab",
+		Price = 3000,
+		RobuxProductId = 0,
+		Data = { Pose = "Dab", Icon = "😎" },
+	},
 }
 
 local Catalog = {}

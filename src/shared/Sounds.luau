@@ -19,6 +19,39 @@ export type Layer = {
 
 local S = "rbxasset://sounds/"
 
+-- The ballpark organ's "Charge!" (G C E G . E G), voiced as pings stacked an octave apart. Held notes
+-- re-strike softly so they ring on like an organ; the last one is cut dead at 1.7 s, the instant the
+-- Out of the Park ball hits.
+local function charge(): { Layer }
+	local notes =
+		{ { 0, 0, 0.15 }, { 5, 0.15, 0.15 }, { 9, 0.3, 0.15 }, { 12, 0.45, 0.4 }, { 9, 0.95, 0.15 }, { 12, 1.1, 0.6 } }
+	local layers: { Layer } = {}
+	for _, n in notes do
+		local pitch, at, hold = 2 ^ (n[1] / 12), n[2], n[3]
+		local t = 0
+		while t < hold - 1e-3 do
+			local v = if t == 0 then 1 else 0.55
+			local len = math.min(0.2, hold - t)
+			table.insert(
+				layers,
+				{ id = S .. "electronicpingshort.wav", volume = 0.5 * v, pitch = pitch, delay = at + t, stopAfter = len }
+			)
+			table.insert(
+				layers,
+				{
+					id = S .. "electronicpingshort.wav",
+					volume = 0.2 * v,
+					pitch = pitch * 2,
+					delay = at + t,
+					stopAfter = len,
+				}
+			)
+			t += 0.1
+		end
+	end
+	return layers
+end
+
 local Cues: { [string]: { Layer } } = {
 	-- Combat
 	Throw = {
@@ -217,7 +250,14 @@ local Cues: { [string]: { Layer } } = {
 	-- Purple Flash finisher
 	PurpleOrbs = {
 		-- blue: a sucking sub swell with a glassy whine; red: dry rhythmic cracks and thuds
-		{ id = S .. "bass.wav", volume = 0.9, pitch = 0.3, eq = { low = 10, mid = -6, high = -10 }, reverb = true, stopAfter = 1.3 },
+		{
+			id = S .. "bass.wav",
+			volume = 0.9,
+			pitch = 0.3,
+			eq = { low = 10, mid = -6, high = -10 },
+			reverb = true,
+			stopAfter = 1.3,
+		},
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.8, reverb = true },
 		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 3.2, delay = 0.35, reverb = true },
 		{ id = S .. "snap.wav", volume = 0.5, pitch = 0.9, delay = 0.15, jitter = 0.08 },
@@ -238,30 +278,74 @@ local Cues: { [string]: { Layer } } = {
 		-- lightning striking glass, then the sub-drop as the core stabilises
 		{ id = S .. "snap.wav", volume = 1.0, pitch = 0.55 },
 		{ id = S .. "glassbreak.wav", volume = 0.7, pitch = 0.75 },
-		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.35, delay = 0.04, eq = { low = 12, mid = -4, high = -10 }, distortion = 0.5, reverb = true, stopAfter = 1.0 },
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.35,
+			delay = 0.04,
+			eq = { low = 12, mid = -4, high = -10 },
+			distortion = 0.5,
+			reverb = true,
+			stopAfter = 1.0,
+		},
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 0.45, delay = 0.08, reverb = true },
 	},
 	PurpleSnap = {
 		-- dry finger click, then the shock blast and a tear-away whoosh
 		{ id = S .. "snap.wav", volume = 1.0, pitch = 1.25 },
-		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.6, delay = 0.04, eq = { low = 12, mid = 0, high = -4 }, distortion = 0.7, stopAfter = 0.7 },
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.6,
+			delay = 0.04,
+			eq = { low = 12, mid = 0, high = -4 },
+			distortion = 0.7,
+			stopAfter = 0.7,
+		},
 		{ id = S .. "swordlunge.wav", volume = 0.9, pitch = 0.45, delay = 0.05, distortion = 0.3 },
 		{ id = S .. "collide.wav", volume = 0.6, pitch = 0.5, delay = 0.05 },
 	},
 	PurpleRoar = {
 		-- the projectile tearing through atmosphere, with a fizzing disintegration hiss
 		{ id = S .. "swordlunge.wav", volume = 0.9, pitch = 0.22, reverb = true, distortion = 0.4 },
-		{ id = S .. "bass.wav", volume = 0.9, pitch = 0.32, eq = { low = 10, mid = 0, high = -8 }, distortion = 0.6, stopAfter = 1.6 },
-		{ id = S .. "impact_water.mp3", volume = 0.45, pitch = 1.9, eq = { low = -10, mid = 0, high = 6 }, delay = 0.05, stopAfter = 1.4 },
+		{
+			id = S .. "bass.wav",
+			volume = 0.9,
+			pitch = 0.32,
+			eq = { low = 10, mid = 0, high = -8 },
+			distortion = 0.6,
+			stopAfter = 1.6,
+		},
+		{
+			id = S .. "impact_water.mp3",
+			volume = 0.45,
+			pitch = 1.9,
+			eq = { low = -10, mid = 0, high = 6 },
+			delay = 0.05,
+			stopAfter = 1.4,
+		},
 	},
 	PurpleErase = {
 		{ id = S .. "glassbreak.wav", volume = 0.6, pitch = 0.5, reverb = true },
-		{ id = S .. "impact_water.mp3", volume = 0.5, pitch = 2.2, eq = { low = -10, mid = 0, high = 6 }, stopAfter = 0.9 },
+		{
+			id = S .. "impact_water.mp3",
+			volume = 0.5,
+			pitch = 2.2,
+			eq = { low = -10, mid = 0, high = 6 },
+			stopAfter = 0.9,
+		},
 		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 0.35, delay = 0.05, reverb = true },
 	},
 	PurpleInrush = {
 		-- distant thunder roll, then the air whipping back into the trench
-		{ id = S .. "bass.wav", volume = 0.8, pitch = 0.25, eq = { low = 10, mid = -4, high = -10 }, reverb = true, stopAfter = 1.4 },
+		{
+			id = S .. "bass.wav",
+			volume = 0.8,
+			pitch = 0.25,
+			eq = { low = 10, mid = -4, high = -10 },
+			reverb = true,
+			stopAfter = 1.4,
+		},
 		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.4, delay = 0.45, reverb = true },
 	},
 	-- Black Hole finisher
@@ -297,6 +381,136 @@ local Cues: { [string]: { Layer } } = {
 		},
 		{ id = S .. "swordlunge.wav", volume = 0.5, pitch = 0.3, delay = 0.4, reverb = true },
 		{ id = S .. "HalloweenGhost.wav", volume = 0.3, pitch = 0.5, delay = 0.6, stopAfter = 1.8 },
+	},
+	-- Dodgeball Rush finisher
+	StandSummon = {
+		-- the world drops out, then a crystalline hum swells as the spirit appears
+		{
+			id = S .. "bass.wav",
+			volume = 0.8,
+			pitch = 0.3,
+			eq = { low = 10, mid = -4, high = -10 },
+			reverb = true,
+			stopAfter = 0.9,
+		},
+		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.6, delay = 0.22, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.2, delay = 0.3, reverb = true },
+	},
+	BarrageHit = {
+		{ id = S .. "bass.wav", volume = 0.7, pitch = 2.2, jitter = 0.12, distortion = 0.3, stopAfter = 0.12 },
+		{ id = S .. "hit.wav", volume = 0.45, pitch = 1.1, jitter = 0.15 },
+	},
+	BarrageWhoosh = {
+		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 1.1, jitter = 0.1 },
+	},
+	BarrageFinal = {
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.6,
+			eq = { low = 12, mid = 2, high = -6 },
+			distortion = 0.7,
+			reverb = true,
+		},
+		{ id = S .. "snap.wav", volume = 0.9, pitch = 0.5 },
+		{ id = S .. "glassbreak.wav", volume = 0.4, pitch = 0.8, delay = 0.02 },
+		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.6, delay = 0.1, reverb = true },
+	},
+	CartCrash = {
+		{ id = S .. "metal.ogg", volume = 0.8, pitch = 0.5 },
+		{ id = S .. "collide.wav", volume = 0.7, pitch = 0.7 },
+	},
+	CartSlam = {
+		{ id = S .. "metal.ogg", volume = 1.0, pitch = 0.35, distortion = 0.3, reverb = true },
+		{ id = S .. "bass.wav", volume = 0.7, pitch = 0.7, stopAfter = 0.4, distortion = 0.4 },
+	},
+	-- Out of the Park finisher
+	ParkToss = {
+		{ id = S .. "swordlunge.wav", volume = 0.3, pitch = 1.9, eq = { low = -10, mid = 0, high = 2 } },
+	},
+	ParkCharge = charge(),
+	ParkMorph = {
+		-- a rubbery pop-squeeze, then a magic shimmer
+		{ id = S .. "button.wav", volume = 0.6, pitch = 0.6 },
+		{ id = S .. "snap.wav", volume = 0.6, pitch = 1.6, delay = 0.02 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 2.6, delay = 0.05, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.25, pitch = 3.2, delay = 0.11, reverb = true },
+		{ id = S .. "glassbreak.wav", volume = 0.12, pitch = 2.2, delay = 0.04 },
+	},
+	ParkBatLoad = {
+		{ id = S .. "swordlunge.wav", volume = 0.4, pitch = 0.5, eq = { low = 0, mid = 0, high = -4 } },
+	},
+	ParkSwing = {
+		{ id = S .. "swordlunge.wav", volume = 0.9, pitch = 0.8 },
+		{ id = S .. "swordslash.wav", volume = 0.4, pitch = 0.9, delay = 0.05 },
+	},
+	ParkCrack = {
+		-- wood on leather, with a ringing tail
+		{ id = S .. "snap.wav", volume = 1.0, pitch = 0.7 },
+		{ id = S .. "hit.wav", volume = 0.7, pitch = 0.6 },
+		{ id = S .. "metal.ogg", volume = 0.3, pitch = 1.6, delay = 0.01, reverb = true },
+		{ id = S .. "bass.wav", volume = 0.7, pitch = 1.6, distortion = 0.3, stopAfter = 0.25 },
+	},
+	ParkSmack = {
+		-- a wet, bone-jarring thwack and a metallic sting
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 1.2,
+			eq = { low = 12, mid = 2, high = -4 },
+			distortion = 0.6,
+			stopAfter = 0.5,
+		},
+		{ id = S .. "snap.wav", volume = 1.0, pitch = 0.5 },
+		{ id = S .. "hit.wav", volume = 0.8, pitch = 0.8 },
+		{ id = S .. "impact_water.mp3", volume = 0.5, pitch = 0.8, stopAfter = 0.3 },
+		{ id = S .. "metal.ogg", volume = 0.45, pitch = 2.2, delay = 0.03, reverb = true },
+	},
+	ParkLaunch = {
+		-- shhhhh-FWOOM
+		{ id = S .. "swordlunge.wav", volume = 1.0, pitch = 0.3, distortion = 0.3 },
+		{
+			id = S .. "bass.wav",
+			volume = 0.8,
+			pitch = 0.45,
+			eq = { low = 10, mid = 0, high = -8 },
+			distortion = 0.4,
+			stopAfter = 1.0,
+		},
+	},
+	ParkCheer = {
+		-- the crowd erupting: a fanfare over layered hiss standing in for applause
+		{ id = S .. "victory.wav", volume = 0.5, pitch = 1.0 },
+		{
+			id = S .. "impact_water.mp3",
+			volume = 0.35,
+			pitch = 2.6,
+			eq = { low = -10, mid = 2, high = 4 },
+			reverb = true,
+			stopAfter = 2.4,
+		},
+		{
+			id = S .. "impact_water.mp3",
+			volume = 0.3,
+			pitch = 3.1,
+			delay = 0.15,
+			eq = { low = -10, mid = 2, high = 4 },
+			reverb = true,
+			stopAfter = 2.4,
+		},
+		{
+			id = S .. "impact_water.mp3",
+			volume = 0.25,
+			pitch = 2.2,
+			delay = 0.3,
+			eq = { low = -10, mid = 2, high = 4 },
+			reverb = true,
+			stopAfter = 2.4,
+		},
+	},
+	ParkTwinkle = {
+		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 3.0, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 4.0, delay = 0.07, reverb = true },
 	},
 	PowerUp = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.8 },
