@@ -1,18 +1,24 @@
 --!strict
--- Plays the finisher cutscene for the match-ending knockout (server event "Finisher"). Loads the
--- named module from ReplicatedStorage.Shared.Finishers and always restores the camera and HUD,
--- even if a finisher errors. See Shared/Finishers/README.md for the module contract.
+-- Plays finisher cutscenes: for real on the match-ending knockout (server event "Finisher"), or as
+-- a local-only preview from the shop. Loads the named module from ReplicatedStorage.Shared.Finishers
+-- and always restores the camera, HUD and any poses/effects, even if a finisher errors.
+-- See Shared/Finishers/README.md for the module contract and the toolkit passed in `ctx`.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
 local Net = require(script.Parent.Net)
 local HUDController = require(script.Parent.HUDController)
+local EffectsController = require(script.Parent.EffectsController)
+local SoundController = require(script.Parent.SoundController)
 
 local player = Players.LocalPlayer
-local Finishers = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Finishers")
+local Finishers = Shared:WaitForChild("Finishers")
 
 local FinisherController = {}
 
@@ -48,8 +54,170 @@ local function runFor(seconds: number, fn: (number, number) -> ())
 	end
 end
 
-local function restore()
+-- Poses -------------------------------------------------------------------------------------------
+-- A pose is a set of segment directions in UpperTorso space (+X = the character's right,
+-- -Z = forward, +Y = up). Joint rotations are solved from the rig's own attachments, so poses fit
+-- any body shape, on new (AnimationConstraint) and classic (Motor6D) R15 rigs alike.
+
+type SegmentDirs = { upper: Vector3, fore: Vector3 }
+
+local POSES: { [string]: { Right: SegmentDirs, Left: SegmentDirs } } = {
+	CrossArms = {
+		Right = { upper = Vector3.new(-0.02, -0.72, -0.7), fore = Vector3.new(-1, 0.2, 0.02) },
+		Left = { upper = Vector3.new(0.02, -0.8, -0.6), fore = Vector3.new(1, -0.02, -0.18) },
+	},
+	ArmsUp = {
+		Right = { upper = Vector3.new(0.35, 0.94, 0), fore = Vector3.new(0.2, 1, 0) },
+		Left = { upper = Vector3.new(-0.35, 0.94, 0), fore = Vector3.new(-0.2, 1, 0) },
+	},
+}
+
+type JointInfo = { inst: Instance, f0: CFrame, f1: CFrame }
+
+local function findJoint(model: Model, name: string): JointInfo?
+	for _, d in model:GetDescendants() do
+		if d.Name == name then
+			if d:IsA("AnimationConstraint") and d.Attachment0 and d.Attachment1 then
+				return { inst = d :: Instance, f0 = d.Attachment0.CFrame, f1 = d.Attachment1.CFrame }
+			elseif d:IsA("Motor6D") then
+				return { inst = d :: Instance, f0 = d.C0, f1 = d.C1 }
+			end
+		end
+	end
+	return nil
+end
+
+-- Solve a pose into joint Transforms. Returns { [jointInstance] = Transform }.
+local function solvePose(model: Model, poseName: string): { [Instance]: CFrame }
+	local pose = POSES[poseName]
+	local out: { [Instance]: CFrame } = {}
+	if not pose then
+		return out
+	end
+	for _, side in { "Right", "Left" } do
+		local sh = findJoint(model, side .. "Shoulder")
+		local el = findJoint(model, side .. "Elbow")
+		local wr = findJoint(model, side .. "Wrist")
+		if not (sh and el and wr) then
+			continue
+		end
+		local dirs = (pose :: any)[side] :: SegmentDirs
+		-- rest direction of a segment in its joint frame: toward the next joint along the limb
+		local upperRest = sh.f1:VectorToObjectSpace(el.f0.Position - sh.f1.Position).Unit
+		local tS = CFrame.fromRotationBetweenVectors(upperRest, sh.f0:VectorToObjectSpace(dirs.upper.Unit))
+		out[sh.inst] = tS
+		local upperInTorso = sh.f0 * tS * sh.f1:Inverse()
+		local foreInUpper = upperInTorso:VectorToObjectSpace(dirs.fore.Unit)
+		local foreRest = el.f1:VectorToObjectSpace(wr.f0.Position - el.f1.Position).Unit
+		out[el.inst] = CFrame.fromRotationBetweenVectors(foreRest, el.f0:VectorToObjectSpace(foreInUpper))
+	end
+	return out
+end
+
+local activePoses: { [() -> ()]: boolean } = {}
+
+-- Hold a pose on a character, blending in. Returns a stop function (also called on cleanup).
+local function holdPose(model: any, poseName: string, blendIn: number?): () -> ()
+	if typeof(model) ~= "Instance" or not model:IsA("Model") then
+		return function() end
+	end
+	local targets = solvePose(model, poseName)
+	local start = os.clock()
+	local blend = math.max(blendIn or 0.25, 0.01)
+	local from: { [Instance]: CFrame } = {}
+	for j in targets do
+		from[j] = (j :: any).Transform
+	end
+	local conn = RunService.Stepped:Connect(function()
+		local a = math.clamp((os.clock() - start) / blend, 0, 1)
+		a = 1 - (1 - a) ^ 3
+		for j, cf in targets do
+			if j.Parent then
+				(j :: any).Transform = from[j]:Lerp(cf, a)
+			end
+		end
+	end)
+	local stop
+	stop = function()
+		conn:Disconnect()
+		activePoses[stop] = nil
+	end
+	activePoses[stop] = true
+	return stop
+end
+
+-- Local-only ragdoll for preview stand-ins (the real finisher's victim is launched by the server).
+local function localLaunch(model: Model, velocity: Vector3)
+	for _, d in model:GetDescendants() do
+		if d:IsA("AnimationConstraint") and d.Name ~= "Root" then
+			d.Enabled = false
+		elseif d:IsA("BasePart") then
+			d.Anchored = false
+			if d.Name ~= "HumanoidRootPart" then
+				d.CanCollide = true
+			end
+		end
+	end
+	local h = model:FindFirstChildOfClass("Humanoid")
+	if h then
+		h.PlatformStand = true
+		h:ChangeState(Enum.HumanoidStateType.Physics)
+	end
+	local rng = Random.new()
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.AssemblyLinearVelocity = velocity + Vector3.new(rng:NextNumber(-8, 8), rng:NextNumber(-2, 6), rng:NextNumber(-8, 8))
+			d.AssemblyAngularVelocity = Vector3.new(rng:NextNumber(-8, 8), rng:NextNumber(-8, 8), rng:NextNumber(-8, 8))
+		end
+	end
+end
+
+-- Playback ----------------------------------------------------------------------------------------
+
+-- Cinematic black bars that slide in from the top and bottom.
+local LETTERBOX = 0.11 -- fraction of screen height per bar
+local function letterbox(): (() -> ())
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "Letterbox"
+	gui.IgnoreGuiInset = true
+	gui.ScreenInsets = Enum.ScreenInsets.None
+	gui.DisplayOrder = 15
+	gui.ResetOnSpawn = false
+	gui.Parent = player:WaitForChild("PlayerGui")
+	local bars = {}
+	for _, top in { true, false } do
+		local f = Instance.new("Frame")
+		f.BackgroundColor3 = Color3.new(0, 0, 0)
+		f.BorderSizePixel = 0
+		f.AnchorPoint = Vector2.new(0, if top then 0 else 1)
+		f.Position = UDim2.fromScale(0, if top then 0 else 1)
+		f.Size = UDim2.fromScale(1, 0)
+		f.Parent = gui
+		TweenService:Create(f, TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			Size = UDim2.fromScale(1, LETTERBOX),
+		}):Play()
+		table.insert(bars, f)
+	end
+	return function()
+		for _, f in bars do
+			TweenService:Create(f, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+				Size = UDim2.fromScale(1, 0),
+			}):Play()
+		end
+		task.delay(0.35, function()
+			gui:Destroy()
+		end)
+	end
+end
+
+local function restore(folder: Folder, fov: number, closeBars: () -> ())
+	for stop in activePoses do
+		stop()
+	end
+	folder:Destroy()
+	closeBars()
 	local camera = Workspace.CurrentCamera
+	camera.FieldOfView = fov
 	camera.CameraType = Enum.CameraType.Custom
 	local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if h then
@@ -59,20 +227,49 @@ local function restore()
 	FinisherController.playing = false
 end
 
-local function play(d: any)
-	local moduleScript = Finishers:FindFirstChild(tostring(d.module)) or Finishers:FindFirstChild("Default")
+local function loadModule(name: string): (any?, ModuleScript?)
+	local moduleScript = Finishers:FindFirstChild(name) or Finishers:FindFirstChild(Config.Finisher.DefaultId)
 	if not moduleScript or not moduleScript:IsA("ModuleScript") then
-		return
+		return nil, nil
 	end
 	local ok, def = pcall(require, moduleScript)
 	if not ok or type(def) ~= "table" or type(def.play) ~= "function" then
-		return
+		return nil, nil
 	end
+	return def, moduleScript
+end
+
+-- Duration rule shared with the server: every finisher runs 3-5 seconds.
+function FinisherController.duration(def: any): number
+	return math.clamp(tonumber(def.Duration) or 4, Config.Finisher.MinDuration, Config.Finisher.MaxDuration)
+end
+
+local function play(def: any, d: any, preview: boolean)
 	FinisherController.playing = true
 	HUDController.setCinematic(true)
 	local camera = Workspace.CurrentCamera
 	camera.CameraType = Enum.CameraType.Scriptable
-	local Config = require(ReplicatedStorage.Shared.Config)
+	local fov = camera.FieldOfView
+	local closeBars = letterbox()
+	-- hide name tags (level/name billboards) for a clean cinematic
+	local hiddenTags: { BillboardGui } = {}
+	for _, d in Workspace:GetDescendants() do
+		if d:IsA("BillboardGui") and d.Name == "NameTag" and d.Enabled then
+			d.Enabled = false
+			table.insert(hiddenTags, d)
+		end
+	end
+	local function showTags()
+		for _, tag in hiddenTags do
+			if tag.Parent then
+				tag.Enabled = true
+			end
+		end
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = "FinisherFX"
+	folder.Parent = Workspace
+	local duration = FinisherController.duration(def)
 	local ctx = {
 		camera = camera,
 		killer = d.killer,
@@ -80,14 +277,43 @@ local function play(d: any)
 		killerName = tostring(d.killerName or "?"),
 		victimName = tostring(d.victimName or "?"),
 		winnerColor = if d.winner and Config.Teams[d.winner] then Config.Teams[d.winner].Color else Color3.new(1, 1, 1),
-		duration = tonumber(d.duration) or 3,
+		duration = duration,
+		isPreview = preview,
 		reducedMotion = HUDController.settings.ReducedMotion,
-		banner = function(text: string, color: Color3?, seconds: number?)
-			HUDController.banner(text, color, seconds)
+		folder = folder, -- parent temporary parts here; destroyed when the finisher ends
+		banner = function(text: string, color: Color3?, seconds: number?, sound: string?)
+			HUDController.banner(text, color, seconds, sound)
 		end,
 		runFor = runFor,
 		rootOf = rootOf,
+		pose = holdPose,
+		-- slow in, fast middle, slow out
+		ease = function(a: number): number
+			return if a < 0.5 then 4 * a * a * a else 1 - (-2 * a + 2) ^ 3 / 2
+		end,
+		sound = function(cue: string, at: Vector3?)
+			SoundController.play(cue, at)
+		end,
+		fx = {
+			burst = EffectsController.burst,
+			shockwave = EffectsController.shockwave,
+			flash = EffectsController.flashSphere,
+			shake = EffectsController.addShake,
+			screenFlash = HUDController.flash,
+		},
 	}
+	-- the preview launches its stand-in locally on the same schedule the server uses
+	local stage = def.Stage or {}
+	if preview and typeof(d.victim) == "Instance" then
+		task.delay(tonumber(stage.LaunchDelay) or 1, function()
+			local kr, vr = rootOf(d.killer), rootOf(d.victim)
+			if vr and vr.Parent then
+				local away = if kr then Vector3.new(vr.Position.X - kr.Position.X, 0, vr.Position.Z - kr.Position.Z) else Vector3.zAxis
+				away = if away.Magnitude > 0.1 then away.Unit else Vector3.zAxis
+				localLaunch(d.victim :: Model, away * (tonumber(stage.Out) or 40) + Vector3.new(0, tonumber(stage.Up) or 60, 0))
+			end
+		end)
+	end
 	local finished = false
 	task.spawn(function()
 		local okPlay, err = pcall(def.play, ctx)
@@ -96,20 +322,86 @@ local function play(d: any)
 		end
 		finished = true
 	end)
-	-- hard stop at the server's duration so the next phase is never blocked
-	local deadline = os.clock() + ctx.duration + 0.2
+	-- hard stop at the duration so the match is never blocked
+	local deadline = os.clock() + duration + 0.2
 	while not finished and os.clock() < deadline do
 		task.wait()
 	end
-	restore()
+	restore(folder, fov, closeBars)
+	showTags()
+end
+
+-- Shop preview: plays a finisher on you and a stand-in dummy in the hub. Purely local; nobody
+-- else sees it and nothing on the server changes.
+function FinisherController.preview(moduleName: string): boolean
+	if FinisherController.playing then
+		return false
+	end
+	local character = player.Character
+	local root = rootOf(character)
+	if not character or not root or player:GetAttribute("Status") ~= "Lobby" then
+		return false
+	end
+	local def = loadModule(moduleName)
+	if not def then
+		return false
+	end
+	local template = Workspace:FindFirstChild("Bots") and (Workspace :: any).Bots:FindFirstChild("Practice Dummy")
+	if not template then
+		return false
+	end
+	local wasArchivable = template.Archivable
+	template.Archivable = true
+	local standIn = template:Clone()
+	template.Archivable = wasArchivable
+	standIn.Name = "PreviewStandIn"
+	for _, dsc in standIn:GetDescendants() do
+		if dsc:IsA("BillboardGui") or dsc:IsA("LuaSourceContainer") then
+			dsc:Destroy()
+		elseif dsc:IsA("BasePart") then
+			dsc.Anchored = true
+		end
+	end
+	-- stand it 18 studs in front of you, kept inside the hub
+	local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+	look = if look.Magnitude > 0.1 then look.Unit else Vector3.zAxis
+	local lo = Config.Arena.LobbyOrigin
+	local half = Config.Arena.LobbySize / 2 - Vector3.new(6, 0, 6)
+	local spot = root.Position + look * 18
+	spot = Vector3.new(math.clamp(spot.X, lo.X - half.X, lo.X + half.X), lo.Y + 3, math.clamp(spot.Z, lo.Z - half.Z, lo.Z + half.Z))
+	standIn:PivotTo(CFrame.lookAt(spot, Vector3.new(root.Position.X, spot.Y, root.Position.Z)))
+	standIn.Parent = Workspace
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local walk = humanoid and humanoid.WalkSpeed
+	if humanoid then
+		humanoid.WalkSpeed = 0
+	end
+	play(def, {
+		killer = character,
+		victim = standIn,
+		killerName = player.DisplayName,
+		victimName = "Dummy",
+		winner = player:GetAttribute("Team") ~= "" and player:GetAttribute("Team") or "Red",
+	}, true)
+	if humanoid and walk then
+		humanoid.WalkSpeed = walk
+	end
+	task.delay(0.5, function()
+		standIn:Destroy()
+	end)
+	return true
 end
 
 function FinisherController.init() end
 
 function FinisherController.start()
 	Net.on("Finisher", function(d)
-		if not FinisherController.playing then
-			play(d)
+		if FinisherController.playing then
+			return
+		end
+		local def = loadModule(tostring(d.module))
+		if def then
+			play(def, d, false)
 		end
 	end)
 end

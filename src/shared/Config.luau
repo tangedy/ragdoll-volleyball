@@ -182,7 +182,8 @@ Config.Progression = {
 Config.Finisher = {
 	Enabled = true,
 	DefaultId = "Default",
-	MaxDuration = 6, -- server-side cap; a finisher module's own Duration must be <= this
+	MinDuration = 3, -- every finisher runs 3-5 s (module Duration is clamped to this range)
+	MaxDuration = 5,
 }
 
 Config.Net = {

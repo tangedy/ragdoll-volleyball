@@ -68,6 +68,8 @@ local function gallery(item: string)
 		Shop.openShop(true)
 	elseif item == "Daily" or item == "DailyPanel" then
 		Shop.openDaily(true)
+	elseif string.sub(item, 1, 7) == "Preview" then
+		Shop.previewFinisher({ Data = { Module = string.sub(item, 8) } })
 	elseif item == "DailyClaim" then
 		Shop.openDaily(true)
 		task.delay(0.6, Shop.claimDaily)

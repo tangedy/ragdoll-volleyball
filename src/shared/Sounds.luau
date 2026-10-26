@@ -110,6 +110,22 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "glassbreak.wav", volume = 0.4, pitch = 0.9, delay = 0.05 },
 		{ id = S .. "victory.wav", volume = 0.5, pitch = 1.1, delay = 0.35 },
 	},
+	-- Meteor Strike finisher
+	MeteorCharge = {
+		{ id = S .. "bass.wav", volume = 0.9, pitch = 0.35, eq = { low = 10, mid = 0, high = -10 }, distortion = 0.4, reverb = true, stopAfter = 1.4 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 0.45, delay = 0.25, reverb = true },
+	},
+	MeteorFall = {
+		{ id = S .. "swordlunge.wav", volume = 0.7, pitch = 0.35, eq = { low = 6, mid = 0, high = -4 }, reverb = true },
+		{ id = S .. "swordlunge.wav", volume = 0.5, pitch = 0.5, delay = 0.45, reverb = true },
+		{ id = S .. "bass.wav", volume = 0.6, pitch = 0.5, delay = 0.6, distortion = 0.5, stopAfter = 0.9 },
+	},
+	MeteorImpact = {
+		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.55, eq = { low = 12, mid = 2, high = -6 }, distortion = 0.7, reverb = true },
+		{ id = S .. "collide.wav", volume = 0.8, pitch = 0.6, distortion = 0.3 },
+		{ id = S .. "glassbreak.wav", volume = 0.45, pitch = 0.7, delay = 0.03 },
+		{ id = S .. "impact_water.mp3", volume = 0.4, pitch = 0.6, delay = 0.05, stopAfter = 1.2 },
+	},
 	PowerUp = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.8 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.4, delay = 0.08 },

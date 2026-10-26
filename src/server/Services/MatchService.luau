@@ -664,7 +664,7 @@ local function playFinisher(killer: any, victim: any, winner: string)
 		warn("[Finisher] could not load " .. moduleName)
 		return
 	end
-	local duration = math.clamp(tonumber(def.Duration) or 3, 0.5, Config.Finisher.MaxDuration)
+	local duration = math.clamp(tonumber(def.Duration) or 4, Config.Finisher.MinDuration, Config.Finisher.MaxDuration)
 	staging = true
 	setState("Finisher", duration)
 	freeze(true)

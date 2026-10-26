@@ -181,6 +181,11 @@ local function whiteFlash(model: Instance?)
 	end)
 end
 
+-- Shared with finisher cutscenes (FinisherController's ctx.fx).
+EffectsController.burst = burst
+EffectsController.shockwave = shockwave
+EffectsController.flashSphere = flashSphere
+
 -- Arena rims: pulse brighter for a second (team = nil pulses every rim).
 local rimBase: { [SurfaceGui]: number } = {}
 function EffectsController.pulseRims(team: string?, strength: number, duration: number)

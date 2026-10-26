@@ -93,6 +93,14 @@ local items: { Item } = {
 	-- Data.Module names a module in ReplicatedStorage.Shared.Finishers.
 	{ Id = "Finisher_Default", Category = "Finisher", Name = "Final Knockout", Price = 0, RobuxProductId = 0, Default = true, Data = { Module = "Default" } },
 	{ Id = "Finisher_Spotlight", Category = "Finisher", Name = "Spotlight", Price = 2000, RobuxProductId = 0, Data = { Module = "Spotlight" } },
+	{
+		Id = "Finisher_Meteor",
+		Category = "Finisher",
+		Name = "Meteor Strike",
+		Price = 3000,
+		RobuxProductId = 0,
+		Data = { Module = "Meteor", Icon = "☄️" },
+	},
 }
 
 local Catalog = {}

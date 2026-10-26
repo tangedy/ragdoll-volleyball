@@ -117,7 +117,7 @@ local function preview(item: Catalog.Item, parent: Instance)
 			Theme.label(box, { Size = UDim2.fromScale(1, 0.5), Position = UDim2.fromScale(0, 0.25), Text = "NONE", TextColor3 = C.Muted }, 2)
 		end
 	else
-		local text = if item.Category == "Title" then (if d.Text and d.Text ~= "" then d.Text else "NONE") else "🎬"
+		local text = if item.Category == "Title" then (if d.Text and d.Text ~= "" then d.Text else "NONE") else (d.Icon or "🎬")
 		Theme.label(box, {
 			Size = UDim2.new(1, -12, 0.6, 0),
 			Position = UDim2.new(0, 6, 0.2, 0),
@@ -175,7 +175,37 @@ local function renderGrid()
 				HUDController.hint(("Need %d more coins"):format(item.Price - (profile.coins or 0)), 1.5)
 			end
 		end)
+		-- finishers can be test-driven before buying: plays on you and a stand-in, locally
+		if item.Category == "Finisher" then
+			local prev = Theme.button(card, "▶ PREVIEW", C.Purple, {
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -12, 0, 12),
+				Size = UDim2.fromOffset(96, 30),
+				ZIndex = 4,
+			})
+			prev.Activated:Connect(function()
+				ShopController.previewFinisher(item)
+			end)
+		end
 	end
+end
+
+-- Close the shop, play the finisher preview on yourself, then reopen the shop where you were.
+function ShopController.previewFinisher(item: any)
+	local FinisherController = require(script.Parent.FinisherController) :: any
+	if FinisherController.playing then
+		return
+	end
+	shopPanel.Visible = false
+	task.spawn(function()
+		local ok = FinisherController.preview(item.Data.Module)
+		if not ok then
+			HUDController.hint("Preview works in the hub", 1.5)
+		end
+		if inHub() then
+			ShopController.openShop(true)
+		end
+	end)
 end
 
 local function renderDaily()
@@ -257,7 +287,9 @@ function ShopController.openShop(on: boolean)
 			Net.request(Net.Actions.SetAutoQueue, { value = false })
 		end
 	elseif queueBeforeShop ~= nil then
-		Net.request(Net.Actions.SetAutoQueue, { value = queueBeforeShop })
+		local pref = player:GetAttribute("QueuePreference")
+		local restoreTo = if type(pref) == "boolean" then pref else queueBeforeShop
+		Net.request(Net.Actions.SetAutoQueue, { value = restoreTo })
 		queueBeforeShop = nil
 	end
 end

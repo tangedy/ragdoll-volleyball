@@ -559,6 +559,8 @@ local function build()
 		end
 	end
 	local setQueue = switch("Play again", true, function(v)
+		-- the player's explicit choice; the shop restores this (not a stale value) when it closes
+		player:SetAttribute("QueuePreference", v)
 		Net.request(Net.Actions.SetAutoQueue, { value = v })
 	end)
 	player:GetAttributeChangedSignal("AutoQueue"):Connect(function()
