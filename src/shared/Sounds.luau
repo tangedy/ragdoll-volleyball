@@ -214,6 +214,56 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.3, reverb = true },
 		{ id = S .. "HalloweenGhost.wav", volume = 0.45, pitch = 0.8, delay = 0.2, stopAfter = 1.8, reverb = true },
 	},
+	-- Purple Flash finisher
+	PurpleOrbs = {
+		-- blue: a sucking sub swell with a glassy whine; red: dry rhythmic cracks and thuds
+		{ id = S .. "bass.wav", volume = 0.9, pitch = 0.3, eq = { low = 10, mid = -6, high = -10 }, reverb = true, stopAfter = 1.3 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.8, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 3.2, delay = 0.35, reverb = true },
+		{ id = S .. "snap.wav", volume = 0.5, pitch = 0.9, delay = 0.15, jitter = 0.08 },
+		{ id = S .. "bass.wav", volume = 0.55, pitch = 1.6, delay = 0.3, distortion = 0.4, stopAfter = 0.2 },
+		{ id = S .. "snap.wav", volume = 0.5, pitch = 1.05, delay = 0.5, jitter = 0.08 },
+		{ id = S .. "bass.wav", volume = 0.55, pitch = 1.6, delay = 0.7, distortion = 0.4, stopAfter = 0.2 },
+		{ id = S .. "snap.wav", volume = 0.5, pitch = 0.95, delay = 0.9, jitter = 0.08 },
+		{ id = S .. "bass.wav", volume = 0.55, pitch = 1.6, delay = 1.1, distortion = 0.4, stopAfter = 0.2 },
+	},
+	PurpleSqueeze = {
+		-- sheared steel under compression
+		{ id = S .. "metal.ogg", volume = 0.6, pitch = 0.45, distortion = 0.6, eq = { low = -4, mid = 4, high = 2 } },
+		{ id = S .. "swordslash.wav", volume = 0.4, pitch = 0.35, delay = 0.2, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 0.6, delay = 0.1 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 0.63, delay = 0.1 },
+	},
+	PurpleFuse = {
+		-- lightning striking glass, then the sub-drop as the core stabilises
+		{ id = S .. "snap.wav", volume = 1.0, pitch = 0.55 },
+		{ id = S .. "glassbreak.wav", volume = 0.7, pitch = 0.75 },
+		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.35, delay = 0.04, eq = { low = 12, mid = -4, high = -10 }, distortion = 0.5, reverb = true, stopAfter = 1.0 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 0.45, delay = 0.08, reverb = true },
+	},
+	PurpleSnap = {
+		-- dry finger click, then the shock blast and a tear-away whoosh
+		{ id = S .. "snap.wav", volume = 1.0, pitch = 1.25 },
+		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.6, delay = 0.04, eq = { low = 12, mid = 0, high = -4 }, distortion = 0.7, stopAfter = 0.7 },
+		{ id = S .. "swordlunge.wav", volume = 0.9, pitch = 0.45, delay = 0.05, distortion = 0.3 },
+		{ id = S .. "collide.wav", volume = 0.6, pitch = 0.5, delay = 0.05 },
+	},
+	PurpleRoar = {
+		-- the projectile tearing through atmosphere, with a fizzing disintegration hiss
+		{ id = S .. "swordlunge.wav", volume = 0.9, pitch = 0.22, reverb = true, distortion = 0.4 },
+		{ id = S .. "bass.wav", volume = 0.9, pitch = 0.32, eq = { low = 10, mid = 0, high = -8 }, distortion = 0.6, stopAfter = 1.6 },
+		{ id = S .. "impact_water.mp3", volume = 0.45, pitch = 1.9, eq = { low = -10, mid = 0, high = 6 }, delay = 0.05, stopAfter = 1.4 },
+	},
+	PurpleErase = {
+		{ id = S .. "glassbreak.wav", volume = 0.6, pitch = 0.5, reverb = true },
+		{ id = S .. "impact_water.mp3", volume = 0.5, pitch = 2.2, eq = { low = -10, mid = 0, high = 6 }, stopAfter = 0.9 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 0.35, delay = 0.05, reverb = true },
+	},
+	PurpleInrush = {
+		-- distant thunder roll, then the air whipping back into the trench
+		{ id = S .. "bass.wav", volume = 0.8, pitch = 0.25, eq = { low = 10, mid = -4, high = -10 }, reverb = true, stopAfter = 1.4 },
+		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.4, delay = 0.45, reverb = true },
+	},
 	-- Black Hole finisher
 	BallWhoosh = {
 		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.9 },

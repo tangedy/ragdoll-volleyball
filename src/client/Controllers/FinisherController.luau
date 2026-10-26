@@ -87,6 +87,16 @@ local POSES: { [string]: PoseDef } = {
 		Left = { upper = Vector3.new(-0.45, 0.88, -0.2), fore = Vector3.new(0.65, 0.7, -0.15) },
 		neck = -55,
 	},
+	-- arms flung wide to the sides, palms forward (an orb in each hand)
+	ArmsSpread = {
+		Right = { upper = Vector3.new(1, -0.15, -0.3), fore = Vector3.new(0.85, 0.2, -0.5) },
+		Left = { upper = Vector3.new(-1, -0.15, -0.3), fore = Vector3.new(-0.85, 0.2, -0.5) },
+	},
+	-- right arm straight out, finger pointed at the target
+	PointForward = {
+		Right = { upper = Vector3.new(0.12, -0.05, -1), fore = Vector3.new(0.02, 0.04, -1) },
+		Left = REST_L,
+	},
 	BowHead = { Right = REST_R, Left = REST_L, neck = -60 },
 	-- right arm straight out in front, palm toward something arriving
 	ReachOut = {
