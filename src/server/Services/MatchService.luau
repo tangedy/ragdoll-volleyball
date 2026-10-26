@@ -677,11 +677,14 @@ local function playFinisher(killer: any, victim: any, winner: string)
 		S.CharacterService.teleport(victim, from + Vector3.new(0, 3, 0), from + Vector3.new(0, 3, 0) - outward)
 		local delay = tonumber(stage.LaunchDelay) or 0.8
 		local launch = outward * (tonumber(stage.Out) or 45) + Vector3.new(0, tonumber(stage.Up) or 60, 0)
-		task.delay(delay, function()
-			if victim.character then
-				S.RagdollService.ragdoll(victim.character, launch)
-			end
-		end)
+		-- Stage.Launch = false: the finisher moves the victim itself (client-side puppet)
+		if stage.Launch ~= false then
+			task.delay(delay, function()
+				if victim.character then
+					S.RagdollService.ragdoll(victim.character, launch)
+				end
+			end)
+		end
 	end
 	local payload = {
 		module = moduleScript.Name,

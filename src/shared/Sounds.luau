@@ -126,6 +126,28 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "glassbreak.wav", volume = 0.45, pitch = 0.7, delay = 0.03 },
 		{ id = S .. "impact_water.mp3", volume = 0.4, pitch = 0.6, delay = 0.05, stopAfter = 1.2 },
 	},
+	-- Pumpkin Reaper finisher
+	SpookyToss = {
+		{ id = S .. "swordlunge.wav", volume = 0.5, pitch = 0.8, jitter = 0.05 },
+	},
+	PumpkinCatch = {
+		{ id = S .. "snap.wav", volume = 0.6, pitch = 0.6 },
+		{ id = S .. "bass.wav", volume = 0.5, pitch = 1.2, stopAfter = 0.25 },
+	},
+	PumpkinReveal = {
+		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.4, eq = { low = 10, mid = 0, high = -8 }, distortion = 0.5, reverb = true, stopAfter = 1.2 },
+		{ id = S .. "HalloweenGhost.wav", volume = 0.7, pitch = 1.0, reverb = true, stopAfter = 2.2 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 0.4, delay = 0.05, reverb = true },
+	},
+	UndeadRise = {
+		{ id = S .. "collide.wav", volume = 0.8, pitch = 0.5, distortion = 0.3 },
+		{ id = S .. "bass.wav", volume = 0.8, pitch = 0.55, eq = { low = 10, mid = 0, high = -6 }, stopAfter = 0.7 },
+		{ id = S .. "impact_water.mp3", volume = 0.35, pitch = 0.45, delay = 0.05, stopAfter = 0.8 },
+	},
+	Drag = {
+		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.3, reverb = true },
+		{ id = S .. "HalloweenGhost.wav", volume = 0.45, pitch = 0.8, delay = 0.2, stopAfter = 1.8, reverb = true },
+	},
 	PowerUp = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.8 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.4, delay = 0.08 },

@@ -60,8 +60,13 @@ end
 -- any body shape, on new (AnimationConstraint) and classic (Motor6D) R15 rigs alike.
 
 type SegmentDirs = { upper: Vector3, fore: Vector3 }
+-- arms are optional; `neck` tilts the head in degrees (+ = look up, - = bow down)
+type PoseDef = { Right: SegmentDirs?, Left: SegmentDirs?, neck: number? }
 
-local POSES: { [string]: { Right: SegmentDirs, Left: SegmentDirs } } = {
+local REST_R = { upper = Vector3.new(0.12, -1, 0.02), fore = Vector3.new(0.08, -1, -0.12) }
+local REST_L = { upper = Vector3.new(-0.12, -1, 0.02), fore = Vector3.new(-0.08, -1, -0.12) }
+
+local POSES: { [string]: PoseDef } = {
 	CrossArms = {
 		Right = { upper = Vector3.new(-0.02, -0.72, -0.7), fore = Vector3.new(-1, 0.2, 0.02) },
 		Left = { upper = Vector3.new(0.02, -0.8, -0.6), fore = Vector3.new(1, -0.02, -0.18) },
@@ -70,6 +75,20 @@ local POSES: { [string]: { Right: SegmentDirs, Left: SegmentDirs } } = {
 		Right = { upper = Vector3.new(0.35, 0.94, 0), fore = Vector3.new(0.2, 1, 0) },
 		Left = { upper = Vector3.new(-0.35, 0.94, 0), fore = Vector3.new(-0.2, 1, 0) },
 	},
+	-- hands out in front of the chest, ready to catch
+	Catch = {
+		Right = { upper = Vector3.new(0.3, -0.45, -0.85), fore = Vector3.new(-0.3, 0.2, -1) },
+		Left = { upper = Vector3.new(-0.3, -0.45, -0.85), fore = Vector3.new(0.3, 0.2, -1) },
+		neck = -10,
+	},
+	-- holding something up over a bowed head
+	RaiseOverhead = {
+		Right = { upper = Vector3.new(0.45, 0.88, -0.2), fore = Vector3.new(-0.65, 0.7, -0.15) },
+		Left = { upper = Vector3.new(-0.45, 0.88, -0.2), fore = Vector3.new(0.65, 0.7, -0.15) },
+		neck = -55,
+	},
+	BowHead = { Right = REST_R, Left = REST_L, neck = -60 },
+	LookUp = { Right = REST_R, Left = REST_L, neck = 12 },
 }
 
 type JointInfo = { inst: Instance, f0: CFrame, f1: CFrame }
@@ -95,13 +114,13 @@ local function solvePose(model: Model, poseName: string): { [Instance]: CFrame }
 		return out
 	end
 	for _, side in { "Right", "Left" } do
+		local dirs = (pose :: any)[side] :: SegmentDirs?
 		local sh = findJoint(model, side .. "Shoulder")
 		local el = findJoint(model, side .. "Elbow")
 		local wr = findJoint(model, side .. "Wrist")
-		if not (sh and el and wr) then
+		if not (dirs and sh and el and wr) then
 			continue
 		end
-		local dirs = (pose :: any)[side] :: SegmentDirs
 		-- rest direction of a segment in its joint frame: toward the next joint along the limb
 		local upperRest = sh.f1:VectorToObjectSpace(el.f0.Position - sh.f1.Position).Unit
 		local tS = CFrame.fromRotationBetweenVectors(upperRest, sh.f0:VectorToObjectSpace(dirs.upper.Unit))
@@ -111,22 +130,36 @@ local function solvePose(model: Model, poseName: string): { [Instance]: CFrame }
 		local foreRest = el.f1:VectorToObjectSpace(wr.f0.Position - el.f1.Position).Unit
 		out[el.inst] = CFrame.fromRotationBetweenVectors(foreRest, el.f0:VectorToObjectSpace(foreInUpper))
 	end
+	if pose.neck then
+		local neck = findJoint(model, "Neck")
+		if neck then
+			-- pitch about the torso's right axis, expressed in the neck joint's frame
+			local axis = neck.f0:VectorToObjectSpace(Vector3.xAxis)
+			out[neck.inst] = CFrame.fromAxisAngle(axis, math.rad(pose.neck))
+		end
+	end
 	return out
 end
 
 local activePoses: { [() -> ()]: boolean } = {}
+local poseByModel: { [Instance]: () -> () } = {}
 
--- Hold a pose on a character, blending in. Returns a stop function (also called on cleanup).
+-- Hold a pose on a character, blending in from whatever it is doing now. Starting a new pose on
+-- the same character replaces the old one. Returns a stop function (also called on cleanup).
 local function holdPose(model: any, poseName: string, blendIn: number?): () -> ()
 	if typeof(model) ~= "Instance" or not model:IsA("Model") then
 		return function() end
 	end
+	local previous = poseByModel[model]
 	local targets = solvePose(model, poseName)
 	local start = os.clock()
 	local blend = math.max(blendIn or 0.25, 0.01)
 	local from: { [Instance]: CFrame } = {}
 	for j in targets do
 		from[j] = (j :: any).Transform
+	end
+	if previous then
+		previous()
 	end
 	local conn = RunService.Stepped:Connect(function()
 		local a = math.clamp((os.clock() - start) / blend, 0, 1)
@@ -141,9 +174,45 @@ local function holdPose(model: any, poseName: string, blendIn: number?): () -> (
 	stop = function()
 		conn:Disconnect()
 		activePoses[stop] = nil
+		if poseByModel[model] == stop then
+			poseByModel[model] = nil
+		end
 	end
 	activePoses[stop] = true
+	poseByModel[model] = stop
 	return stop
+end
+
+-- Locally hide parts of a model (whole model, or just the head + hats) until the finisher ends.
+local hidden: { [BasePart]: number } = {}
+local function hideLocal(model: any, headOnly: boolean?)
+	if typeof(model) ~= "Instance" then
+		return
+	end
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			local isHead = d.Name == "Head" or (d.Parent and d.Parent:IsA("Accessory"))
+			if not headOnly or isHead then
+				hidden[d] = hidden[d] or d.LocalTransparencyModifier
+				d.LocalTransparencyModifier = 1
+			end
+		elseif d:IsA("Decal") and (not headOnly or (d.Parent and d.Parent.Name == "Head")) then
+			d.Transparency = 1
+		end
+	end
+end
+local function unhideAll()
+	for part, prev in hidden do
+		if part.Parent then
+			part.LocalTransparencyModifier = prev
+			for _, d in part:GetChildren() do
+				if d:IsA("Decal") then
+					d.Transparency = 0
+				end
+			end
+		end
+	end
+	table.clear(hidden)
 end
 
 -- Local-only ragdoll for preview stand-ins (the real finisher's victim is launched by the server).
@@ -214,6 +283,7 @@ local function restore(folder: Folder, fov: number, closeBars: () -> ())
 	for stop in activePoses do
 		stop()
 	end
+	unhideAll()
 	folder:Destroy()
 	closeBars()
 	local camera = Workspace.CurrentCamera
@@ -279,6 +349,17 @@ local function play(def: any, d: any, preview: boolean)
 		winnerColor = if d.winner and Config.Teams[d.winner] then Config.Teams[d.winner].Color else Color3.new(1, 1, 1),
 		duration = duration,
 		isPreview = preview,
+		-- horizontal direction "off the arena" from the victim (away from the court center, or away
+		-- from you in the preview)
+		outward = (function(): Vector3
+			local vr, kr = rootOf(d.victim), rootOf(d.killer)
+			local from = if preview and kr then kr.Position else Config.Arena.Origin
+			if not vr then
+				return Vector3.zAxis
+			end
+			local v = Vector3.new(vr.Position.X - from.X, 0, vr.Position.Z - from.Z)
+			return if v.Magnitude > 0.1 then v.Unit else Vector3.zAxis
+		end)(),
 		reducedMotion = HUDController.settings.ReducedMotion,
 		folder = folder, -- parent temporary parts here; destroyed when the finisher ends
 		banner = function(text: string, color: Color3?, seconds: number?, sound: string?)
@@ -287,6 +368,12 @@ local function play(def: any, d: any, preview: boolean)
 		runFor = runFor,
 		rootOf = rootOf,
 		pose = holdPose,
+		hideHead = function(model: any)
+			hideLocal(model, true)
+		end,
+		hide = function(model: any)
+			hideLocal(model, false)
+		end,
 		-- slow in, fast middle, slow out
 		ease = function(a: number): number
 			return if a < 0.5 then 4 * a * a * a else 1 - (-2 * a + 2) ^ 3 / 2
@@ -304,7 +391,7 @@ local function play(def: any, d: any, preview: boolean)
 	}
 	-- the preview launches its stand-in locally on the same schedule the server uses
 	local stage = def.Stage or {}
-	if preview and typeof(d.victim) == "Instance" then
+	if preview and typeof(d.victim) == "Instance" and stage.Launch ~= false then
 		task.delay(tonumber(stage.LaunchDelay) or 1, function()
 			local kr, vr = rootOf(d.killer), rootOf(d.victim)
 			if vr and vr.Parent then
