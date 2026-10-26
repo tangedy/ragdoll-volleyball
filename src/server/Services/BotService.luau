@@ -2,8 +2,10 @@
 -- Fill-in bots (Amendment A2). Simple and beatable; they act only through CombatService's do*
 -- functions, so they follow the same rules, projectile pipeline and knockback as players.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserService = game:GetService("UserService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -18,6 +20,8 @@ local B = Config.Bots
 local rng = Random.new()
 local paused = true
 local nameIndex = 0
+-- fetched once at startup from Config.Bots.Avatars: { name, desc } per user, in list order
+local profiles: { { name: string, desc: HumanoidDescription } } = {}
 
 local IDLE_ANIM = "rbxassetid://507766388"
 local WALK_ANIM = "rbxassetid://507777826"
@@ -30,7 +34,45 @@ function BotService.init(services: any)
 	S = services
 end
 
+-- Fetch the bot avatars' display names and HumanoidDescriptions (web calls, so off the main path).
+-- A user that fails to load is skipped; with none loaded, bots keep the gray default look.
+local function loadProfiles()
+	local ids = B.Avatars or {}
+	if #ids == 0 then
+		return
+	end
+	local names: { [number]: string } = {}
+	local ok, infos = pcall(function()
+		return UserService:GetUserInfosByUserIdsAsync(ids)
+	end)
+	if ok and infos then
+		for _, info in infos do
+			names[info.Id] = if info.DisplayName ~= "" then info.DisplayName else info.Username
+		end
+	end
+	local loaded = {}
+	for _, id in ids do
+		local okDesc, desc = pcall(function()
+			return Players:GetHumanoidDescriptionFromUserId(id)
+		end)
+		local name = names[id]
+		if not name then
+			local okName, username = pcall(function()
+				return Players:GetNameFromUserIdAsync(id)
+			end)
+			name = if okName then username else nil
+		end
+		if okDesc and desc and name then
+			table.insert(loaded, { name = name, desc = desc })
+		else
+			warn(("[Bots] couldn't load avatar for user %d"):format(id))
+		end
+	end
+	profiles = loaded
+end
+
 function BotService.start()
+	task.spawn(loadProfiles)
 	task.spawn(function()
 		while true do
 			task.wait(B.TickInterval)
@@ -88,8 +130,14 @@ local function setupAnimation(c: any)
 end
 
 function BotService.create(team: string, roster: { any }): any
-	nameIndex = nameIndex % #B.Names + 1
-	local c = S.PlayerStateService.create(B.Names[nameIndex], nil, true, false)
+	local profile = nil
+	if #profiles > 0 then
+		nameIndex = nameIndex % #profiles + 1
+		profile = profiles[nameIndex]
+	else
+		nameIndex = nameIndex % #B.Names + 1
+	end
+	local c = S.PlayerStateService.create(if profile then profile.name else B.Names[nameIndex], nil, true, false)
 	c.bot = {
 		aimUntil = nil,
 		nextWanderAt = 0,
@@ -100,15 +148,21 @@ function BotService.create(team: string, roster: { any }): any
 	}
 	S.PlayerStateService.setTeam(c, team)
 	local spawn = ArenaLayout.spawnPoints(team, 1)[1]
-	-- neutral default avatar (Amendment A2 "Fairness"), light gray so the team band reads clearly
-	local desc = Instance.new("HumanoidDescription")
-	local gray = Color3.fromRGB(190, 190, 195)
-	desc.HeadColor = gray
-	desc.TorsoColor = gray
-	desc.LeftArmColor = gray
-	desc.RightArmColor = gray
-	desc.LeftLegColor = gray
-	desc.RightLegColor = gray
+	local desc: HumanoidDescription
+	if profile then
+		-- a real avatar (CharacterService normalizes its scale so hitboxes stay fair)
+		desc = profile.desc:Clone()
+	else
+		-- fallback: neutral light gray so the team band reads clearly
+		desc = Instance.new("HumanoidDescription")
+		local gray = Color3.fromRGB(190, 190, 195)
+		desc.HeadColor = gray
+		desc.TorsoColor = gray
+		desc.LeftArmColor = gray
+		desc.RightArmColor = gray
+		desc.LeftLegColor = gray
+		desc.RightLegColor = gray
+	end
 	S.CharacterService.spawn(c, desc, CFrame.new(spawn))
 	setupAnimation(c)
 	c.inMatch = true

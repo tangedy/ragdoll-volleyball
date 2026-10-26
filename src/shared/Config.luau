@@ -146,6 +146,9 @@ Config.Bots = {
 	VoidAvoid = 6,
 	WanderInterval = { 1.5, 3.5 },
 	RewardMultiplier = 0.5,
+	-- bots wear these Roblox users' avatars and display names (in rotation); Names is the fallback
+	-- when a profile can't be fetched
+	Avatars = { 3568710137, 87247403, 1081151462, 765160767, 749465889, 171080174 },
 	Names = { "Bot Bounce", "Bot Bonk", "Bot Zoom", "Bot Wobble", "Bot Pop", "Bot Flop" },
 }
 
