@@ -34,8 +34,18 @@ local feedFrame: Frame
 local pips: { Red: { Frame }, Blue: { Frame } } = { Red = {}, Blue = {} }
 local stars: { Red: { TextLabel }, Blue: { TextLabel } } = { Red = {}, Blue = {} }
 
-local function tween(inst: Instance, t: number, props: { [string]: any }, style: Enum.EasingStyle?, dir: Enum.EasingDirection?)
-	local tw = TweenService:Create(inst, TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+local function tween(
+	inst: Instance,
+	t: number,
+	props: { [string]: any },
+	style: Enum.EasingStyle?,
+	dir: Enum.EasingDirection?
+)
+	local tw = TweenService:Create(
+		inst,
+		TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out),
+		props
+	)
 	tw:Play()
 	return tw
 end
@@ -284,8 +294,14 @@ local function build()
 	Theme.corner(lvl, 12)
 	Theme.gradient(lvl, Theme.lighten(C.Purple, 0.2), C.Purple)
 	Theme.stroke(lvl, C.Ink, 2.5)
-	Theme.body(lvl, { Size = UDim2.new(1, 0, 0, 12), Position = UDim2.fromOffset(0, 3), Text = "LEVEL", TextColor3 = Color3.new(1, 1, 1) })
-	refs.level = Theme.label(lvl, { Size = UDim2.new(1, -8, 1, -18), Position = UDim2.fromOffset(4, 15), Text = "1" }, 2)
+	Theme.body(lvl, {
+		Size = UDim2.new(1, 0, 0, 12),
+		Position = UDim2.fromOffset(0, 3),
+		Text = "LEVEL",
+		TextColor3 = Color3.new(1, 1, 1),
+	})
+	refs.level =
+		Theme.label(lvl, { Size = UDim2.new(1, -8, 1, -18), Position = UDim2.fromOffset(4, 15), Text = "1" }, 2)
 	local xpBack = Theme.new("Frame", {
 		Position = UDim2.new(0, 12, 1, -16),
 		Size = UDim2.new(1, -24, 0, 9),
@@ -325,11 +341,15 @@ local function build()
 	local ring = Theme.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1 }, ret)
 	Theme.round(ring)
 	Theme.stroke(ring, Color3.new(1, 1, 1), 2.5, 0.05)
-	Theme.new("UIStroke", { Color = C.Ink, Thickness = 5, Transparency = 0.6 }, Theme.new("Frame", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		ZIndex = 0,
-	}, ret))
+	Theme.new(
+		"UIStroke",
+		{ Color = C.Ink, Thickness = 5, Transparency = 0.6 },
+		Theme.new("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			ZIndex = 0,
+		}, ret)
+	)
 	for i = 0, 3 do
 		local tick = Theme.new("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -357,7 +377,8 @@ local function build()
 	}, ret)
 	Theme.round(refs.chargeBack)
 	Theme.stroke(refs.chargeBack, Color3.new(1, 1, 1), 1.5, 0.4)
-	refs.chargeFill = Theme.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = Color3.new(1, 1, 1) }, refs.chargeBack)
+	refs.chargeFill =
+		Theme.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = Color3.new(1, 1, 1) }, refs.chargeBack)
 	Theme.round(refs.chargeFill)
 	Theme.gradient(refs.chargeFill, C.Gold, Color3.fromRGB(255, 90, 60), 0)
 	local hm = Theme.new("Frame", {
@@ -430,7 +451,14 @@ local function build()
 		}, f)
 		Theme.corner(kc, 8)
 		Theme.stroke(kc, C.Ink, 2)
-		local keyLabel = Theme.body(kc, { Name = "Key", Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), Text = key, TextColor3 = C.Ink, ZIndex = 4 })
+		local keyLabel = Theme.body(kc, {
+			Name = "Key",
+			Size = UDim2.fromScale(0.8, 0.8),
+			Position = UDim2.fromScale(0.1, 0.1),
+			Text = key,
+			TextColor3 = C.Ink,
+			ZIndex = 4,
+		})
 		Theme.label(f, {
 			Name = "Text",
 			Position = UDim2.fromOffset(44, 9),
@@ -582,13 +610,24 @@ end
 -- Public effects --------------------------------------------------------------------------------------
 
 local bannerToken = 0
--- Big sticker text that slams in, wobbles, and fades.
-function HUDController.banner(text: string, color: Color3?, duration: number?, sound: string?)
+-- Big sticker text that slams in, wobbles, and fades. opts.scale shrinks it (1 = full size);
+-- opts.rich takes the text as rich text with its own <font color> runs (no gradient tint).
+function HUDController.banner(
+	text: string,
+	color: Color3?,
+	duration: number?,
+	sound: string?,
+	opts: { scale: number?, rich: boolean? }?
+)
 	bannerToken += 1
 	local token = bannerToken
 	local b = refs.banner :: TextLabel
 	local col = color or Color3.new(1, 1, 1)
+	local size = opts and opts.scale or 1
+	local rich = opts ~= nil and opts.rich == true
+	b.RichText = rich
 	b.Text = text
+	refs.bannerGrad.Enabled = not rich
 	refs.bannerGrad.Color = ColorSequence.new(Theme.lighten(col, 0.65), col)
 	b.TextTransparency = 0
 	local stroke = b:FindFirstChildOfClass("UIStroke")
@@ -597,12 +636,12 @@ function HUDController.banner(text: string, color: Color3?, duration: number?, s
 	end
 	local reduced = HUDController.settings.ReducedMotion
 	if not reduced then
-		refs.bannerScale.Scale = 1.8
+		refs.bannerScale.Scale = 1.8 * size
 		b.Rotation = math.random(-6, 6)
-		tween(refs.bannerScale, 0.32, { Scale = 1 }, Enum.EasingStyle.Back)
+		tween(refs.bannerScale, 0.32, { Scale = size }, Enum.EasingStyle.Back)
 		tween(b, 0.4, { Rotation = 0 }, Enum.EasingStyle.Back)
 	else
-		refs.bannerScale.Scale = 1
+		refs.bannerScale.Scale = size
 		b.Rotation = 0
 	end
 	SoundController.play(sound or "Banner")
@@ -720,7 +759,11 @@ function HUDController.coinPop(amount: number)
 	Theme.round(coin)
 	Theme.gradient(coin, C.Gold, C.GoldDark)
 	Theme.stroke(coin, Theme.darken(C.GoldDark, 0.5), 3)
-	Theme.label(coin, { Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.15, 0.15), Text = "C", ZIndex = 23 }, 2)
+	Theme.label(
+		coin,
+		{ Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.15, 0.15), Text = "C", ZIndex = 23 },
+		2
+	)
 	local text = Theme.label(holder, {
 		Position = UDim2.fromOffset(64, 0),
 		Size = UDim2.new(1, -64, 1, 0),
@@ -765,7 +808,7 @@ function HUDController.hitmarker()
 	end)
 end
 
--- Finisher cutscenes hide gameplay UI (the banner stays).
+-- Finisher cutscenes hide all gameplay UI, banner included (finishers play without text).
 local CINEMATIC_HIDE = { "MobileControls", "Tutorial", "Reticle", "Spectator" }
 function HUDController.setCinematic(on: boolean)
 	local pg = player:FindFirstChild("PlayerGui")
@@ -782,7 +825,7 @@ function HUDController.setCinematic(on: boolean)
 		end
 	end
 	for _, child in gui:GetChildren() do
-		if child:IsA("GuiObject") and child ~= refs.banner then
+		if child:IsA("GuiObject") then
 			if on then
 				child:SetAttribute("WasVisible", child.Visible)
 				child.Visible = false
@@ -813,7 +856,11 @@ local function showResults(data: any, persist: boolean?)
 	refs.ribbonGrad.Color = ColorSequence.new(top, bottom)
 	-- the summary is just the title, the coins and the three combat stats
 	local lines = {
-		("Hits %d   ·   Catches %d   ·   Knockouts %d"):format(data.stats.hits, data.stats.catches, data.stats.knockouts),
+		("Hits %d   ·   Catches %d   ·   Knockouts %d"):format(
+			data.stats.hits,
+			data.stats.catches,
+			data.stats.knockouts
+		),
 	}
 	refs.resultBody.Text = table.concat(lines, "\n")
 	r.Size = UDim2.fromOffset(380, 124)
@@ -860,7 +907,10 @@ local function update()
 	local left = endsAt - Workspace:GetServerTimeNow()
 	local inMatch = (player:GetAttribute("Team") or "") ~= ""
 	local status = player:GetAttribute("Status")
-	local live = state == "RoundActive" or state == "RoundCountdown" or state == "RoundResolution" or state == "Finisher"
+	local live = state == "RoundActive"
+		or state == "RoundCountdown"
+		or state == "RoundResolution"
+		or state == "Finisher"
 	refs.board.Visible = live
 
 	if live then
@@ -894,11 +944,14 @@ local function update()
 			refs.timerStroke.Color = Color3.fromRGB(255, 60, 60)
 			refs.timerGrad.Color = ColorSequence.new(Color3.fromRGB(220, 50, 50), Color3.fromRGB(110, 10, 30))
 			local pulse = 1 + 0.06 * math.sin(os.clock() * 10)
-			local sc = refs.timer.Parent:FindFirstChildOfClass("UIScale") or Theme.new("UIScale", nil, refs.timer.Parent)
+			local sc = refs.timer.Parent:FindFirstChildOfClass("UIScale")
+				or Theme.new("UIScale", nil, refs.timer.Parent)
 			sc.Scale = if HUDController.settings.ReducedMotion then 1 else pulse
 		else
 			refs.timer.Text = if endsAt > 0 then fmtTime(left) else "--"
-			refs.timer.TextColor3 = if left < 10 and state == "RoundActive" then Color3.fromRGB(255, 120, 100) else Color3.new(1, 1, 1)
+			refs.timer.TextColor3 = if left < 10 and state == "RoundActive"
+				then Color3.fromRGB(255, 120, 100)
+				else Color3.new(1, 1, 1)
 			refs.timerStroke.Color = C.Gold
 			refs.timerGrad.Color = ColorSequence.new(C.PanelLight, C.Ink)
 		end
@@ -924,7 +977,9 @@ local function update()
 	refs.phasePill.Visible = phase ~= ""
 	refs.lobby.Visible = not live or not inMatch
 	-- on touch screens the action buttons own the bottom-right corner: sit above them
-	refs.lobby.Position = if AimController.lastInput == "Touch" then UDim2.new(1, -12, 1, -250) else UDim2.new(1, -12, 1, -12)
+	refs.lobby.Position = if AimController.lastInput == "Touch"
+		then UDim2.new(1, -12, 1, -250)
+		else UDim2.new(1, -12, 1, -12)
 
 	-- reticle + charge
 	local holding = AimController.holding()

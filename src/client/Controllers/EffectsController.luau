@@ -41,7 +41,8 @@ function EffectsController.addShake(amount: number)
 end
 
 local function tween(inst: Instance, t: number, props: { [string]: any }, style: Enum.EasingStyle?)
-	local tw = TweenService:Create(inst, TweenInfo.new(t, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
+	local tw =
+		TweenService:Create(inst, TweenInfo.new(t, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
 	tw:Play()
 	return tw
 end
@@ -247,6 +248,11 @@ local function onImpact(d: any)
 	end
 end
 
+-- names go inside rich text; keep < > & in them from being read as markup
+local function escapeRich(s: string): string
+	return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
+end
+
 local function onElimination(d: any)
 	local pos = if typeof(d.position) == "Vector3" then d.position :: Vector3 else nil
 	local edge = if typeof(d.edge) == "Vector3" then d.edge :: Vector3 else pos
@@ -262,12 +268,22 @@ local function onElimination(d: any)
 	end
 	-- the eliminator: ELIMINATION! + screen flash + every rim flares
 	if d.killer == player then
-		local teamColor = if d.killerTeam and Config.Teams[d.killerTeam] then Config.Teams[d.killerTeam].Color else Color3.new(1, 1, 1)
+		local teamColor = if d.killerTeam and Config.Teams[d.killerTeam]
+			then Config.Teams[d.killerTeam].Color
+			else Color3.new(1, 1, 1)
 		HUDController.flash(Color3.new(1, 1, 1), 0.55, 0.12)
 		task.delay(0.08, function()
 			HUDController.flash(teamColor, 0.35, 0.5)
 		end)
-		HUDController.banner("ELIMINATION!", Color3.fromRGB(255, 225, 90), 1.4, "Elimination")
+		local victimColor = if d.victimTeam and Config.Teams[d.victimTeam]
+			then Config.Teams[d.victimTeam].Color
+			else Color3.new(1, 1, 1)
+		-- "ELIMINATED <name>", the name in the victim's team color
+		local text = ('<font color="#FFE15A">ELIMINATED</font> <font color="#%s">%s</font>'):format(
+			victimColor:ToHex(),
+			escapeRich(tostring(d.victimName or "?"))
+		)
+		HUDController.banner(text, nil, 1.4, "Elimination", { scale = 0.8, rich = true })
 		if type(d.coins) == "number" and d.coins > 0 then
 			task.delay(0.25, function()
 				HUDController.coinPop(d.coins)
@@ -285,7 +301,13 @@ function EffectsController.previewHit(pos: Vector3, model: Instance?)
 end
 
 function EffectsController.previewElimination(team: string)
-	onElimination({ victimName = "Bot", victimTeam = if team == "Red" then "Blue" else "Red", killer = player, killerTeam = team, coins = 25 })
+	onElimination({
+		victimName = "Bot",
+		victimTeam = if team == "Red" then "Blue" else "Red",
+		killer = player,
+		killerTeam = team,
+		coins = 25,
+	})
 end
 
 function EffectsController.init()
@@ -372,7 +394,9 @@ function EffectsController.start()
 			return
 		end
 		local s = shake
-		cam.CFrame = cam.CFrame * CFrame.new((math.random() - 0.5) * s, (math.random() - 0.5) * s, 0) * CFrame.Angles(0, 0, (math.random() - 0.5) * s * 0.03)
+		cam.CFrame = cam.CFrame
+			* CFrame.new((math.random() - 0.5) * s, (math.random() - 0.5) * s, 0)
+			* CFrame.Angles(0, 0, (math.random() - 0.5) * s * 0.03)
 		shake = math.max(0, shake - Config.Camera.ShakeDecay * dt * shake - dt * 0.2)
 	end)
 end

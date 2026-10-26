@@ -50,6 +50,11 @@ function ArenaLayout.inJail(team: string, pos: Vector3): boolean
 	return math.abs(rel.X) <= ArenaLayout.HalfWidth and math.abs(rel.Z) <= J.StripDepth / 2 + 0.5
 end
 
+-- Middle of a team's half, on the court surface.
+function ArenaLayout.halfCenter(team: string): Vector3
+	return A.Origin + Vector3.new(0, 0, ArenaLayout.teamSign(team) * ArenaLayout.HalfLength / 2)
+end
+
 -- Spawn points spread across the width, set back from the center line.
 function ArenaLayout.spawnPoints(team: string, count: number): { Vector3 }
 	local sign = ArenaLayout.teamSign(team)

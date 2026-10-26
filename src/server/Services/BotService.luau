@@ -23,8 +23,15 @@ local nameIndex = 0
 -- fetched once at startup from Config.Bots.Avatars: { name, desc } per user, in list order
 local profiles: { { name: string, desc: HumanoidDescription } } = {}
 
-local IDLE_ANIM = "rbxassetid://507766388"
-local WALK_ANIM = "rbxassetid://507777826"
+-- Roblox's default R15 animation pack, for avatars without their own
+local DEFAULT_ANIMS: { [string]: string } = {
+	idle = "rbxassetid://507766388",
+	walk = "rbxassetid://507777826",
+	run = "rbxassetid://507767714",
+	jump = "rbxassetid://507765000",
+	fall = "rbxassetid://507767968",
+}
+local WALK_SPEED_REF = 16 -- the speed the run animation is authored for
 
 local function now(): number
 	return Workspace:GetServerTimeNow()
@@ -55,7 +62,7 @@ local function loadProfiles()
 		local okDesc, desc = pcall(function()
 			return Players:GetHumanoidDescriptionFromUserId(id)
 		end)
-		local name = names[id]
+		local name: string? = names[id]
 		if not name then
 			local okName, username = pcall(function()
 				return Players:GetNameFromUserIdAsync(id)
@@ -118,14 +125,42 @@ local function setupAnimation(c: any)
 		end)
 		return if ok then track else nil
 	end
-	c.bot.idle = load(IDLE_ANIM)
-	c.bot.walk = load(WALK_ANIM)
-	if c.bot.idle then
-		c.bot.idle.Looped = true
-		c.bot.idle:Play()
+	-- the avatar's own pack where it has one (read off its Animate script), else Roblox's default
+	local ids: { [string]: string } = c.animIds or {}
+	local tracks: { [string]: AnimationTrack } = {}
+	for key, default in DEFAULT_ANIMS do
+		local track = load(ids[key] or default) or (if ids[key] then load(default) else nil)
+		if track then
+			track.Looped = key ~= "jump"
+			track.Priority = if key == "idle" then Enum.AnimationPriority.Idle else Enum.AnimationPriority.Movement
+			tracks[key] = track
+		end
 	end
-	if c.bot.walk then
-		c.bot.walk.Looped = true
+	c.bot.anims = tracks
+	c.bot.playing = nil
+end
+
+-- Cross-fade a bot to one movement animation (idle / run / jump / fall).
+local function playAnim(c: any, key: string, speed: number?)
+	local brain = c.bot
+	local tracks = brain.anims
+	if not tracks then
+		return
+	end
+	local track = tracks[key]
+	if brain.playing ~= key then
+		for k, t in tracks do
+			if k ~= key and t.IsPlaying then
+				t:Stop(0.2)
+			end
+		end
+		if track then
+			track:Play(0.2)
+		end
+		brain.playing = key
+	end
+	if track and speed then
+		track:AdjustSpeed(speed)
 	end
 end
 
@@ -242,7 +277,11 @@ local function nearestEnemy(c: any): any?
 			local d = (o.root.Position - c.root.Position).Magnitude
 			if d < bestDist then
 				-- visible: no scenery between bot and target
-				local hit = Workspace:Raycast(c.root.Position + Vector3.new(0, 1.5, 0), o.root.Position - c.root.Position, params)
+				local hit = Workspace:Raycast(
+					c.root.Position + Vector3.new(0, 1.5, 0),
+					o.root.Position - c.root.Position,
+					params
+				)
 				if not hit then
 					best, bestDist = o, d
 				end
@@ -363,7 +402,11 @@ function BotService.react()
 						local tc = rel:Dot(v) / vv
 						local miss = (rel - v * tc).Magnitude
 						if tc > 0 and tc < 0.7 and miss < 4 then
-							local key = ball.id .. ":" .. tostring(ball.lastThrower and ball.lastThrower.id) .. ":" .. math.floor(ball.stateAt * 10)
+							local key = ball.id
+								.. ":"
+								.. tostring(ball.lastThrower and ball.lastThrower.id)
+								.. ":"
+								.. math.floor(ball.stateAt * 10)
 							if brain.reacted[key] == nil then
 								local roll = rng:NextNumber()
 								brain.reacted[key] = if roll < B.DodgeChance
@@ -409,12 +452,25 @@ function BotService.animate()
 	for _, c in bots() do
 		local brain = c.bot
 		local humanoid = c.humanoid :: Humanoid?
-		if brain and humanoid and brain.walk then
-			local moving = humanoid.MoveDirection.Magnitude > 0.1 and c.action ~= "Ragdolled"
-			if moving and not brain.walk.IsPlaying then
-				brain.walk:Play()
-			elseif not moving and brain.walk.IsPlaying then
-				brain.walk:Stop()
+		if brain and humanoid and brain.anims then
+			local state = humanoid:GetState()
+			if c.action == "Ragdolled" then
+				playAnim(c, "none") -- limp: no animation fights the ragdoll
+			elseif state == Enum.HumanoidStateType.Jumping then
+				playAnim(c, "jump")
+			elseif state == Enum.HumanoidStateType.Freefall then
+				playAnim(c, "fall")
+			elseif c.root and (c.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude > 1.5 then
+				-- (bots walk with MoveTo, which leaves MoveDirection at zero, so go by actual speed)
+				-- walk below jogging pace, run above it, sped up/slowed to match the actual speed
+				local speed = (c.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude
+				if speed < 10 then
+					playAnim(c, "walk", math.max(0.4, speed / (WALK_SPEED_REF / 2)))
+				else
+					playAnim(c, "run", speed / WALK_SPEED_REF)
+				end
+			else
+				playAnim(c, "idle")
 			end
 		end
 	end

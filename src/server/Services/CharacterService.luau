@@ -166,6 +166,15 @@ function CharacterService.spawn(c: any, desc: HumanoidDescription, cf: CFrame)
 		model.Parent = Workspace:FindFirstChild("Bots") or Workspace
 		local animate = model:FindFirstChild("Animate")
 		if animate then
+			-- keep the avatar's animation pack (filled in from the description) for BotService
+			c.animIds = {}
+			for _, key in { "idle", "walk", "run", "jump", "fall" } do
+				local slot = animate:FindFirstChild(key)
+				local anim = slot and slot:FindFirstChildWhichIsA("Animation")
+				if anim and anim.AnimationId ~= "" then
+					c.animIds[key] = anim.AnimationId
+				end
+			end
 			animate:Destroy() -- LocalScript cannot run on a server-owned rig; BotService animates
 		end
 	end

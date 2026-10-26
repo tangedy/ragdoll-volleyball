@@ -232,7 +232,61 @@ end
 -- has no scripts (no Animate fighting us), an anchored root, free-hanging limbs on their joints,
 -- and is purely local (no physics owner, no network). Poses, or a premade animation loaded on its
 -- Animator (e.g. exported from Moon Animator), drive it; it's destroyed when the finisher ends.
-local function standIn(model: any, parent: Instance): Model?
+-- Accessories (hair, hats) and extras like the team band hang off welds, which don't reliably follow
+-- joint-posed limbs. Pin each one to the body part it's welded to, every frame, at its original
+-- offset (scaled with the model, for finishers that shrink it).
+local function attachFollowers(copy: Model)
+	local driven: { [BasePart]: boolean } = {}
+	for _, d in copy:GetDescendants() do
+		if d:IsA("AnimationConstraint") and d.Attachment1 then
+			driven[d.Attachment1.Parent :: BasePart] = true
+		elseif d:IsA("Motor6D") and d.Part1 then
+			driven[d.Part1] = true
+		end
+	end
+	local root = copy:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if root then
+		driven[root] = true
+	end
+	local follow: { { part: BasePart, to: BasePart, offset: CFrame } } = {}
+	local seen: { [BasePart]: boolean } = {}
+	for _, d in copy:GetDescendants() do
+		local a: BasePart?, b: BasePart? = nil, nil
+		if (d:IsA("JointInstance") and not d:IsA("Motor6D")) or d:IsA("WeldConstraint") then
+			a, b = (d :: any).Part0, (d :: any).Part1
+		elseif d:IsA("RigidConstraint") and d.Attachment0 and d.Attachment1 then
+			a, b = d.Attachment0.Parent :: BasePart?, d.Attachment1.Parent :: BasePart?
+		end
+		if a and b then
+			-- the free end is whichever side isn't a posed body part
+			local part, to = if driven[a] then b else a, if driven[a] then a else b
+			if not driven[part] and not seen[part] and part:IsDescendantOf(copy) then
+				seen[part] = true
+				table.insert(follow, { part = part, to = to, offset = to.CFrame:ToObjectSpace(part.CFrame) });
+				(d :: any).Enabled = false
+				part.Anchored = true
+			end
+		end
+	end
+	if #follow == 0 then
+		return
+	end
+	local baseScale = copy:GetScale()
+	local conn
+	conn = RunService.PreRender:Connect(function()
+		if not copy.Parent then
+			conn:Disconnect()
+			return
+		end
+		local scale = copy:GetScale() / baseScale
+		for _, f in follow do
+			local o = f.offset
+			f.part.CFrame = f.to.CFrame * (CFrame.new(o.Position * scale) * o.Rotation)
+		end
+	end)
+end
+
+local function standIn(model: any, parent: Instance, cf: CFrame?): Model?
 	if typeof(model) ~= "Instance" or not model:IsA("Model") then
 		return nil
 	end
@@ -276,8 +330,9 @@ local function standIn(model: any, parent: Instance): Model?
 		h.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	end
 	copy.Name = model.Name .. "_StandIn"
-	copy:PivotTo(model:GetPivot())
+	copy:PivotTo(cf or model:GetPivot())
 	copy.Parent = parent
+	attachFollowers(copy)
 	hideLocal(model, false)
 	return copy
 end
@@ -418,6 +473,18 @@ local function play(def: any, d: any, preview: boolean)
 			end
 		end
 	end
+	-- the server stages both at their court centers; snap them there locally too, so the scene is
+	-- built from those spots even if a position update is still in flight
+	local stagedCF: { [Instance]: CFrame } = {}
+	for _, role in { { d.killer, d.killerCF }, { d.victim, d.victimCF } } do
+		local model, cf = role[1], role[2]
+		if typeof(model) == "Instance" and model:IsA("Model") and typeof(cf) == "CFrame" then
+			stagedCF[model] = cf
+			pcall(function()
+				model:PivotTo(cf)
+			end)
+		end
+	end
 	local folder = Instance.new("Folder")
 	folder.Name = "FinisherFX"
 	folder.Parent = Workspace
@@ -444,14 +511,17 @@ local function play(def: any, d: any, preview: boolean)
 		end)(),
 		reducedMotion = HUDController.settings.ReducedMotion,
 		folder = folder, -- parent temporary parts here; destroyed when the finisher ends
-		banner = function(text: string, color: Color3?, seconds: number?, sound: string?)
-			HUDController.banner(text, color, seconds, sound)
+		-- finishers play without on-screen text; the cue's sound still plays
+		banner = function(_text: string, _color: Color3?, _seconds: number?, sound: string?)
+			if sound then
+				SoundController.play(sound)
+			end
 		end,
 		runFor = runFor,
 		rootOf = rootOf,
 		pose = holdPose,
 		standIn = function(model: any): Model?
-			return standIn(model, folder)
+			return standIn(model, folder, if typeof(model) == "Instance" then stagedCF[model] else nil)
 		end,
 		hideHead = function(model: any)
 			hideLocal(model, true)

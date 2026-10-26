@@ -730,25 +730,22 @@ local function playFinisher(killer: any, victim: any, winner: string)
 	staging = true
 	setState("Finisher", duration)
 	freeze(true)
-	-- stage the victim: back above the spot they fell from, then launched again for the camera
+	-- the court is the set: wherever they really are, the winner stands in the middle of their half
+	-- and the victim in the middle of theirs, facing each other
 	local stage = def.Stage or {}
-	local from = victim.lastCourtPos
-	if victim.character and S.PlayerStateService.isAlive(victim) and from then
-		local outward = Vector3.new(from.X - Config.Arena.Origin.X, 0, from.Z - Config.Arena.Origin.Z)
-		outward = if outward.Magnitude > 0.1 then outward.Unit else Vector3.zAxis
-		-- standing on the court surface (finishers treat the court as their set)
-		local stand = Vector3.new(from.X, ArenaLayout.SurfaceY + 3, from.Z)
-		S.CharacterService.teleport(victim, stand, stand - outward)
-		local delay = tonumber(stage.LaunchDelay) or 0.8
-		local launch = outward * (tonumber(stage.Out) or 45) + Vector3.new(0, tonumber(stage.Up) or 60, 0)
-		-- Stage.Launch = false: the finisher moves the victim itself (client-side puppet)
-		if stage.Launch ~= false then
-			task.delay(delay, function()
-				if victim.character then
-					S.RagdollService.ragdoll(victim.character, launch)
-				end
-			end)
+	local up = Vector3.new(0, 3, 0)
+	local killerAt = ArenaLayout.halfCenter(winner) + up
+	local victimAt = ArenaLayout.halfCenter(victim.team or ArenaLayout.enemyOf(winner)) + up
+	local staged = false
+	for _, c in { killer, victim } do
+		if c.character and S.PlayerStateService.isAlive(c) then
+			local at, facing = if c == killer then killerAt else victimAt, if c == killer then victimAt else killerAt
+			S.CharacterService.teleport(c, at, facing) -- also stands them up if ragdolled
+			staged = true
 		end
+	end
+	if staged then
+		task.wait(0.15) -- let the teleports replicate before clients build the scene
 	end
 	local payload = {
 		module = moduleScript.Name,
@@ -758,11 +755,24 @@ local function playFinisher(killer: any, victim: any, winner: string)
 		victimName = victim.name,
 		winner = winner,
 		duration = duration,
+		killerCF = CFrame.lookAt(killerAt, victimAt),
+		victimCF = CFrame.lookAt(victimAt, killerAt),
 	}
 	for _, c in roster do
 		if c.player then
 			S.NetService.send(c.player, "Finisher", payload)
 		end
+	end
+	-- launched off the far end for the camera; Stage.Launch = false means the finisher moves the
+	-- victim itself (client-side puppet)
+	if stage.Launch ~= false and victim.character and S.PlayerStateService.isAlive(victim) then
+		local outward = Vector3.new(victimAt.X - killerAt.X, 0, victimAt.Z - killerAt.Z).Unit
+		local launch = outward * (tonumber(stage.Out) or 45) + Vector3.new(0, tonumber(stage.Up) or 60, 0)
+		task.delay(tonumber(stage.LaunchDelay) or 0.8, function()
+			if victim.character then
+				S.RagdollService.ragdoll(victim.character, launch)
+			end
+		end)
 	end
 	S.AnalyticsService.event(killer, "FinisherPlayed_" .. moduleScript.Name)
 	waitPhase(duration, nil)
