@@ -1,33 +1,40 @@
 --!strict
 -- Purple Flash: a blue orb (pulls in) and a red orb (pushes out) pop into existence in front of the
--- winner and spiral around each other, tighter and faster, until they clash into a violet
--- singularity. Cut to the victim in dead silence; one second later the camera pulls back as a
--- giant purple blast erupts on them instantly, erasing them and leaving a crater in the court.
+-- winner, then ease into a spiral around each other, tighter and faster, until they clash into a
+-- violet singularity. Cut to the victim in dead silence, pull back, and a thick beam of violet
+-- light tears out of the winner's hand, erasing the victim and carving a hollow path through the
+-- court. The last shot is the winner's own view down the path.
 --
---   0.0-1.9  shot 1, on the winner: the orbs pop in (0.05 / 0.15) and spiral inward, the frame
---            warping and fringing as they close
+--   0.0-0.65 shot 1, on the winner: the orbs pop in (0.05 / 0.15) and hover, swelling
+--   0.65-1.9 the orbs ease into a spiral that tightens and speeds up, the frame warping as they close
 --   1.9      clash: impact frames, the orbs snap into a crackling violet sphere
---   2.6-3.6  shot 2, close on the victim: every sound cut, total silence
---   3.6      shot 3, the camera pulls back hard as the blast fills the frame at full size; the
---            victim breaks into pixels and mist, the crater is punched out
---   3.6-5.0  the blast churns and collapses, mist rises out of the hole
+--   2.6-3.4  shot 2, close on the victim: every sound cut, total silence
+--   3.4-3.6  hard pull-back to a wide side shot of the whole line
+--   3.6      the beam fires at full length instantly; the victim breaks into pixels, the path is
+--            carved out under it
+--   4.05-5.0 the camera swoops into the winner's eyes; the beam thins away, revealing the path
 --
 -- The victim is a local stand-in (the real one is hidden and the server doesn't launch them), so it
--- can be broken apart. The crater is local parts laid over the court.
+-- can be broken apart. The path is local parts laid over the court.
 
 local Lighting = game:GetService("Lighting")
 local SoundService = game:GetService("SoundService")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local POP_BLUE = 0.05
 local POP_RED = 0.15
+local POP_TIME = 0.45
+local ORBIT = 0.65 -- the spiral starts
 local CONTACT = 1.9
 local CUT = 2.6
-local BLAST = 3.6 -- one second of silence after the cut
+local PULL = 3.4 -- 0.8 s on the victim
+local BLAST = 3.6 -- 0.2 s pull-back
+local POV = 4.05
+local POV_TIME = 0.4
 local ORBIT_R = 3.4
-local BLAST_R = 15
-local CRATER_R = 19
+local BEAM_R = 7
+local BEAM_LEN = 220
+local PATH_W = 14
 
 local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
 local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
@@ -37,6 +44,7 @@ local RED = Color3.fromRGB(255, 45, 45)
 local VIOLET = Color3.fromRGB(130, 40, 235)
 local DEEP = Color3.fromRGB(60, 0, 120)
 local LAVENDER = Color3.fromRGB(215, 175, 255)
+local CORE = Color3.fromRGB(250, 240, 255)
 local VOID = Color3.fromRGB(6, 2, 12)
 
 local UP = Vector3.yAxis
@@ -63,10 +71,6 @@ local function emitter(parent: Instance, props: { [string]: any }): ParticleEmit
 	end
 	e.Parent = parent
 	return e
-end
-
-local function tween(inst: Instance, t: number, props: { [string]: any }, style: Enum.EasingStyle?)
-	TweenService:Create(inst, TweenInfo.new(t, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
 end
 
 -- Overshooting 0 -> 1 curve for things that pop into existence.
@@ -216,14 +220,22 @@ local function floorBelow(pos: Vector3, ignore: { Instance }): number?
 	return nil
 end
 
-local function disc(ctx: any, at: Vector3, lift: number, props: { [string]: any }): Part
-	props.Shape = Enum.PartType.Cylinder
-	props.Size = Vector3.new(0.05, 1, 1)
-	props.CFrame = CFrame.new(at + UP * lift) * CFrame.Angles(0, 0, math.rad(90))
+-- Lay a flat strip on the floor from `a` to `b` (both at floor height).
+local function strip(ctx: any, a: Vector3, b: Vector3, width: number, lift: number, props: { [string]: any }): Part
+	props.Size = Vector3.new(width, 0.05, (b - a).Magnitude)
+	props.CFrame = CFrame.lookAt((a + b) / 2 + UP * lift, b + UP * lift)
 	return part(props, ctx.folder)
 end
 
+-- Beam section: a cylinder from `a` to `b` with the given diameter.
+local function beamPart(p: Part, a: Vector3, b: Vector3, diameter: number)
+	local d = math.max(diameter, 0.05)
+	p.Size = Vector3.new((b - a).Magnitude, d, d)
+	p.CFrame = CFrame.lookAt((a + b) / 2, b) * CFrame.Angles(0, math.rad(90), 0)
+end
+
 type Pixel = { p: Part, vel: Vector3, age: number, life: number, size: number }
+type Beam = { sections: { { p: Part, from: number, to: number, scale: number } }, light: PointLight }
 
 return {
 	Id = "PurpleFlash",
@@ -265,6 +277,8 @@ return {
 
 		local hero = ctx.standIn(ctx.killer) or ctx.killer
 		hero:PivotTo(CFrame.lookAt(K, K + dir))
+		local rHand = hero:FindFirstChild("RightHand") :: BasePart?
+		local head = hero:FindFirstChild("Head") :: BasePart?
 		local center = K + dir * 2.6 + UP * 1.1
 		-- orbit plane: across the winner, tipped toward the camera so the circle reads
 		local u = side
@@ -272,16 +286,16 @@ return {
 
 		local victim: Model? = nil
 		local V = K + dir * 40
-		local VG = Vector3.new(V.X, floorY, V.Z)
 		if victimRoot then
 			victim = ctx.standIn(ctx.victim)
 			V = victimRoot.Position
-			VG = Vector3.new(V.X, floorBelow(V, ignore) or floorY, V.Z)
 			if victim then
 				victim:PivotTo(CFrame.lookAt(V, Vector3.new(K.X, V.Y, K.Z)))
 			end
 		end
 		local vHead = V + UP * 1.6
+		local lineMid = (K + V) / 2
+		local lineLen = (V - K).Magnitude
 
 		-- mood: darker, punchier contrast for the build-up
 		local mood = Instance.new("ColorCorrectionEffect")
@@ -350,7 +364,8 @@ return {
 		local sphere: Orb? = nil
 		local tendrils: { Bolt } = {}
 		local arcs: { Bolt } = {}
-		local blast: { core: Part, halo: Part, shell: Part, light: PointLight }? = nil
+		local beam: Beam? = nil
+		local beamFrom = K
 		local pixels: { Pixel } = {}
 		local fired: { [string]: boolean } = {}
 		local function at(name: string, time: number, t: number): boolean
@@ -373,38 +388,39 @@ return {
 		ctx.runFor(ctx.duration, function(_alpha: number, dt: number)
 			local t = os.clock() - t0
 
-			-- the orbs pop in, then spiral around each other, tighter and faster, until they clash
+			-- the orbs pop in and hover, then ease into a spiral that tightens and speeds up
 			if t < CONTACT then
-				local p = math.clamp((t - POP_RED) / (CONTACT - POP_RED), 0, 1)
+				local p = math.clamp((t - ORBIT) / (CONTACT - ORBIT), 0, 1)
 				local r = ORBIT_R * (1 - p) ^ 1.25
-				angle += dt * (3.5 + 26 * p * p)
+				angle += dt * (24 * p ^ 1.5 + 4 * math.min(1, p * 6))
 				local off = (u * math.cos(angle) + w * math.sin(angle)) * r
+				local bob = UP * 0.15 * math.sin(t * 5) * (1 - p)
 				local shove = if reduced then 0 else p * p * 0.25
-				local bp = center + off + rng:NextUnitVector() * shove
-				local rp = center - off + rng:NextUnitVector() * (0.08 + shove)
+				local bp = center + off + bob + rng:NextUnitVector() * shove
+				local rp = center - off - bob + rng:NextUnitVector() * (0.08 + shove)
 				local base = 1.6 - 0.5 * p
-				sizeOrb(blue, base * popIn((t - POP_BLUE) / 0.2), 1.9 - 0.3 * math.sin(t * 9))
-				sizeOrb(red, base * popIn((t - POP_RED) / 0.2), 2 + 0.35 * math.sin(t * 31))
+				sizeOrb(blue, base * popIn((t - POP_BLUE) / POP_TIME), 1.9 - 0.3 * math.sin(t * 9))
+				sizeOrb(red, base * popIn((t - POP_RED) / POP_TIME), 2 + 0.35 * math.sin(t * 31))
 				moveOrb(blue, CFrame.new(bp))
 				moveOrb(red, CFrame.new(rp))
 				pull.CFrame = CFrame.new(bp)
-				if t >= POP_RED + 0.1 and t >= nextRing then
+				if t >= POP_RED + 0.2 and t >= nextRing then
 					nextRing = t + 0.22 - 0.14 * p
 					ctx.fx.shockwave(rp, (cam.CFrame.Position - rp), RED, 4 + 2 * p, 0.25)
 				end
 			end
 			if at("popBlue", POP_BLUE, t) then
-				ctx.fx.flash(center, BLUE, 5)
-				ctx.fx.burst(center, BLUE, if reduced then 6 else 20, 16, 0.4)
+				ctx.fx.flash(center + u * ORBIT_R, BLUE, 5)
+				ctx.fx.burst(center + u * ORBIT_R, BLUE, if reduced then 6 else 20, 16, 0.4)
 				pullFx.Rate = if reduced then 40 else 140
 			end
 			if at("popRed", POP_RED, t) then
-				ctx.fx.flash(center, RED, 5)
-				ctx.fx.burst(center, RED, if reduced then 6 else 20, 16, 0.4)
+				ctx.fx.flash(center - u * ORBIT_R, RED, 5)
+				ctx.fx.burst(center - u * ORBIT_R, RED, if reduced then 6 else 20, 16, 0.4)
 				redSparks.Rate = if reduced then 30 else 110
 			end
-			if at("squeeze", 0.9, t) then
-				ctx.pose(hero, "Catch", 0.6)
+			if at("squeeze", 1.1, t) then
+				ctx.pose(hero, "Catch", 0.5)
 				ctx.sound("PurpleSqueeze", center)
 			end
 
@@ -453,7 +469,7 @@ return {
 				end
 			end
 
-			-- Shot 2: cut to the victim, and the world goes silent
+			-- Shot 2: cut to the victim, and the world goes silent until the beam
 			if at("cut", CUT, t) then
 				if sphere then
 					destroyOrb(sphere)
@@ -462,66 +478,57 @@ return {
 				for _, b in tendrils do
 					hideBolt(b)
 				end
-				mute(BLAST - CUT)
+				mute(BLAST - CUT - 0.02)
 				mood.TintColor = Color3.fromRGB(215, 205, 235)
 				mood.Saturation = -0.35
 				mood.Brightness = -0.12
+				-- off camera: the winner levels their hand at the victim
+				ctx.pose(hero, "PointForward", 0.2)
 			end
 
-			-- Shot 3: the blast, full size, instantly
+			-- the beam: full length, instantly, out of the winner's hand
 			if at("blast", BLAST, t) then
-				ctx.sound("PurpleSnap", VG)
-				ctx.sound("PurpleRoar", VG)
-				ctx.sound("PurpleErase", VG)
+				local hand = if rHand then rHand.Position else K + dir * 2 + UP * 1.2
+				beamFrom = hand + dir * 0.8
+				ctx.sound("PurpleSnap", beamFrom)
+				ctx.sound("PurpleRoar", V)
+				ctx.sound("PurpleErase", V)
 				task.spawn(impactFrames, ctx, LAVENDER)
 				ctx.fx.shake(1)
-				ctx.fx.flash(VG + UP * 4, Color3.new(1, 1, 1), BLAST_R * 3)
-				ctx.fx.burst(VG + UP * 4, VIOLET, if reduced then 25 else 90, 60, 1.6)
-				for i = 1, 3 do
-					ctx.fx.shockwave(
-						VG + UP * 0.4,
-						UP,
-						if i == 1 then Color3.new(1, 1, 1) else LAVENDER,
-						CRATER_R * (2 + i),
-						0.35 + 0.15 * i
-					)
-				end
+				ctx.fx.flash(beamFrom, Color3.new(1, 1, 1), 16)
+				ctx.fx.shockwave(beamFrom, dir, Color3.new(1, 1, 1), 26, 0.35)
+				ctx.fx.flash(vHead, LAVENDER, BEAM_R * 4)
+				ctx.fx.burst(vHead, VIOLET, if reduced then 25 else 90, 60, 1.6)
 				mood.TintColor = Color3.fromRGB(230, 210, 255)
 				mood.Saturation = 0.3
 				mood.Brightness = 0
-				local mid = VG + UP * BLAST_R * 0.35
-				local core = part({
-					Shape = Enum.PartType.Ball,
-					Size = Vector3.one * BLAST_R * 2,
-					CFrame = CFrame.new(mid),
-					Material = Enum.Material.Neon,
-					Color = DEEP,
-				}, ctx.folder)
-				local halo = part({
-					Shape = Enum.PartType.Ball,
-					Size = Vector3.one * BLAST_R * 2.5,
-					CFrame = CFrame.new(mid),
-					Material = Enum.Material.ForceField,
-					Color = VIOLET,
-				}, ctx.folder)
-				local shell = part({
-					Shape = Enum.PartType.Ball,
-					Size = Vector3.one * BLAST_R * 2.2,
-					CFrame = CFrame.new(mid),
-					Material = Enum.Material.Neon,
-					Color = LAVENDER,
-					Transparency = 0.55,
-				}, ctx.folder)
+				-- a flared muzzle (stacked widening sections), then the full-width beam: violet
+				-- sheath around a white-hot core
+				local sections = {}
+				local function section(from: number, to: number, scale: number, props: { [string]: any })
+					props.Shape = Enum.PartType.Cylinder
+					table.insert(sections, { p = part(props, ctx.folder), from = from, to = to, scale = scale })
+				end
+				local flare = { { 0, 2, 0.25 }, { 2, 4.5, 0.5 }, { 4.5, 8, 0.75 }, { 8, BEAM_LEN, 1 } }
+				for _, f in flare do
+					section(f[1], f[2], f[3] * BEAM_R * 2.6, { Material = Enum.Material.ForceField, Color = VIOLET })
+					section(f[1], f[2], f[3] * BEAM_R * 2, {
+						Material = Enum.Material.Neon,
+						Color = VIOLET,
+						Transparency = 0.35,
+					})
+					section(f[1], f[2], f[3] * BEAM_R * 1.1, { Material = Enum.Material.Neon, Color = CORE })
+				end
 				local light = Instance.new("PointLight")
 				light.Color = VIOLET
 				light.Range = 60
 				light.Brightness = 12
-				light.Parent = core
-				blast = { core = core, halo = halo, shell = shell, light = light }
-				for _ = 1, (if reduced then 3 else 9) do
-					table.insert(arcs, makeBolt(ctx, 7, Color3.fromRGB(245, 230, 255), 0.35))
+				light.Parent = sections[#sections].p
+				beam = { sections = sections, light = light }
+				for _ = 1, (if reduced then 3 else 10) do
+					table.insert(arcs, makeBolt(ctx, 8, Color3.fromRGB(245, 230, 255), 0.3))
 				end
-				-- the victim: erased into pixels flung out of the blast
+				-- the victim: erased into pixels blown down the beam
 				if victim then
 					for _, d in victim:GetDescendants() do
 						if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and d.Transparency < 1 then
@@ -533,19 +540,18 @@ return {
 									rng:NextNumber(-0.5, 0.5) * d.Size.Z
 								)
 								local s = rng:NextNumber(0.3, 0.6)
-								local pos = (d.CFrame * CFrame.new(off)).Position
-								local out = Vector3.new(pos.X - VG.X, 0, pos.Z - VG.Z)
-								out = if out.Magnitude > 0.05 then out.Unit else rng:NextUnitVector()
 								table.insert(pixels, {
 									p = part({
 										Size = Vector3.one * s,
-										CFrame = CFrame.new(pos),
+										CFrame = d.CFrame * CFrame.new(off),
 										Color = d.Color:Lerp(LAVENDER, 0.5),
 										Material = Enum.Material.Neon,
 									}, ctx.folder),
-									vel = out * rng:NextNumber(10, 30) + UP * rng:NextNumber(12, 35),
+									vel = dir * rng:NextNumber(25, 60)
+										+ side * rng:NextNumber(-10, 10)
+										+ UP * rng:NextNumber(-4, 10),
 									age = 0,
-									life = rng:NextNumber(0.8, 1.3),
+									life = rng:NextNumber(0.6, 1.1),
 									size = s,
 								})
 							end
@@ -554,95 +560,102 @@ return {
 					victim:Destroy()
 					victim = nil
 				end
-				-- the crater: deep violet lip, black pit, glowing scooped rim, punched out at once
-				local d = CRATER_R * 2
-				local outer = disc(ctx, VG, 0.05, { Color = Color3.fromRGB(40, 12, 60) })
-				local inner = disc(ctx, VG, 0.07, { Color = VOID })
-				local rim = disc(ctx, VG, 0.03, { Material = Enum.Material.Neon, Color = LAVENDER })
-				tween(outer, 0.08, { Size = Vector3.new(0.05, d, d) })
-				tween(inner, 0.1, { Size = Vector3.new(0.06, d * 0.74, d * 0.74) })
-				tween(rim, 0.08, { Size = Vector3.new(0.04, d + 1.2, d + 1.2) })
-				task.delay(0.6, function()
-					tween(rim, 1.2, { Transparency = 0.7 })
-				end)
-				-- glowing violet mist rising out of the hole
-				for i = 1, (if reduced then 3 else 8) do
-					local a = i / 8 * math.pi * 2
-					local anchor = part({
-						Size = Vector3.one * 0.2,
-						Transparency = 1,
-						Position = VG
-							+ (side * math.cos(a) + dir * math.sin(a)) * CRATER_R * rng:NextNumber(0.2, 0.8)
-							+ UP * 0.5,
-					}, ctx.folder)
-					emitter(anchor, {
-						Texture = SMOKE,
-						Color = ColorSequence.new(VIOLET, DEEP),
-						LightEmission = 0.6,
-						Size = NumberSequence.new(4, 9),
-						Transparency = NumberSequence.new({
-							NumberSequenceKeypoint.new(0, 0.5),
-							NumberSequenceKeypoint.new(1, 1),
-						}),
-						Lifetime = NumberRange.new(1.2, 2),
-						Speed = NumberRange.new(2, 5),
-						EmissionDirection = Enum.NormalId.Top,
-						SpreadAngle = Vector2.new(30, 30),
-						Rate = if reduced then 2 else 6,
-					}):Emit(if reduced then 1 else 3)
+				-- the hollow path: carved from the winner's feet to the far edge of the floor
+				local pathFrom = Vector3.new(K.X, floorY, K.Z) + dir * 2.5
+				local pathTo = pathFrom
+				local step = 0
+				while step < BEAM_LEN do
+					local probe = pathFrom + dir * (step + 2)
+					local y = floorBelow(probe, ignore)
+					if not y or math.abs(y - floorY) > 3 then
+						break
+					end
+					step += 2
+					pathTo = pathFrom + dir * step
 				end
-				task.delay(0.35, function()
-					ctx.banner(
-						("%s was erased by %s"):format(ctx.victimName, ctx.killerName),
-						LAVENDER,
-						1.4,
-						"PurpleInrush"
-					)
-				end)
+				if step > 1 then
+					strip(ctx, pathFrom, pathTo, PATH_W, 0.04, { Color = Color3.fromRGB(40, 12, 60) })
+					strip(ctx, pathFrom, pathTo, PATH_W * 0.68, 0.06, { Color = VOID })
+					for _, s in { 1, -1 } do
+						local edge = side * s * PATH_W / 2
+						local rim = strip(ctx, pathFrom + edge, pathTo + edge, 0.4, 0.08, {
+							Material = Enum.Material.Neon,
+							Color = LAVENDER,
+						})
+						task.delay(0.6, function()
+							rim.Transparency = 0.5
+						end)
+					end
+					-- glowing violet mist rising out of the cut
+					local d = 0
+					while d < step do
+						local anchor = part({
+							Size = Vector3.one * 0.2,
+							Transparency = 1,
+							Position = pathFrom + dir * d + side * rng:NextNumber(-3, 3) + UP * 0.5,
+						}, ctx.folder)
+						emitter(anchor, {
+							Texture = SMOKE,
+							Color = ColorSequence.new(VIOLET, DEEP),
+							LightEmission = 0.6,
+							Size = NumberSequence.new(3, 7),
+							Transparency = NumberSequence.new({
+								NumberSequenceKeypoint.new(0, 0.5),
+								NumberSequenceKeypoint.new(1, 1),
+							}),
+							Lifetime = NumberRange.new(1.2, 2),
+							Speed = NumberRange.new(1, 3),
+							EmissionDirection = Enum.NormalId.Top,
+							SpreadAngle = Vector2.new(30, 30),
+							Rate = if reduced then 2 else 6,
+						}):Emit(if reduced then 1 else 3)
+						d += if reduced then 16 else 7
+					end
+				end
 			end
 
-			-- the blast churns, ringed with shock collars and lightning, then collapses
-			if blast then
-				local bt = t - BLAST
-				local life = math.clamp((bt - 0.55) / 0.6, 0, 1)
-				local r = BLAST_R * (1 + 0.04 * math.sin(t * 50)) * (1 - life ^ 2)
-				local mid = VG + UP * BLAST_R * 0.35
-				local spin = CFrame.new(mid) * CFrame.Angles(t * 3, t * 5, t * 2)
-				blast.core.Size = Vector3.one * math.max(r * 2, 0.05)
-				blast.halo.Size = Vector3.one * math.max(r * 2.5, 0.05)
-				blast.shell.Size = Vector3.one * math.max(r * 2.2, 0.05)
-				blast.core.CFrame = spin
-				blast.halo.CFrame = spin * CFrame.Angles(0, t * 4, 0)
-				blast.shell.CFrame = CFrame.new(mid)
-				blast.shell.Transparency = 0.55 + 0.45 * life
-				blast.light.Brightness = 12 * (1 - life)
+			-- the beam roars: thickness churns, lightning and shock collars along it, then it thins
+			-- away as the camera reaches the winner's eyes
+			if beam then
+				local fade = math.clamp((t - (POV + POV_TIME * 0.5)) / 0.45, 0, 1)
+				local throb = 1 + 0.06 * math.sin(t * 55) + 0.04 * math.sin(t * 23)
+				local thin = (1 - fade) ^ 2
+				for _, s in beam.sections do
+					beamPart(s.p, beamFrom + dir * s.from, beamFrom + dir * s.to, s.scale * throb * thin)
+				end
+				beam.light.Brightness = 12 * thin
 				for _, b in arcs do
-					if life < 1 then
-						local a = rng:NextUnitVector()
-						drawBolt(
-							b,
-							mid + a * r * 1.02,
-							mid + (a + rng:NextUnitVector() * 0.9).Unit * r * 1.15,
-							r * 0.2,
-							rng
-						)
+					if thin > 0.05 then
+						local along = beamFrom + dir * rng:NextNumber(4, lineLen + 30)
+						local a = (side * rng:NextNumber(-1, 1) + UP * rng:NextNumber(-1, 1)).Unit
+						local reach = BEAM_R * thin
+						drawBolt(b, along + a * reach, along + dir * rng:NextNumber(4, 10) + a * reach * 1.4, 1.2, rng)
 					else
 						hideBolt(b)
 					end
 				end
-				if life < 1 and t >= nextCollar then
-					nextCollar = t + 0.09
-					ctx.fx.shockwave(mid, rng:NextUnitVector(), LAVENDER, r * 3, 0.35)
+				if thin > 0.05 and t >= nextCollar then
+					nextCollar = t + 0.05
+					ctx.fx.shockwave(
+						beamFrom + dir * rng:NextNumber(3, lineLen + 20),
+						dir,
+						LAVENDER,
+						BEAM_R * 3.4 * thin,
+						0.3
+					)
 				end
-				if life >= 1 and not fired.gone then
+				if fade >= 1 and not fired.gone then
 					fired.gone = true
-					blast.core:Destroy()
-					blast.halo:Destroy()
-					blast.shell:Destroy()
+					for _, s in beam.sections do
+						s.p:Destroy()
+					end
 				end
 			end
+			if at("inrush", POV + POV_TIME, t) then
+				ctx.sound("PurpleInrush", K + dir * 20)
+			end
 
-			-- pixels: flung out of the blast, shrinking and fading to violet
+			-- pixels: blown down the beam, shrinking and fading to violet
 			for i = #pixels, 1, -1 do
 				local px = pixels[i]
 				px.age += dt
@@ -660,6 +673,7 @@ return {
 			end
 
 			-- camera ----------------------------------------------------------------------------
+			local wide = lineMid + side * (lineLen * 0.55 + 18) + UP * (lineLen * 0.2 + 8)
 			local camPos: Vector3, lookAt: Vector3, fov: number
 			if t < CUT then
 				-- front shot on the winner, pushing in as the spiral tightens
@@ -667,32 +681,43 @@ return {
 				local e = ctx.ease(p)
 				camPos = (K + dir * 11 + UP * 2.2):Lerp(K + dir * 7.5 + side * 0.8 + UP * 1.4, e)
 				lookAt = center + UP * 0.2
-				fov = 60 + (if reduced then 0 else 22 * p ^ 3 + 2 * math.sin(t * 50) * p ^ 2)
+				local warp = math.clamp((t - ORBIT) / (CONTACT - ORBIT), 0, 1)
+				fov = 60 + (if reduced then 0 else 22 * warp ^ 3 + 2 * math.sin(t * 50) * warp ^ 2)
 				if t >= CONTACT then
 					local s = math.clamp((t - CONTACT) / 0.25, 0, 1)
 					fov = 84 - 30 * (1 - (1 - s) ^ 3)
 					camPos = camPos:Lerp(center + dir * 4.5 + UP * 0.3, s * 0.45)
-				elseif not reduced and p > 0.6 then
+				elseif not reduced and warp > 0.6 then
 					-- fringe: alternating green/magenta tint as the space between them bends
 					mood.TintColor = if math.floor(t * 40) % 2 == 0
 						then Color3.fromRGB(255, 215, 255)
 						else Color3.fromRGB(215, 255, 225)
 				end
-			elseif t < BLAST then
+			elseif t < PULL then
 				-- close on the victim, held still in the silence
-				local s = (t - CUT) / (BLAST - CUT)
+				local s = (t - CUT) / (PULL - CUT)
 				camPos = vHead - dir * (5.5 - 1.2 * s) + side * 0.6
 				lookAt = vHead
 				fov = 50
-			else
-				-- the pull-back: hard out to a high wide shot as the blast fills the court
-				local s = math.clamp((t - BLAST) / 0.45, 0, 1)
-				s = 1 - (1 - s) ^ 4
-				local wide = VG - dir * 52 + side * 26 + UP * 32
+			elseif t < POV then
+				-- the pull-back to a wide side shot of the whole line, which the beam then fills
+				local s = math.clamp((t - PULL) / (BLAST - PULL), 0, 1)
+				s = 1 - (1 - s) ^ 3
 				camPos = (vHead - dir * 4.3 + side * 0.6):Lerp(wide, s)
-				camPos += (wide - VG).Unit * 6 * ctx.ease(math.clamp((t - BLAST - 0.45) / 1, 0, 1))
-				lookAt = vHead:Lerp(VG + UP * 4, s)
+				lookAt = vHead:Lerp(lineMid + UP * 2, s)
 				fov = 50 + 20 * s
+			else
+				-- into the winner's eyes, looking down the path the beam carved
+				local s = ctx.ease(math.clamp((t - POV) / POV_TIME, 0, 1))
+				local eye = if head then head.Position + dir * 0.3 + UP * 0.2 else K + UP * 2.2
+				local far = Vector3.new(K.X, floorY, K.Z) + dir * math.max(lineLen + 15, 40)
+				camPos = wide:Lerp(eye, s)
+				lookAt = (lineMid + UP * 2):Lerp(far, s)
+				fov = 70 - 2 * s
+				if s > 0.85 and not fired.hideHead then
+					fired.hideHead = true
+					ctx.hideHead(hero)
+				end
 			end
 			cam.CFrame = CFrame.lookAt(camPos, lookAt)
 			cam.FieldOfView = fov
