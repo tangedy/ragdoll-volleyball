@@ -1,15 +1,18 @@
 --!strict
 -- Black Hole: a dodgeball streaks in and stops hovering just short of the winner's outstretched
--- palm, collapses into a black hole, and gets hurled; behind the victim it swells to enormous and
--- swallows them (and chunks of the court) whole.
+-- palm, gets crushed down to a pinpoint black hole, and is hurled. From the throw on it grows at a
+-- constant rate, sucking in black dust; it lands behind the victim, its accretion rings form, and
+-- the victim sprints for the camera, but is dragged back and swallowed (with chunks of the court).
 --
---   0.0-2.4  shot 1, from the winner's side (they face screen-right):
---            0.0-0.85  close on the hand: the ball flies in from the right, slowing to a hover
---            1.0       it collapses into a black hole: shake + impact frames
---            1.1-1.75  pull back to the full body while they wind up
---            1.85      throw: the hole rockets off to the right
---   2.4-5.0  shot 2, wide head-on on the victim: the hole streaks past them, swells behind them,
---            and pulls them (flailing, spinning, shrinking) and court chunks in; it snaps shut
+--   0.0-2.25  shot 1, from the winner's side (they face screen-right):
+--             0.0-0.7   close on the hand: the ball flies in from the right, slowing to a hover
+--             0.8-1.05  the winner crushes it down, shivering and darkening, to a speck
+--             1.05      it collapses into a tiny black hole: shake + impact frames
+--             1.1-1.65  pull back to the full body while they wind up
+--             1.75      throw: the hole rockets off to the right and starts growing
+--   2.25-5.0  shot 2, wide head-on on the victim: the hole streaks past them and keeps growing
+--             behind them while its rings form; they run toward the camera, slow, slide back, and
+--             are ripped off their feet (flailing, spinning, shrinking) into it; it snaps shut
 --
 -- Both characters are stand-ins (copies wearing their avatars); the server doesn't launch anyone.
 
@@ -17,9 +20,22 @@ local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
-local CUT = 2.4
-local FORM = 1.0
-local THROW = 1.85
+local FLY = 0.7
+local SQUEEZE = 0.8
+local FORM = 1.05
+local WIND_UP = 1.2
+local THROW = 1.75
+local CUT = 2.25
+
+local SEED_R = 0.16 -- the hole's radius when it forms
+local GROW_RATE = 3.2 -- radius gained per second, from the throw until it snaps shut
+-- the accretion rings start forming at this radius, and are fully formed RING_SPAN later
+local RING_START = 2.8
+local RING_SPAN = 2.5
+
+-- the victim's escape attempt (shot 2 seconds)
+local RUN_FROM = 0.15
+local PULL = 1.25
 
 local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
 
@@ -44,16 +60,20 @@ local function part(props: { [string]: any }, parent: Instance): Part
 end
 
 -- The black hole: a void core, a glowing violet horizon (a disk behind the core, turned to the
--- camera, so it reads as a rim of light around pure black), two spinning accretion rings, and a
--- shell that pulls sparkles inward. size() rescales everything; place() moves it.
+-- camera, so it reads as a rim of light around pure black), two spinning accretion rings that form
+-- once it is big enough, a shell that pulls sparkles inward, and a wider one that drags in black
+-- dust. size() rescales everything; place() moves it.
 type Hole = {
 	core: Part,
 	horizon: Part,
 	rings: { Part },
 	shell: Part,
 	inflow: ParticleEmitter,
+	dustShell: Part,
+	dust: ParticleEmitter,
 	light: PointLight,
 	r: number,
+	reducedMotion: boolean,
 }
 
 local function makeHole(ctx: any): Hole
@@ -67,14 +87,14 @@ local function makeHole(ctx: any): Hole
 		ctx.folder
 	)
 	local rings = {}
-	for i, col in { HOT, VIOLET } do
+	for _, col in { HOT, VIOLET } do
 		table.insert(
 			rings,
 			part({
 				Shape = Enum.PartType.Cylinder,
 				Color = col,
 				Material = Enum.Material.Neon,
-				Transparency = 0.25 + 0.15 * i,
+				Transparency = 1,
 			}, ctx.folder)
 		)
 	end
@@ -96,26 +116,67 @@ local function makeHole(ctx: any): Hole
 	inflow.Speed = NumberRange.new(4, 6)
 	inflow.Rate = if ctx.reducedMotion then 30 else 90
 	inflow.Parent = shell
+	-- black specks falling in from further out; locked to the shell so they still converge on the
+	-- core while it flies
+	local dustShell = part({ Shape = Enum.PartType.Ball, Transparency = 1 }, ctx.folder)
+	local dust = Instance.new("ParticleEmitter")
+	dust.Texture = SPARK
+	dust.Color = ColorSequence.new(Color3.new(0, 0, 0), Color3.fromRGB(30, 10, 50))
+	dust.LightEmission = 0
+	dust.LightInfluence = 0
+	dust.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.2, 0.05),
+		NumberSequenceKeypoint.new(1, 0.2),
+	})
+	dust.ShapeStyle = Enum.ParticleEmitterShapeStyle.Surface
+	dust.Shape = Enum.ParticleEmitterShape.Sphere
+	dust.ShapeInOut = Enum.ParticleEmitterShapeInOut.Inward
+	dust.Lifetime = NumberRange.new(0.7)
+	dust.Rotation = NumberRange.new(0, 360)
+	dust.RotSpeed = NumberRange.new(-300, 300)
+	dust.LockedToPart = true
+	dust.Parent = dustShell
 	local light = Instance.new("PointLight")
 	light.Color = VIOLET
 	light.Brightness = 4
 	light.Range = 12
 	light.Parent = horizon
-	return { core = core, horizon = horizon, rings = rings, shell = shell, inflow = inflow, light = light, r = 1 }
+	return {
+		core = core,
+		horizon = horizon,
+		rings = rings,
+		shell = shell,
+		inflow = inflow,
+		dustShell = dustShell,
+		dust = dust,
+		light = light,
+		r = 1,
+		reducedMotion = ctx.reducedMotion == true,
+	}
 end
 
 local function sizeHole(h: Hole, r: number)
 	h.r = r
 	h.core.Size = Vector3.one * r * 2
 	h.horizon.Size = Vector3.new(0.05, r * 2.5, r * 2.5)
+	-- rings spread out from the core and fade in as the hole passes RING_START
+	local form = math.clamp((r - RING_START) / RING_SPAN, 0, 1)
+	form = 1 - (1 - form) ^ 2
 	for i, ring in h.rings do
-		local d = r * (3.2 + i * 0.9)
+		local d = r * (2 + form * (1.2 + i * 0.9))
 		ring.Size = Vector3.new(0.12 * math.max(1, r * 0.4), d, d)
+		ring.Transparency = 1 - (0.75 - 0.15 * i) * form
 	end
 	h.shell.Size = Vector3.one * r * 6
 	-- inflow particles must reach the core from the shell surface within their lifetime
 	h.inflow.Speed = NumberRange.new(r * 3.6, r * 4.4)
 	h.inflow.Size = NumberSequence.new(0.25 * r + 0.3, 0.05 * r)
+	-- dust starts 5r out and ends inside the core (radius r) after its 0.7s lifetime
+	h.dustShell.Size = Vector3.one * r * 10
+	h.dust.Speed = NumberRange.new(r * 5.7, r * 7.1)
+	h.dust.Size = NumberSequence.new(0.12 * r + 0.2, 0.02)
+	h.dust.Rate = math.min(260, 40 + r * 24) * (if h.reducedMotion then 0.3 else 1)
 	h.light.Range = math.min(60, 10 + r * 5)
 end
 
@@ -127,6 +188,7 @@ local function placeHole(h: Hole, pos: Vector3, t: number)
 	toCam = if toCam.Magnitude > 0.01 then toCam.Unit else Vector3.zAxis
 	h.horizon.CFrame = CFrame.lookAt(pos - toCam * h.r * 0.5, camPos) * CFrame.Angles(0, math.rad(90), 0)
 	h.shell.CFrame = CFrame.new(pos)
+	h.dustShell.CFrame = CFrame.new(pos)
 	local facing = CFrame.lookAt(pos, camPos)
 	for i, ring in h.rings do
 		-- accretion disks seen nearly edge-on (a bright band across the void), gently wobbling
@@ -141,6 +203,7 @@ local function hideHole(h: Hole, hidden: boolean)
 		p.LocalTransparencyModifier = if hidden then 1 else 0
 	end
 	h.inflow.Enabled = not hidden
+	h.dust.Enabled = not hidden
 	h.light.Enabled = not hidden
 end
 
@@ -173,8 +236,10 @@ local function impactFrames(ctx: any)
 	cc:Destroy()
 end
 
+type Joints = { [string]: { inst: Instance, f0: CFrame } }
+
 -- Joints of a stand-in by name, with their parent-side frames (for axis rotations).
-local function jointsOf(model: Model): { [string]: { inst: Instance, f0: CFrame } }
+local function jointsOf(model: Model): Joints
 	local out = {}
 	for _, d in model:GetDescendants() do
 		if d:IsA("AnimationConstraint") and d.Attachment0 then
@@ -190,39 +255,75 @@ local function rot(j: { inst: Instance, f0: CFrame }, axis: Vector3, deg: number
 	return CFrame.fromAxisAngle(j.f0:VectorToObjectSpace(axis), math.rad(deg))
 end
 
--- Arms and legs thrashing, head whipping.
-local function flail(joints: { [string]: { inst: Instance, f0: CFrame } }, t: number, amount: number)
-	local X, Z = Vector3.xAxis, Vector3.zAxis
-	local function set(name: string, cf: CFrame)
-		local j = joints[name]
-		if j then
-			(j.inst :: any).Transform = cf
+-- A frantic sprint: legs pumping, arms driving, a panicked glance back over the shoulder.
+local function runCycle(joints: Joints, t: number, glance: number): { [string]: CFrame }
+	local X, Y = Vector3.xAxis, Vector3.yAxis
+	local out = {}
+	local w = t * 17
+	for _, side in { "Right", "Left" } do
+		local s = math.sin(w + (if side == "Right" then 0 else math.pi))
+		local c = math.cos(w + (if side == "Right" then 0 else math.pi))
+		local sh, el, hip, knee =
+			joints[side .. "Shoulder"], joints[side .. "Elbow"], joints[side .. "Hip"], joints[side .. "Knee"]
+		if hip then
+			out[hip.inst.Name] = rot(hip, X, 55 * s)
+		end
+		if knee then
+			-- tucked tight on the forward swing
+			out[knee.inst.Name] = rot(knee, X, -(15 + 75 * math.max(0, c)))
+		end
+		if sh then
+			out[sh.inst.Name] = rot(sh, X, -60 * s)
+		end
+		if el then
+			out[el.inst.Name] = rot(el, X, 85)
 		end
 	end
+	local neck = joints["Neck"]
+	if neck then
+		out.Neck = rot(neck, Y, 65 * glance) * rot(neck, X, -10)
+	end
+	return out
+end
+
+-- Arms and legs thrashing, head whipping.
+local function flail(joints: Joints, t: number): { [string]: CFrame }
+	local X, Z = Vector3.xAxis, Vector3.zAxis
+	local out = {}
 	for _, side in { "Right", "Left" } do
 		local sgn = if side == "Right" then 1 else -1
 		local sh, el, hip, knee =
 			joints[side .. "Shoulder"], joints[side .. "Elbow"], joints[side .. "Hip"], joints[side .. "Knee"]
 		if sh then
-			set(
-				sh.inst.Name,
-				rot(sh, X, amount * (110 + 60 * math.sin(t * 14 + sgn)))
-					* rot(sh, Z, amount * sgn * (40 + 30 * math.sin(t * 10)))
-			)
+			out[sh.inst.Name] = rot(sh, X, 110 + 60 * math.sin(t * 14 + sgn))
+				* rot(sh, Z, sgn * (40 + 30 * math.sin(t * 10)))
 		end
 		if el then
-			set(el.inst.Name, rot(el, X, amount * (50 + 40 * math.sin(t * 17 + sgn))))
+			out[el.inst.Name] = rot(el, X, 50 + 40 * math.sin(t * 17 + sgn))
 		end
 		if hip then
-			set(hip.inst.Name, rot(hip, X, amount * 45 * math.sin(t * 12 + sgn * 1.7)) * rot(hip, Z, amount * sgn * 20))
+			out[hip.inst.Name] = rot(hip, X, 45 * math.sin(t * 12 + sgn * 1.7)) * rot(hip, Z, sgn * 20)
 		end
 		if knee then
-			set(knee.inst.Name, rot(knee, X, amount * (-30 - 30 * math.sin(t * 15 + sgn))))
+			out[knee.inst.Name] = rot(knee, X, -30 - 30 * math.sin(t * 15 + sgn))
 		end
 	end
 	local neck = joints["Neck"]
 	if neck then
-		set("Neck", rot(neck, X, amount * 35 * math.sin(t * 11)) * rot(neck, Z, amount * 30 * math.sin(t * 8)))
+		out.Neck = rot(neck, X, 35 * math.sin(t * 11)) * rot(neck, Z, 30 * math.sin(t * 8))
+	end
+	return out
+end
+
+-- Set joints to a blend of two poses (missing entries count as rest), scaled by `amount`.
+local function applyBlend(joints: Joints, a: { [string]: CFrame }, b: { [string]: CFrame }, w: number, amount: number)
+	local rest = CFrame.new()
+	for name, j in joints do
+		local ca, cb = a[name], b[name]
+		if ca or cb then
+			local cf = (ca or rest):Lerp(cb or rest, w);
+			(j.inst :: any).Transform = rest:Lerp(cf, amount)
+		end
 	end
 end
 
@@ -258,6 +359,8 @@ return {
 		local killerRoot = ctx.rootOf(ctx.killer)
 		local victimRoot = ctx.rootOf(ctx.victim)
 		local hero: Model? = nil
+		-- the hole's growth runs off the moment it leaves the winner's hand
+		local throwClock = t0 + THROW
 		ctx.banner("BLACK HOLE!", VIOLET, 1.2)
 
 		-- Shot 1: side view on the winner ----------------------------------------------------------
@@ -272,7 +375,7 @@ return {
 			ctx.pose(hero, "ReachOut", 0.3)
 			local ball = makeBall(ctx)
 			local hole = makeHole(ctx)
-			sizeHole(hole, 0.9)
+			sizeHole(hole, SEED_R)
 			hideHole(hole, true)
 			local function palm(): Vector3
 				return if hand then hand.Position else K + f * 2.4 + Vector3.new(0, 1.3, 0)
@@ -283,6 +386,7 @@ return {
 			-- pulled-back framing: full body, room on the right for the throw
 			local wideCam = K + side * 9.5 + f * 2.5 + Vector3.new(0, 1.8, 0)
 			local wideLook = K + f * 2.5 + Vector3.new(0, 1.2, 0)
+			local squeezing = false
 			local formed = false
 			local woundUp = false
 			local thrown = false
@@ -291,21 +395,30 @@ return {
 			ctx.runFor(CUT, function(alpha: number)
 				local t = alpha * CUT
 				-- camera: tight on the hand, then an eased pull-back to the full body
-				local pull = ctx.ease(math.clamp((t - 1.1) / 0.65, 0, 1))
+				local pull = ctx.ease(math.clamp((t - 1.1) / 0.55, 0, 1))
 				local camPos = closeCam:Lerp(wideCam, pull)
 				local camLook = closeLook:Lerp(wideLook, pull)
 				cam.CFrame = CFrame.lookAt(camPos, camLook)
 
-				local stopAt = palm() + f * 1.7 -- hovering just short of the fingertips
-				if t < 0.85 then
+				local stopAt = palm() + f * 1.5 -- hovering just short of the fingertips
+				if t < FLY then
 					-- flies in horizontally from the right, decelerating to a halt
-					local u = t / 0.85
+					local u = t / FLY
 					local e = 1 - (1 - u) ^ 3
 					local pos = (stopAt + f * 45):Lerp(stopAt, e)
 					ball.CFrame = CFrame.new(pos) * CFrame.Angles(0, 0, (1 - e) * 14)
 				elseif t < FORM then
-					-- hovering, trembling
-					ball.CFrame = CFrame.new(stopAt + Vector3.new(0, math.sin(t * 40) * 0.05, 0))
+					-- crushed down: slow at first, then caving in fast, shivering harder and going dark
+					local sq = math.clamp((t - SQUEEZE) / (FORM - SQUEEZE), 0, 1)
+					local k = sq ^ 2
+					ball.Size = Vector3.one * (2.2 - 1.95 * k)
+					ball.Color = BALL_RED:Lerp(VOID, k)
+					local shiver = (0.04 + 0.16 * sq) * (if ctx.reducedMotion then 0.3 else 1)
+					ball.CFrame = CFrame.new(stopAt + rng:NextUnitVector() * shiver)
+					if sq > 0 and not squeezing then
+						squeezing = true
+						ctx.fx.shake(0.15)
+					end
 				elseif not formed then
 					formed = true
 					ball.Transparency = 1
@@ -320,24 +433,25 @@ return {
 					task.spawn(impactFrames, ctx)
 				end
 				if formed and not thrown then
-					-- grows a little, and rides the hand through the wind-up
-					local grow = math.clamp((t - FORM) / 0.25, 0, 1)
-					sizeHole(hole, 0.3 + 0.7 * (1 - (1 - grow) ^ 3))
-					if not woundUp and t >= 1.25 then
+					-- a throbbing speck, riding the hand through the wind-up
+					sizeHole(hole, SEED_R * (1 + 0.2 * math.sin(t * 40)))
+					if not woundUp and t >= WIND_UP then
 						woundUp = true
-						ctx.pose(hero, "WindUp", 0.45)
+						ctx.pose(hero, "WindUp", 0.4)
 					end
-					local at = if t < 1.25 then stopAt else palm() + Vector3.new(0, 0.9, 0)
+					local at = if t < WIND_UP then stopAt else palm() + Vector3.new(0, 0.9, 0)
 					placeHole(hole, at, t)
 					throwFrom = at
 				end
 				if not thrown and t >= THROW then
 					thrown = true
+					throwClock = os.clock()
 					ctx.pose(hero, "ThrowFollow", 0.1)
 					ctx.sound("BlackHoleThrow", throwFrom)
 				end
 				if thrown then
-					local u = t - THROW
+					local u = os.clock() - throwClock
+					sizeHole(hole, SEED_R + GROW_RATE * u)
 					placeHole(hole, throwFrom + f * (u * 70) + Vector3.new(0, u * 2, 0), t)
 				end
 			end)
@@ -347,7 +461,7 @@ return {
 		end
 		cam.FieldOfView = baseFov
 
-		-- Shot 2: the victim is swallowed ----------------------------------------------------------
+		-- Shot 2: the victim runs, and is swallowed ------------------------------------------------
 		if not victimRoot then
 			task.wait(math.max(0, ctx.duration - (os.clock() - t0)))
 			return
@@ -373,6 +487,16 @@ return {
 		local H = G + o * 13 + Vector3.new(0, 7, 0) -- where the hole settles, behind the victim
 		local camA = G - o * 25 + Vector3.new(0, 4, 0)
 		local camB = G - o * 20 + Vector3.new(0, 4.2, 0)
+		-- facing away from the hole, toward the camera
+		local away = Vector3.new(-o.X, 0, -o.Z)
+		away = if away.Magnitude > 0.1 then away.Unit else -Vector3.zAxis
+		local runRot = CFrame.lookAt(Vector3.zero, away).Rotation
+		local function runOffset(t: number): number
+			-- sprints out, slows as the pull builds, then slides backward with legs still pumping
+			local k = math.clamp((t - RUN_FROM) / (PULL - RUN_FROM), 0, 1)
+			return 14 * k * (1 - 0.8 * k)
+		end
+		local runEnd = standCF.Position + away * runOffset(PULL)
 		local hole = makeHole(ctx)
 		sizeHole(hole, 1)
 		local dark = Instance.new("ColorCorrectionEffect")
@@ -393,7 +517,7 @@ return {
 			table.insert(chunks, {
 				p = p,
 				from = from,
-				delay = 0.5 + i * 0.07,
+				delay = PULL - 0.35 + i * 0.06,
 				spin = Vector3.new(rng:NextNumber(-6, 6), rng:NextNumber(-6, 6), rng:NextNumber(-6, 6)),
 			})
 		end
@@ -406,11 +530,12 @@ return {
 			-- wide head-on, slowly pushing in
 			cam.CFrame = CFrame.lookAt(camA:Lerp(camB, ctx.ease(alpha)), G + Vector3.new(0, 4, 0):Lerp(H - G, 0.35))
 
-			-- the hole streaks over from behind the camera, settles behind the victim, swells
+			-- the hole streaks over from behind the camera and settles behind the victim, still
+			-- growing at the same steady rate it has since the throw
 			local arrive = math.clamp(t / 0.45, 0, 1)
 			local holePos = (camA + Vector3.new(0, 4, 0)):Lerp(H, 1 - (1 - arrive) ^ 3)
-			local swell = math.clamp((t - 0.4) / 0.9, 0, 1)
-			local r = 1 + 8.5 * (1 - (1 - swell) ^ 3)
+			local r = SEED_R + GROW_RATE * (os.clock() - throwClock)
+			local swell = math.clamp((r - 2) / 6, 0, 1)
 			if t > shotLen - 0.35 then
 				-- snaps shut
 				local c = math.clamp((t - (shotLen - 0.35)) / 0.2, 0, 1)
@@ -432,28 +557,46 @@ return {
 				ctx.fx.shake(0.04)
 			end
 
-			-- the victim: lifted, flailing, spinning, dragged in and crushed to nothing
+			-- the victim: sprints for the camera, loses ground, then is lifted, flailing, spinning,
+			-- dragged in and crushed to nothing
 			if proot and puppet then
-				local u = math.clamp((t - 0.55) / (shotLen - 0.95), 0, 1)
-				local pull = u ^ 2.2
-				local wobble = Vector3.new(math.sin(t * 9) * 0.6, math.sin(t * 7) * 0.4, 0)
-				local pos = standCF.Position:Lerp(H, pull)
-					+ Vector3.new(0, math.sin(math.min(1, u * 1.5) * math.pi * 0.5) * 3, 0)
-					+ wobble * (1 - pull)
-				local spin = CFrame.Angles(u * u * 14, u * 9, u * u * 6)
-				proot.CFrame = CFrame.new(pos) * standCF.Rotation * spin
-				flail(joints, t, math.clamp((t - 0.45) / 0.3, 0, 1))
-				if u > 0.6 then
-					local k = math.max(0.02, 1 - (u - 0.6) / 0.4)
-					pcall(function()
-						(puppet :: any):ScaleTo(k)
-					end)
+				local turn = math.clamp((t - RUN_FROM) / 0.2, 0, 1)
+				local runAmt = 1 - (1 - turn) ^ 2
+				if t < PULL then
+					local k = math.clamp((t - RUN_FROM) / (PULL - RUN_FROM), 0, 1)
+					local bob = math.abs(math.sin(t * 17)) * 0.3 * runAmt
+					local pos = standCF.Position + away * runOffset(t) + Vector3.new(0, bob, 0)
+					-- leaning harder into it as the pull builds
+					local lean = CFrame.Angles(-math.rad(14 + 20 * k) * runAmt, 0, 0)
+					proot.CFrame = CFrame.new(pos) * standCF.Rotation:Lerp(runRot, runAmt) * lean
+					local glance = math.sin(math.clamp((t - RUN_FROM) / 0.5, 0, 1) * math.pi)
+					applyBlend(joints, runCycle(joints, t, glance), {}, 0, runAmt)
+				else
+					local u = math.clamp((t - PULL) / (shotLen - 0.4 - PULL), 0, 1)
+					-- already sliding back, so it leaves with some speed and accelerates in
+					local pull = 0.25 * u + 0.75 * u ^ 2.4
+					local wobble = Vector3.new(math.sin(t * 9) * 0.6, math.sin(t * 7) * 0.4, 0)
+					local pos = runEnd:Lerp(H, pull)
+						+ Vector3.new(0, math.sin(math.min(1, u * 1.5) * math.pi * 0.5) * 3, 0)
+						+ wobble * (1 - pull)
+					-- yanked off their feet backward, then tumbling
+					local yank = CFrame.Angles(math.rad(40) * math.min(1, u * 5), 0, 0)
+					local spin = CFrame.Angles(u * u * 14, u * 9, u * u * 6)
+					proot.CFrame = CFrame.new(pos) * runRot * yank * spin
+					local toFlail = math.clamp((t - PULL) / 0.2, 0, 1)
+					applyBlend(joints, runCycle(joints, t, 0), flail(joints, t), toFlail, 1)
+					if u > 0.6 then
+						local sc = math.max(0.02, 1 - (u - 0.6) / 0.4)
+						pcall(function()
+							(puppet :: any):ScaleTo(sc)
+						end)
+					end
 				end
 			end
 
 			-- court chunks rip free and fall up into it
 			for _, c in chunks do
-				local u = math.clamp((t - c.delay) / 1.4, 0, 1)
+				local u = math.clamp((t - c.delay) / 1.1, 0, 1)
 				local e = u ^ 2
 				c.p.CFrame = CFrame.new(c.from:Lerp(H, e)) * CFrame.Angles(c.spin.X * u, c.spin.Y * u, c.spin.Z * u)
 				c.p.Transparency = if u >= 0.97 then 1 else 0
