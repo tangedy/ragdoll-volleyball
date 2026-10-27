@@ -129,6 +129,8 @@ local function gallery(item: string)
 	elseif item == "DailyClaim" then
 		Shop.openDaily(true)
 		task.delay(0.6, Shop.claimDaily)
+	elseif item == "Touch" then
+		(require(Controllers.InputController) :: any).forceTouch()
 	elseif item == "Hint" then
 		HUD.hint("Throw it!", 999)
 	elseif item == "Feed" then

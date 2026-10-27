@@ -1024,9 +1024,9 @@ local function update()
 	refs.results.Position = UDim2.new(0.5, 0, 0, below + (if refs.phasePill.Visible then 40 * s else 0) + 16 * s)
 	local hub = not live or not inMatch
 	refs.playAgain.Visible = hub
-	-- on touch screens the action buttons own the bottom-right corner: sit above them
+	-- on touch screens the action buttons own the bottom-right corner: sit beside them, on the bottom
 	refs.corner.Position = if AimController.lastInput == "Touch"
-		then UDim2.new(1, -12, 1, -250)
+		then UDim2.new(1, -290, 1, -12)
 		else UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L)
 
 	-- reticle + charge

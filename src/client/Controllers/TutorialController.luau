@@ -123,13 +123,24 @@ function TutorialController.start()
 		end
 		lastPointer = pointer
 		for name, b in InputController.buttons do
-			local face = b:FindFirstChild("Face") or b
-			local stroke = face:FindFirstChild("Outline") :: UIStroke?
+			local stroke = b:FindFirstChild("Outline", true) :: UIStroke?
 			if stroke then
 				local pulsing = pointer == name
-				stroke.Color = if pulsing then Theme.Colors.Select else Theme.Colors.Outline
-				stroke.Thickness = if pulsing then 5 + 2 * math.sin(os.clock() * 8) else Theme.StrokeToy
-				stroke.Transparency = 0
+				local restColor = stroke:GetAttribute("RestColor")
+				local restThickness = stroke:GetAttribute("RestThickness")
+				local restTransparency = stroke:GetAttribute("RestTransparency")
+				stroke.Color = if pulsing
+					then Theme.Colors.Select
+					elseif typeof(restColor) == "Color3" then restColor
+					else Theme.Colors.Outline
+				stroke.Thickness = if pulsing
+					then 5 + 2 * math.sin(os.clock() * 8)
+					elseif type(restThickness) == "number" then restThickness
+					else Theme.StrokeToy
+				stroke.Transparency = if pulsing
+					then 0
+					elseif type(restTransparency) == "number" then restTransparency
+					else 0
 			end
 		end
 	end)

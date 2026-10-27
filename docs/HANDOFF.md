@@ -52,6 +52,7 @@ This doc covers how to work on the project, what the user likes, what changed in
   - The action column (Shop, Spin, Daily, Settings) is vertical on the right edge. Round icons use a dark ledge, since they sit over the night scene.
   - The Q Dodge / E Catch legends sit bottom center. Their key discs are joyRed and joyBlue.
   - Play again is bottom right. The tutorial tip card is bottom right, above Play again.
+- **Touch controls** (`InputController.makeButton`): smoky dark discs with a thin white inner ring and white glyphs drawn from plain frames (`Glyphs.Dodge/Throw/Catch/Jump`). Big Throw in the middle, Dodge above it, Catch down-left, Jump below; our Jump hides Roblox's own touch jump button. On touch, Play again moves to the bottom row left of the cluster. Don't use CanvasGroup to clip glyphs: once the CanvasGroup GPU budget runs out it stops clipping. `RD_Gallery = "Touch"` shows the controls on a desktop until the mouse moves.
 
 ## What changed this session (all committed by the user)
 - **KO effect:** a smash-style white frayed beam rises just off the court edge where the victim went out, and the rims flash white (`EffectsController.koBeam`, `pulseRims`).
