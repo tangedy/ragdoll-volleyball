@@ -189,6 +189,11 @@ Config.Bots = {
 	Enabled = true,
 	MaxPerServer = 5,
 	TickInterval = 0.15,
+	-- Each bot's finisher: a tier is drawn from a gamma distribution over the tier index (0 Common,
+	-- 1 Rare, 2 Epic, 3 Legendary; the draw is floored and capped at Legendary), then a finisher of
+	-- that tier at random. Shape 2, scale 0.6 gives roughly 50% Common, 35% Rare, 11% Epic, 4%
+	-- Legendary: mostly plain, with the odd showy bot.
+	FinisherGamma = { Shape = 2, Scale = 0.6 },
 	-- Difficulty profiles. Every bot gets one when it spawns (see Mix). All of them miss, mistime
 	-- catches and fall for good throws; Hard is sharper, never perfect.
 	--   AimErrorDeg: random cone around a perfect throw · ReactionTime: seconds before reacting to

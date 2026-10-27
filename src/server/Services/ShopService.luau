@@ -150,7 +150,67 @@ function ShopService.introPose(c: any): string
 	return item.Data.Pose or "Cheer"
 end
 
+-- Bot finishers ------------------------------------------------------------------------------------
+
+local TIERS = { "Common", "Rare", "Epic", "Legendary" }
+local rng = Random.new()
+
+-- Standard normal (Box-Muller).
+local function normal(): number
+	local u = math.max(rng:NextNumber(), 1e-12)
+	return math.sqrt(-2 * math.log(u)) * math.cos(2 * math.pi * rng:NextNumber())
+end
+
+-- Gamma(shape, scale) by Marsaglia-Tsang (shape < 1 boosted through shape + 1).
+local function gamma(shape: number, scale: number): number
+	if shape < 1 then
+		return gamma(shape + 1, scale) * rng:NextNumber() ^ (1 / shape)
+	end
+	local d = shape - 1 / 3
+	local c = 1 / math.sqrt(9 * d)
+	while true do
+		local x, v
+		repeat
+			x = normal()
+			v = 1 + c * x
+		until v > 0
+		v = v * v * v
+		local u = rng:NextNumber()
+		if u < 1 - 0.0331 * x ^ 4 or math.log(u) < 0.5 * x * x + d * (1 - v + math.log(v)) then
+			return d * v * scale
+		end
+	end
+end
+
+-- A tier index (1 Common .. 4 Legendary) drawn from Config.Bots.FinisherGamma.
+function ShopService.botFinisherTier(): number
+	local g = Config.Bots.FinisherGamma
+	return math.min(math.floor(gamma(g.Shape, g.Scale)), #TIERS - 1) + 1
+end
+
+-- A finisher for a bot: a gamma-drawn tier, then a random finisher of it (stepping down a tier if
+-- the catalog has none there).
+function ShopService.pickBotFinisher(): Catalog.Item
+	local byTier: { [string]: { Catalog.Item } } = {}
+	for _, item in Catalog.inCategory("Finisher") do
+		local tier = Catalog.rarity(item)
+		byTier[tier] = byTier[tier] or {}
+		table.insert(byTier[tier], item)
+	end
+	for i = ShopService.botFinisherTier(), 1, -1 do
+		local pool = byTier[TIERS[i]]
+		if pool and #pool > 0 then
+			return pool[rng:NextInteger(1, #pool)]
+		end
+	end
+	return Catalog.default("Finisher")
+end
+
 function ShopService.finisherModule(c: any): string
+	if c and c.isBot then
+		c.botFinisher = c.botFinisher or ShopService.pickBotFinisher()
+		return c.botFinisher.Data.Module or Config.Finisher.DefaultId
+	end
 	local item = if c and c.profile
 		then Catalog.equipped(c.profile.Equipped, "Finisher")
 		else Catalog.default("Finisher")

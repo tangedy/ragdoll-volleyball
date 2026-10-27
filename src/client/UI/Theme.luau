@@ -1307,14 +1307,16 @@ function Theme.sticker(parent: Instance?, text: string, tone: Color3, props: { [
 	return f
 end
 
--- Notification dot (joy-red, outlined, stepped wiggle). Optional text = a sun count bubble instead.
+-- Notification dot: joy-red, outlined, with a paper "!" and a gentle pulse. Optional text = a sun
+-- count bubble instead (that one keeps the stepped wiggle).
+local pulsing: { [GuiObject]: UIScale } = {}
 function Theme.dot(parent: GuiObject, text: string?): Frame
 	local count = text ~= nil and text ~= ""
 	local dot = new("Frame", {
 		Name = "Badge",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.new(1, -4, 0, 4),
-		Size = if count then UDim2.fromOffset(24, 24) else UDim2.fromOffset(16, 16),
+		Size = UDim2.fromOffset(24, 24),
 		BackgroundColor3 = if count then T.sun else T.joyRed,
 		Visible = false,
 		ZIndex = (parent.ZIndex or 1) + 6,
@@ -1327,10 +1329,31 @@ function Theme.dot(parent: GuiObject, text: string?): Frame
 			12,
 			{ Size = UDim2.fromScale(1, 1), Text = text or "", TextColor3 = T.onFill, ZIndex = dot.ZIndex + 1 }
 		)
+		Theme.wiggle(dot)
+	else
+		Theme.text(dot, 17, {
+			Name = "Mark",
+			Size = UDim2.fromScale(1, 1),
+			Position = UDim2.fromOffset(0, -1),
+			FontFace = Theme.DisplayFace,
+			Text = "!",
+			TextColor3 = T.paper,
+			ZIndex = dot.ZIndex + 1,
+		})
+		pulsing[dot] = new("UIScale", nil, dot)
 	end
-	Theme.wiggle(dot)
 	return dot
 end
+RunService.RenderStepped:Connect(function()
+	local s = 1 + 0.12 * (0.5 + 0.5 * math.sin(os.clock() * math.pi * 2 / 1.1))
+	for dot, sc in pulsing do
+		if not dot.Parent then
+			pulsing[dot] = nil
+		elseif dot.Visible then
+			sc.Scale = if reduced() then 1 else s
+		end
+	end
+end)
 
 -- Older name for the notification dot.
 function Theme.badge(parent: GuiObject, _text: string?): Frame
