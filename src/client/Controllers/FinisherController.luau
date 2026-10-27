@@ -4,6 +4,7 @@
 -- and always restores the camera, HUD and any poses/effects, even if a finisher errors.
 -- See Shared/Finishers/README.md for the module contract and the toolkit passed in `ctx`.
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -436,43 +437,89 @@ local function play(def: any, d: any, preview: boolean)
 	showTags()
 end
 
--- Shop preview: plays a finisher on you and a stand-in dummy in the hub. Purely local; nobody
--- else sees it and nothing on the server changes.
+-- Shop preview ----------------------------------------------------------------------------------------
+-- Plays a finisher on a private copy of the game court, far from the real one: a copy of you stands in
+-- the middle of one half, a stand-in dummy in the middle of the other, staged exactly like a match.
+-- Purely local; nobody else sees it, your real character stays in the hub, and nothing on the server
+-- changes.
+
+local PREVIEW_OFFSET = Vector3.new(0, 0, 1600) -- well clear of the real court and the hub
+
+-- A local copy of the arena (workspace.Arena), shifted by PREVIEW_OFFSET. Tags are stripped so the
+-- game's effects (rim flashes, neon) never mistake it for the real court.
+local function buildPreviewCourt(): Folder?
+	local arena = Workspace:FindFirstChild("Arena")
+	if not arena then
+		return nil
+	end
+	local wasArchivable = arena.Archivable
+	arena.Archivable = true
+	local copy = arena:Clone()
+	arena.Archivable = wasArchivable
+	copy.Name = "PreviewCourt"
+	for _, d in copy:GetDescendants() do
+		for _, tag in CollectionService:GetTags(d) do
+			CollectionService:RemoveTag(d, tag)
+		end
+		if d:IsA("LuaSourceContainer") or d:IsA("ProximityPrompt") then
+			d:Destroy()
+		elseif d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanTouch = false
+			d.CFrame += PREVIEW_OFFSET
+		end
+	end
+	copy.Parent = Workspace
+	return copy :: Folder
+end
+
+-- A local copy of a model with its scripts, prompts and name tags removed; only the root anchored so
+-- poses still play on the limbs.
+local function previewActor(model: Model, name: string, anchorAll: boolean): Model
+	local wasArchivable = model.Archivable
+	model.Archivable = true
+	local copy = model:Clone()
+	model.Archivable = wasArchivable
+	copy.Name = name
+	for _, d in copy:GetDescendants() do
+		if d:IsA("BillboardGui") or d:IsA("LuaSourceContainer") or d:IsA("ProximityPrompt") then
+			d:Destroy()
+		elseif d:IsA("BasePart") then
+			d.Anchored = anchorAll or d.Name == "HumanoidRootPart"
+			d.CanTouch = false
+		end
+	end
+	return copy
+end
+
 function FinisherController.preview(moduleName: string): boolean
 	if FinisherController.playing then
 		return false
 	end
 	local character = player.Character
-	local root = rootOf(character)
-	if not character or not root or player:GetAttribute("Status") ~= "Lobby" then
+	if not character or not rootOf(character) or player:GetAttribute("Status") ~= "Lobby" then
 		return false
 	end
 	local def = loadModule(moduleName)
 	if not def then
 		return false
 	end
-	local template = game:GetService("ReplicatedStorage"):FindFirstChild(Config.Practice.TemplateName)
+	local template = ReplicatedStorage:FindFirstChild(Config.Practice.TemplateName)
 	if not template then
 		return false
 	end
-	local wasArchivable = template.Archivable
-	template.Archivable = true
-	local standIn = template:Clone()
-	template.Archivable = wasArchivable
-	standIn.Name = "PreviewStandIn"
-	for _, dsc in standIn:GetDescendants() do
-		if dsc:IsA("BillboardGui") or dsc:IsA("LuaSourceContainer") then
-			dsc:Destroy()
-		elseif dsc:IsA("BasePart") then
-			dsc.Anchored = true
-		end
-	end
-	-- stand it 18 studs in front of you, kept inside the hub
-	local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
-	look = if look.Magnitude > 0.1 then look.Unit else Vector3.zAxis
-	local spot = ArenaLayout.clampToLobby(root.Position + look * 18, 6)
-	spot = Vector3.new(spot.X, Config.Arena.LobbyOrigin.Y + 3, spot.Z)
-	standIn:PivotTo(CFrame.lookAt(spot, Vector3.new(root.Position.X, spot.Y, root.Position.Z)))
+	local court = buildPreviewCourt()
+	-- you on your team's half (Red in the hub), the dummy on the other, facing each other
+	local team = player:GetAttribute("Team")
+	local winner = if type(team) == "string" and team ~= "" then team else "Red"
+	local up = Vector3.new(0, 3, 0)
+	local killerAt = ArenaLayout.halfCenter(winner) + up + PREVIEW_OFFSET
+	local victimAt = ArenaLayout.halfCenter(ArenaLayout.enemyOf(winner)) + up + PREVIEW_OFFSET
+	local me = previewActor(character, "PreviewYou", false)
+	local standIn = previewActor(template :: Model, "PreviewStandIn", true)
+	me:PivotTo(CFrame.lookAt(killerAt, victimAt))
+	standIn:PivotTo(CFrame.lookAt(victimAt, killerAt))
+	me.Parent = Workspace
 	standIn.Parent = Workspace
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local walk = humanoid and humanoid.WalkSpeed
@@ -480,17 +527,23 @@ function FinisherController.preview(moduleName: string): boolean
 		humanoid.WalkSpeed = 0
 	end
 	play(def, {
-		killer = character,
+		killer = me,
 		victim = standIn,
 		killerName = player.DisplayName,
 		victimName = "Dummy",
-		winner = player:GetAttribute("Team") ~= "" and player:GetAttribute("Team") or "Red",
+		winner = winner,
+		killerCF = CFrame.lookAt(killerAt, victimAt),
+		victimCF = CFrame.lookAt(victimAt, killerAt),
 	}, true)
 	if humanoid and walk then
 		humanoid.WalkSpeed = walk
 	end
 	task.delay(0.5, function()
+		me:Destroy()
 		standIn:Destroy()
+		if court then
+			court:Destroy()
+		end
 	end)
 	return true
 end

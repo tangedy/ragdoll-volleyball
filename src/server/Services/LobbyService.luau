@@ -218,7 +218,9 @@ function LobbyService.tick()
 	end
 	-- Lobby players and spectators who fall off get put back; lost characters are rebuilt.
 	for _, c in S.PlayerStateService.realPlayers() do
-		if not S.PlayerStateService.isAlive(c) then
+		if c.spawning then
+			continue -- a character is already being built (avatar download in flight)
+		elseif not S.PlayerStateService.isAlive(c) then
 			if c.inMatch and c.status == "Active" then
 				S.MatchService.onCharacterLost(c)
 			end

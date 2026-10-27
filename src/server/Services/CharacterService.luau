@@ -194,7 +194,15 @@ function CharacterService.spawn(c: any, desc: HumanoidDescription, cf: CFrame)
 	return model
 end
 
-function CharacterService.spawnPlayer(c: any, cf: CFrame)
+function CharacterService.spawnPlayer(c: any, cf: CFrame): Model?
+	-- one build at a time: the first spawn waits on the avatar download, and a second call meanwhile
+	-- (the lobby's "lost character" check) would otherwise build a duplicate and delete the first,
+	-- leaving the client's camera on the deleted one. A later call just moves the pending spawn.
+	c.spawnCF = cf
+	if c.spawning then
+		return nil
+	end
+	c.spawning = true
 	local player = c.player :: Player
 	-- the avatar is fetched from the web once per visit; respawns reuse it, so falling off the hub
 	-- or rejoining a round never waits on (or gets throttled by) a web request
@@ -209,7 +217,13 @@ function CharacterService.spawnPlayer(c: any, cf: CFrame)
 		end
 	end
 	local d = if cached then cached:Clone() else Instance.new("HumanoidDescription")
-	return CharacterService.spawn(c, d, cf)
+	local ok, model = pcall(CharacterService.spawn, c, d, c.spawnCF)
+	c.spawning = false -- always clear it, or a failed build would block every later respawn
+	if not ok then
+		warn(("[Character] spawn failed for %s: %s"):format(player.Name, tostring(model)))
+		return nil
+	end
+	return model
 end
 
 function CharacterService.teleport(c: any, pos: Vector3, lookAt: Vector3?)

@@ -21,20 +21,20 @@ end
 
 local function onCharacter(character: Model)
 	local h = character:WaitForChild("Humanoid", 10) :: Humanoid?
-	if not h then
-		return
+	if not h or player.Character ~= character then
+		return -- already replaced by a newer character: never point the camera at this one
 	end
 	h:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
 	h.CameraOffset = Vector3.new(0, 1.2, 0)
+	local camera = workspace.CurrentCamera
+	camera.CameraSubject = h
+	camera.CameraType = Enum.CameraType.Custom
 	-- your own name tag sits right in the middle of your view; everyone else still sees it
 	local head = character:WaitForChild("Head", 5)
 	local tag = head and head:WaitForChild("NameTag", 5)
 	if tag and tag:IsA("BillboardGui") then
 		tag.Enabled = false
 	end
-	local camera = workspace.CurrentCamera
-	camera.CameraSubject = h
-	camera.CameraType = Enum.CameraType.Custom
 end
 
 -- Put the camera behind `root`, looking past it at `focus` (same framing as the round start).
