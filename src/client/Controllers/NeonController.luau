@@ -35,16 +35,28 @@ local function apply(p: BasePart)
 	busy = false
 end
 
+-- Color is only watched once a part is (or becomes) Neon: most of the map never is, and two
+-- signals on every part in the Workspace adds up.
+local colorWatched: { [BasePart]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+local function watchColor(p: BasePart)
+	if colorWatched[p] or p.Material ~= Enum.Material.Neon then
+		return
+	end
+	colorWatched[p] = true
+	p:GetPropertyChangedSignal("Color"):Connect(function()
+		apply(p)
+	end)
+end
+
 local function watch(p: BasePart)
 	if watched[p] then
 		return
 	end
 	watched[p] = true
 	apply(p)
-	p:GetPropertyChangedSignal("Color"):Connect(function()
-		apply(p)
-	end)
+	watchColor(p)
 	p:GetPropertyChangedSignal("Material"):Connect(function()
+		watchColor(p)
 		apply(p)
 	end)
 end

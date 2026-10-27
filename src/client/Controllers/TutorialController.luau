@@ -101,6 +101,7 @@ function TutorialController.start()
 			end
 		end
 	end)
+	local lastPointer: string? = nil
 	RunService.RenderStepped:Connect(function()
 		BallGuideController.enabled = step == 1
 		local t, pointer = text()
@@ -113,6 +114,10 @@ function TutorialController.start()
 		end
 		shownText = t or ""
 		-- point at the exact touch button with a breathing select-colored outline
+		if pointer == nil and lastPointer == nil then
+			return -- nothing pointed at now or last frame: the outlines are already at rest
+		end
+		lastPointer = pointer
 		for name, b in InputController.buttons do
 			local face = b:FindFirstChild("Face") or b
 			local stroke = face:FindFirstChild("Outline") :: UIStroke?

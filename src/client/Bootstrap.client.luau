@@ -9,6 +9,7 @@ local Controllers = script.Parent:WaitForChild("Controllers")
 local ORDER = {
 	"Net",
 	"NeonController",
+	"GraphicsController",
 	"SoundController",
 	"BallVisualController",
 	"AimController",

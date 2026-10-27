@@ -1,5 +1,26 @@
 # Implementation status (Oct 24, 2026)
 
+## Oct 27 stability and performance pass
+
+- **Matchmaking can't get stuck:** if a match throws a script error, `MatchService.recover()` sends everyone back to the hub, clears bots and balls, and the loop starts the next match. Before, one error stopped matches for the rest of the server's life.
+- **No surprise teleports:** while any hub menu is open (shop, daily, spin, settings), the client reports `SetBusy` and the server won't start or late-join you into a match. This replaces the shop's old trick of switching Play again off and back on, which could leave it stuck off.
+- **Clear hub status:** the phase pill says why you're waiting ("Play again is off…", "Close the menu to join…") instead of a silent "Getting a match ready...".
+- **Network:**
+  - In-flight balls write their server position at 10 Hz instead of 60 Hz. Clients already draw the arc from the launch record.
+  - The action rate limit is a token bucket (20/s sustained, 40 burst), so inputs bunched up by a laggy connection aren't dropped.
+  - Avatars are fetched once per visit and reused on every respawn.
+- **Server CPU:** `PlayerStateService.all()` is cached (it ran several times per physics step), and ball sweeps reuse one `RaycastParams`.
+- **Performance mode** (`GraphicsController`, `Config.Graphics`, ⚙ Settings): turns off global shadows, sun rays, bloom, the court sparkles and scenery lights on this client only, and cuts hit-effect particles by 60%. It switches on by itself if your Roblox graphics quality is 1–3, or after two 3-second samples below 38 FPS.
+- **Lighting:** lighter haze so the court reads from the hub, a brighter ambient, a little more contrast and softer shadows. Lamp posts no longer cast shadows.
+- **Name tags:** they shrink with distance, so a crowd doesn't stack into one pile, and your own tag is hidden.
+
+### To check in Studio (Oct 27)
+
+1. Open the shop during intermission. The pill should say to close the menu, and no match should start or pull you in until you close it.
+2. Turn Play again off. The pill should say so in the hub and during a live match.
+3. Set Roblox graphics quality to 1–3. Shadows and lamp lights should drop and the ⚙ Performance mode toggle should be on. Toggle it off and on.
+4. Throw balls with the Network emulator set to 300 ms. Arcs should stay smooth and no throws should be lost.
+
 ## Oct 26 follow-ups (neon, practice, intro)
 
 - **Neon at 50%:** a client `NeonController` shows every Neon part at `Config.Visuals.NeonIntensity` (0.5), including parts that change colour later (rim pulses, strip warnings, effects, power balls, team bands). The arena's and hub's glow panels and lights are halved too. The server's colours are unchanged.

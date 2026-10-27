@@ -212,7 +212,8 @@ end
 function MatchService.queuedPlayers(): { any }
 	local list = {}
 	for _, c in S.PlayerStateService.realPlayers() do
-		if c.autoQueue and not c.inMatch and S.PlayerStateService.isAlive(c) and c.profileLoaded then
+		-- a player with a hub menu open (shop, spin, daily, settings) is never pulled into a match
+		if c.autoQueue and not c.busy and not c.inMatch and S.PlayerStateService.isAlive(c) and c.profileLoaded then
 			table.insert(list, c)
 		end
 	end
@@ -998,9 +999,48 @@ function MatchService.run()
 			end
 		end
 		if not cancelled then
-			runMatch(MatchService.queuedPlayers())
+			local trace = ""
+			local ok = xpcall(runMatch, function(e)
+				trace = debug.traceback(tostring(e))
+				return e
+			end, MatchService.queuedPlayers())
+			if not ok then
+				warn("[Match] match crashed, recovering: " .. trace)
+				MatchService.recover()
+			end
 		end
 	end
+end
+
+-- A script error mid-match must never strand players on the court or stop matchmaking for the rest
+-- of the server's life: tidy everything back to the hub and let the loop start the next match.
+function MatchService.recover()
+	staging = false
+	devFinisherBy = nil
+	devSkip = false
+	devOvertime = false
+	overtime = false
+	MatchService.setAttr("Overtime", false)
+	pcall(S.BotService.setPaused, true)
+	pcall(S.ArenaService.resetCourt)
+	pcall(S.BallService.clearContext, "Match")
+	pcall(S.BotService.clear)
+	local finished = roster
+	roster = {}
+	for _, c in finished do
+		if c.player and c.player.Parent then
+			pcall(MatchService.moveToLobby, c)
+		end
+	end
+	-- anyone still flagged in a match without being on the roster (half-admitted) goes back too
+	for _, c in S.PlayerStateService.realPlayers() do
+		if c.inMatch then
+			pcall(MatchService.moveToLobby, c)
+		end
+	end
+	pcall(publishCounts)
+	banner("MATCH ABORTED", Color3.new(1, 1, 1), 2)
+	task.wait(1)
 end
 
 -- Population changes -------------------------------------------------------------------------------

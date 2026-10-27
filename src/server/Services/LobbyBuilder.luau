@@ -500,7 +500,9 @@ local function lampPost(x: number, f: number, color: Color3, decorF: Folder, col
 		Color = color,
 		Material = Enum.Material.Neon,
 	}, decorF)
-	make("PointLight", { Color = color, Range = 22, Brightness = 1.4, Shadows = true }, head)
+	-- no shadows: a shadow-casting point light per lamp post is one of the most expensive things
+	-- a GPU can be asked to draw, and the deck's neon already sets the mood
+	make("PointLight", { Color = color, Range = 22, Brightness = 1.4, Shadows = false }, head)
 	return at(x, h, f).Position
 end
 

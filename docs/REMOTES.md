@@ -18,6 +18,7 @@ Every request is rate-limited to `Config.Net.MaxActionsPerSecond` per player and
 | `Dodge` | `{ dir: Vector3 }` | Flattened to the horizontal plane. Off cooldown, not ragdolled, catching or in throw recovery, and not frozen in the countdown. |
 | `Catch` | `{}` | Empty hands, off cooldown, `Active` or `Lobby` status (jailed players can't catch). Opens a `CatchWindow` on the server. |
 | `SetAutoQueue` | `{ value: boolean }` | The lobby "Play again" toggle. |
+| `SetBusy` | `{ value: boolean }` | A hub menu (shop, daily, spin, settings) is open. Busy players aren't pulled into a match. |
 | `SetSetting` | `{ key: "ReducedMotion" \| "CameraShake", value: boolean }` | Stored per session. |
 | `ReportDevice` | `{ kind: "Touch" \| "Mouse" \| "Gamepad" }` | Analytics only, logged once per kind per session. |
 | `BuyItem` | `{ id: string }` | Hub only. The item must exist, cost more than 0, be unowned and be affordable. It's equipped on purchase. |

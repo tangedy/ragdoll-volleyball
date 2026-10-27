@@ -17,6 +17,7 @@ NetSchema.Actions = {
 	Dodge = "Dodge",
 	Catch = "Catch",
 	SetAutoQueue = "SetAutoQueue",
+	SetBusy = "SetBusy", -- a hub menu is open: don't pull this player into a match meanwhile
 	SetSetting = "SetSetting",
 	ReportDevice = "ReportDevice",
 	BuyItem = "BuyItem",
@@ -80,6 +81,12 @@ NetSchema.Validators = {
 		return { dir = if flat.Magnitude > 0.1 then flat.Unit else Vector3.zero }
 	end,
 	SetAutoQueue = function(p: any): any
+		if not isTable(p) or type(p.value) ~= "boolean" then
+			return nil
+		end
+		return { value = p.value }
+	end,
+	SetBusy = function(p: any): any
 		if not isTable(p) or type(p.value) ~= "boolean" then
 			return nil
 		end

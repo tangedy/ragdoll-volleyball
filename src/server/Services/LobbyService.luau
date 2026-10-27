@@ -107,6 +107,13 @@ function LobbyService.start()
 			player:SetAttribute("AutoQueue", p.value)
 		end
 	end)
+	S.NetService.on(NetSchema.Actions.SetBusy, function(player, p)
+		local c = S.PlayerStateService.get(player)
+		if c then
+			c.busy = p.value
+			player:SetAttribute("Busy", p.value)
+		end
+	end)
 	S.NetService.on(NetSchema.Actions.ReportDevice, function(player, p)
 		local c = S.PlayerStateService.get(player)
 		if c and not (c.devicesSeen and c.devicesSeen[p.kind]) then

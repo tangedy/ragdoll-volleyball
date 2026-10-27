@@ -22,6 +22,7 @@ local Config = require(Shared.Config)
 local Net = require(script.Parent.Net)
 local HUDController = require(script.Parent.HUDController)
 local SoundController = require(script.Parent.SoundController)
+local GraphicsController = require(script.Parent.GraphicsController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
 local player = Players.LocalPlayer
@@ -32,7 +33,7 @@ local ShopController = {}
 
 local SHOP_SIZE = Vector2.new(880, 520)
 local DAILY_SIZE = Vector2.new(720, 400)
-local SETTINGS_SIZE = Vector2.new(520, 372)
+local SETTINGS_SIZE = Vector2.new(520, 456)
 
 local gui: ScreenGui
 local backdrop: TextButton
@@ -51,7 +52,6 @@ local dailyDot: Frame
 local claimButton: TextButton
 local currentTab = "BallSkin"
 local profile: any = { coins = 0, owned = {}, equipped = {}, daily = nil }
-local queueBeforeShop: boolean? = nil
 local dailyAutoShown = false
 local claimPending = false -- the player pressed Claim and we're waiting for the server's answer
 
@@ -478,22 +478,12 @@ function ShopController.openShop(on: boolean)
 		Theme.show(f, backdrop)
 		renderShelf()
 		bindShopKeys(true)
-		if queueBeforeShop == nil then
-			queueBeforeShop = player:GetAttribute("AutoQueue") ~= false
-			Net.request(Net.Actions.SetAutoQueue, { value = false })
-		end
 	else
 		if ShopController.isOpen(f) then
 			Theme.setHome(nil)
 		end
 		bindShopKeys(false)
 		Theme.hide(f, if ShopController.isOpen(daily.frame) then nil else backdrop)
-	end
-	if not on and queueBeforeShop ~= nil then
-		local pref = player:GetAttribute("QueuePreference")
-		local restoreTo = if type(pref) == "boolean" then pref else queueBeforeShop
-		Net.request(Net.Actions.SetAutoQueue, { value = restoreTo })
-		queueBeforeShop = nil
 	end
 end
 
@@ -816,6 +806,17 @@ local function buildSettings()
 			HUDController.applySetting("ReducedMotion", v)
 		end
 	)
+	local setPerformance = row(
+		4,
+		"Performance mode",
+		"Smoother on slower devices: fewer lights, shadows and sparkles.",
+		GraphicsController.low,
+		function(v)
+			GraphicsController.set(v, true)
+		end
+	)
+	-- it can also switch on by itself when the game runs slowly
+	GraphicsController.onChanged(setPerformance)
 end
 
 function ShopController.openSettings(on: boolean)
@@ -929,9 +930,17 @@ function ShopController.start()
 			ShopController.openDaily(true)
 		end
 	end)
+	-- any open sheet (shop, daily, spin, settings) shares the backdrop: while it's up the server
+	-- won't pull you into a match, so you're never teleported mid-purchase or mid-spin
+	local sentBusy = false
 	RunService.RenderStepped:Connect(function()
 		local hub = inHub()
 		gui.Enabled = hub and not HUDController.cinematic
+		local busy = hub and backdrop.Visible
+		if busy ~= sentBusy then
+			sentBusy = busy
+			Net.request(Net.Actions.SetBusy, { value = busy })
+		end
 		-- the row steps aside while a sheet is up
 		actionRow.Visible = not backdrop.Visible
 		if not hub and backdrop.Visible then

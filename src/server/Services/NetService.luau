@@ -13,7 +13,9 @@ type Handler = (player: Player, payload: any) -> ()
 local NetService = {}
 
 local handlers: { [string]: Handler } = {}
-local rate: { [Player]: { windowStart: number, count: number, suspicion: number } } = {}
+-- token bucket per player: refills at MaxActionsPerSecond up to BurstActions, so the clump of
+-- inputs a bad connection delivers all at once after a lag spike still gets through
+local rate: { [Player]: { tokens: number, last: number, suspicion: number } } = {}
 local feedbackRemote: RemoteEvent
 local actionRemote: RemoteEvent
 local S: any
@@ -60,21 +62,20 @@ end
 
 function NetService.start()
 	actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
+		local cfg = Config.Net
+		local now = os.clock()
 		local r = rate[player]
 		if not r then
-			r = { windowStart = os.clock(), count = 0, suspicion = 0 }
+			r = { tokens = cfg.BurstActions, last = now, suspicion = 0 }
 			rate[player] = r
 		end
-		local now = os.clock()
-		if now - r.windowStart >= 1 then
-			r.windowStart = now
-			r.count = 0
-		end
-		r.count += 1
-		if r.count > Config.Net.MaxActionsPerSecond then
+		r.tokens = math.min(cfg.BurstActions, r.tokens + (now - r.last) * cfg.MaxActionsPerSecond)
+		r.last = now
+		if r.tokens < 1 then
 			suspicious(player, "rate")
 			return
 		end
+		r.tokens -= 1
 		if type(action) ~= "string" then
 			suspicious(player, "action-type")
 			return

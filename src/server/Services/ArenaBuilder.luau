@@ -104,16 +104,19 @@ local function label(parent: BasePart, text: string, color: Color3)
 end
 
 -- Stylized dusk lighting: dark enough that the neon rims and power-up balls pop, with bloom on
--- neon only (high threshold) so the court itself stays readable.
+-- neon only (high threshold) so the court itself stays readable. The haze is light enough that
+-- the court reads clearly from the hub across the gap, and the ambient lifts faces out of shadow.
+-- (GraphicsController drops shadows, sun rays and bloom locally on slower machines.)
 function ArenaBuilder.setupLighting()
 	local Lighting = game:GetService("Lighting")
 	Lighting.ClockTime = 18.1
 	Lighting.Brightness = 2.2
-	Lighting.Ambient = Color3.fromRGB(85, 75, 110)
-	Lighting.OutdoorAmbient = Color3.fromRGB(130, 115, 160)
+	Lighting.Ambient = Color3.fromRGB(96, 86, 122)
+	Lighting.OutdoorAmbient = Color3.fromRGB(138, 122, 168)
 	Lighting.EnvironmentDiffuseScale = 1
 	Lighting.EnvironmentSpecularScale = 0.6
 	Lighting.GlobalShadows = true
+	Lighting.ShadowSoftness = 0.35
 	local function ensure(className: string, name: string): Instance
 		local existing = Lighting:FindFirstChild(name)
 		if existing and existing.ClassName == className then
@@ -128,19 +131,19 @@ function ArenaBuilder.setupLighting()
 		return inst
 	end
 	local atmo = ensure("Atmosphere", "RD_Atmosphere") :: Atmosphere
-	atmo.Density = 0.28
+	atmo.Density = 0.25
 	atmo.Offset = 0.2
 	atmo.Color = Color3.fromRGB(205, 175, 255)
 	atmo.Decay = Color3.fromRGB(110, 70, 170)
-	atmo.Glare = 0.35
-	atmo.Haze = 1.4
+	atmo.Glare = 0.3
+	atmo.Haze = 1.0
 	local bloom = ensure("BloomEffect", "RD_Bloom") :: BloomEffect
-	bloom.Intensity = 0.9
-	bloom.Size = 28
+	bloom.Intensity = 0.8
+	bloom.Size = 24
 	bloom.Threshold = 1.15
 	local cc = ensure("ColorCorrectionEffect", "RD_Color") :: ColorCorrectionEffect
-	cc.Saturation = 0.18
-	cc.Contrast = 0.1
+	cc.Saturation = 0.16
+	cc.Contrast = 0.14
 	cc.Brightness = 0.02
 	cc.TintColor = Color3.fromRGB(255, 248, 255)
 	local rays = ensure("SunRaysEffect", "RD_SunRays") :: SunRaysEffect

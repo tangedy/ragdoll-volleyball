@@ -138,7 +138,6 @@ function RagdollService.ragdoll(character: Model, velocityChange: Vector3?)
 			part.CollisionGroup = "Ragdoll"
 		end
 	end
-	setOwner(character, nil)
 	if velocityChange then
 		local kb = Config.Knockback
 		local maxSpeed = kb.MaxSpeed

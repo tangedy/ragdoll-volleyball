@@ -26,6 +26,12 @@ local function onCharacter(character: Model)
 	end
 	h:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
 	h.CameraOffset = Vector3.new(0, 1.2, 0)
+	-- your own name tag sits right in the middle of your view; everyone else still sees it
+	local head = character:WaitForChild("Head", 5)
+	local tag = head and head:WaitForChild("NameTag", 5)
+	if tag and tag:IsA("BillboardGui") then
+		tag.Enabled = false
+	end
 	local camera = workspace.CurrentCamera
 	camera.CameraSubject = h
 	camera.CameraType = Enum.CameraType.Custom

@@ -344,8 +344,19 @@ Config.Intro = {
 }
 
 Config.Net = {
-	MaxActionsPerSecond = 20,
+	MaxActionsPerSecond = 20, -- sustained rate
+	BurstActions = 40, -- short bursts allowed on top (inputs bunched up by a laggy connection)
 	SuspicionLogThreshold = 10,
+}
+
+-- Performance mode (GraphicsController): turns on by itself on slow machines, or from ⚙ Settings.
+Config.Graphics = {
+	LowFps = 38, -- below this average for SlowWindowsToSwitch windows in a row: performance mode
+	SampleWindow = 3, -- seconds per frame-rate sample
+	SlowWindowsToSwitch = 2,
+	WarmupTime = 8, -- ignore the first seconds after joining (loading hitches)
+	LowQualityLevel = 3, -- a Roblox graphics quality of 1-3 (set by hand) starts in performance mode
+	LowParticleScale = 0.4, -- one-shot effect bursts keep this share of their particles
 }
 
 Config.Visuals = {

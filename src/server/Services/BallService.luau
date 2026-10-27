@@ -34,6 +34,7 @@ export type Ball = {
 	throwId: number,
 	flightT: number,
 	hasHit: boolean,
+	syncedAt: number, -- flightT when the part's CFrame was last written during flight
 }
 
 local BallService = {}
@@ -44,6 +45,12 @@ local nextId = 0
 local accumulator = 0
 local folder: Folder
 local rng = Random.new()
+-- Every client draws in-flight balls from the launch record (BallVisualController), so the real
+-- part only needs an occasional position while flying (late joiners, debugging). Writing it every
+-- 1/60 s step replicated ~60 CFrame updates a second per ball to every client.
+local FLIGHT_SYNC_INTERVAL = 0.1
+local sweepParams = RaycastParams.new()
+sweepParams.FilterType = Enum.RaycastFilterType.Include
 
 local function now(): number
 	return Workspace:GetServerTimeNow()
@@ -208,6 +215,7 @@ function BallService.spawn(ballType: string, pos: Vector3, context: string, isPo
 		throwId = 0,
 		flightT = 0,
 		hasHit = false,
+		syncedAt = 0,
 	}
 	part:SetAttribute(Types.Attr.BallId, ball.id)
 	part:SetAttribute("Context", context)
@@ -306,6 +314,7 @@ function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: 
 	ball.charge = charge
 	ball.throwId = throwId
 	ball.flightT = 0
+	ball.syncedAt = 0
 	ball.hasHit = false
 	ball.lastThrower = c
 	ball.lastTeam = c.team
@@ -380,10 +389,8 @@ local function simulate(ball: Ball, dt: number)
 			table.insert(include, t.proxy)
 		end
 	end
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = include
-	local result = if delta.Magnitude > 1e-4 then Workspace:Spherecast(from, r, delta, params) else nil
+	sweepParams.FilterDescendantsInstances = include
+	local result = if delta.Magnitude > 1e-4 then Workspace:Spherecast(from, r, delta, sweepParams) else nil
 
 	if catcher then
 		local catchT = (catchPos - from):Dot(delta) / math.max(delta:Dot(delta), 1e-6)
@@ -415,7 +422,10 @@ local function simulate(ball: Ball, dt: number)
 	ball.pos = to
 	ball.vel = nextVel
 	ball.flightT += dt
-	ball.part.CFrame = CFrame.new(to)
+	if ball.flightT - ball.syncedAt >= FLIGHT_SYNC_INTERVAL then
+		ball.syncedAt = ball.flightT
+		ball.part.CFrame = CFrame.new(to)
+	end
 	local voidY = if ball.context == "Lobby" then ArenaLayout.LobbyVoidY else ArenaLayout.VoidY
 	-- a wild match throw that sails over the hub deck is out (it never flies through hub players)
 	local overHub = ball.context == "Match" and ArenaLayout.inLobby(to, 2) and to.Y < ArenaLayout.SurfaceY + 30

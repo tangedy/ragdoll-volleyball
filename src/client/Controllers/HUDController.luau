@@ -62,8 +62,6 @@ end
 -- Comfort settings: one place that applies a switch (HUD, the UI kit, and the server's copy).
 function HUDController.applySetting(key: string, value: boolean)
 	if key == "PlayAgain" then
-		-- the player's explicit choice; the shop restores this (not a stale value) when it closes
-		player:SetAttribute("QueuePreference", value)
 		Net.request(Net.Actions.SetAutoQueue, { value = value })
 		return
 	end
@@ -956,12 +954,19 @@ local function update()
 	end
 
 	local phase = ""
-	if state == "WaitingForPlayers" then
+	-- in the hub, say plainly why you aren't being put in a match (never a silent wait)
+	local queueOff = player:GetAttribute("AutoQueue") == false
+	local busy = player:GetAttribute("Busy") == true
+	local waitReason = if queueOff
+		then "Play again is off · turn it on in ⚙ to play"
+		elseif busy then "Close the menu to join the next match"
+		else nil
+	if not inMatch and waitReason and (state == "WaitingForPlayers" or state == "Intermission" or live) then
+		phase = waitReason
+	elseif state == "WaitingForPlayers" then
 		phase = "Getting a match ready..."
 	elseif state == "Intermission" then
-		phase = if player:GetAttribute("AutoQueue") == false
-			then "Play again is off"
-			else ("Next match in %d"):format(math.max(0, math.ceil(left)))
+		phase = ("Next match in %d"):format(math.max(0, math.ceil(left)))
 	elseif state == "RoundCountdown" and inMatch then
 		phase = "Get ready!"
 	elseif not inMatch and live then

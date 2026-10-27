@@ -19,6 +19,7 @@ local ArenaLayout = require(Shared.ArenaLayout)
 local Net = require(script.Parent.Net)
 local HUDController = require(script.Parent.HUDController)
 local SoundController = require(script.Parent.SoundController)
+local GraphicsController = require(script.Parent.GraphicsController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
 local player = Players.LocalPlayer
@@ -72,7 +73,7 @@ local function burst(pos: Vector3, color: Color3, count: number, speed: number, 
 	e.Drag = 6
 	e.Rate = 0
 	e.Parent = a
-	e:Emit(count)
+	e:Emit(GraphicsController.particles(count))
 	task.delay(1, function()
 		a:Destroy()
 	end)

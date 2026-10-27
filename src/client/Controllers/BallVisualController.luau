@@ -289,6 +289,9 @@ function BallVisualController.start()
 	local lobbyParams = RaycastParams.new()
 	lobbyParams.FilterType = Enum.RaycastFilterType.Include
 	RunService.RenderStepped:Connect(function()
+		if next(visuals) == nil then
+			return -- nothing in flight: skip rebuilding the filters every frame
+		end
 		local arena = Workspace:FindFirstChild("Arena")
 		local collidable = arena and arena:FindFirstChild("Collidable")
 		params.FilterDescendantsInstances = if collidable then { collidable } else {}

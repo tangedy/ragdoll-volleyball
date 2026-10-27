@@ -63,6 +63,10 @@ local nextId = 0
 local all: { [number]: Combatant } = {}
 local byPlayer: { [Player]: Combatant } = {}
 local byCharacter: { [Model]: Combatant } = {}
+-- all() runs many times per physics step (ball sweeps, pickups, bots), so the sorted list is cached
+-- and rebuilt only when someone joins or leaves. A rebuild makes a new table, so a caller iterating
+-- the old one while combatants are added or removed is never disturbed. Callers must not mutate it.
+local sortedCache: { Combatant }? = nil
 
 local S: any
 
@@ -122,6 +126,7 @@ function PlayerStateService.create(name: string, player: Player?, isBot: boolean
 		bot = nil,
 	}
 	all[c.id] = c
+	sortedCache = nil
 	if player then
 		byPlayer[player] = c
 	end
@@ -130,6 +135,7 @@ end
 
 function PlayerStateService.remove(c: Combatant)
 	all[c.id] = nil
+	sortedCache = nil
 	if c.player then
 		byPlayer[c.player] = nil
 	end
@@ -162,6 +168,9 @@ function PlayerStateService.fromCharacter(model: Instance?): Combatant?
 end
 
 function PlayerStateService.all(): { Combatant }
+	if sortedCache then
+		return sortedCache
+	end
 	local list = {}
 	for _, c in all do
 		table.insert(list, c)
@@ -169,6 +178,7 @@ function PlayerStateService.all(): { Combatant }
 	table.sort(list, function(a, b)
 		return a.id < b.id
 	end)
+	sortedCache = list
 	return list
 end
 

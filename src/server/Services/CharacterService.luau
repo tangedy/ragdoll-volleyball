@@ -39,14 +39,16 @@ local function makeTag(character: Model, c: any)
 	end
 	local bb = Instance.new("BillboardGui")
 	bb.Name = "NameTag"
-	bb.Size = UDim2.fromOffset(160, 44)
-	bb.StudsOffset = Vector3.new(0, 2.6, 0)
-	bb.MaxDistance = 120
+	-- part studs, part pixels: tags shrink with distance (so a crowd across the court doesn't stack
+	-- into one unreadable pile) but never below a legible floor
+	bb.Size = UDim2.new(3.6, 70, 1, 20)
+	bb.StudsOffset = Vector3.new(0, 2.4, 0)
+	bb.MaxDistance = 110
 	bb.LightInfluence = 0
 	local name = Instance.new("TextLabel")
 	name.Name = "NameLabel"
-	name.Size = UDim2.fromScale(1, 0.55)
-	name.Position = UDim2.fromScale(0, 0.45)
+	name.Size = UDim2.fromScale(1, 0.6)
+	name.Position = UDim2.fromScale(0, 0.4)
 	name.BackgroundTransparency = 1
 	name.Font = Enum.Font.GothamBold
 	name.TextScaled = true
@@ -56,7 +58,7 @@ local function makeTag(character: Model, c: any)
 	name.Parent = bb
 	local badge = Instance.new("TextLabel")
 	badge.Name = "Badge"
-	badge.Size = UDim2.fromScale(1, 0.45)
+	badge.Size = UDim2.fromScale(1, 0.38)
 	badge.BackgroundTransparency = 1
 	badge.Font = Enum.Font.GothamBlack
 	badge.TextScaled = true
@@ -194,10 +196,19 @@ end
 
 function CharacterService.spawnPlayer(c: any, cf: CFrame)
 	local player = c.player :: Player
-	local ok, desc = pcall(function()
-		return Players:GetHumanoidDescriptionFromUserId(math.max(1, player.UserId))
-	end)
-	local d = if ok and desc then desc else Instance.new("HumanoidDescription")
+	-- the avatar is fetched from the web once per visit; respawns reuse it, so falling off the hub
+	-- or rejoining a round never waits on (or gets throttled by) a web request
+	local cached = c.avatarDesc :: HumanoidDescription?
+	if not cached then
+		local ok, desc = pcall(function()
+			return Players:GetHumanoidDescriptionFromUserId(math.max(1, player.UserId))
+		end)
+		if ok and desc then
+			cached = desc
+			c.avatarDesc = desc
+		end
+	end
+	local d = if cached then cached:Clone() else Instance.new("HumanoidDescription")
 	return CharacterService.spawn(c, d, cf)
 end
 

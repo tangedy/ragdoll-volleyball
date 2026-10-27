@@ -93,7 +93,12 @@ local function floorAt(pos: Vector3): number?
 	return if hit then hit.Position.Y else nil
 end
 
+local allHidden = false
 local function hideAll()
+	if allHidden then
+		return
+	end
+	allHidden = true
 	for _, c in chevrons do
 		c.a.Transparency = 1
 		c.b.Transparency = 1
@@ -145,6 +150,7 @@ function BallGuideController.start()
 			hideAll()
 			return
 		end
+		allHidden = false
 		local f = delta.Unit
 		local r = f:Cross(Vector3.yAxis)
 		local count = math.clamp(math.floor((dist - 3) / SPACING), 0, MAX_CHEVRONS)
