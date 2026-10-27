@@ -24,7 +24,9 @@ local listeners: { (boolean) -> () } = {}
 -- what the server (or the scenery) last asked each managed instance to be, so turning performance
 -- mode off restores exactly that, even if the server changed it meanwhile (court rims toggling)
 local wanted: { [Instance]: boolean } = setmetatable({}, { __mode = "k" }) :: any
-local writing = false
+-- what we last wrote ourselves; change signals are deferred, so a "writing" flag would already be
+-- cleared when the handler runs, and our own writes would be mistaken for the server's
+local written: { [Instance]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
 local function managed(d: Instance): boolean
 	if d:IsA("PointLight") or d:IsA("SurfaceLight") or d:IsA("SpotLight") then
@@ -39,9 +41,9 @@ local function applyTo(d: Instance)
 	if want == nil then
 		return
 	end
-	writing = true
-	(d :: any).Enabled = want and not GraphicsController.low
-	writing = false
+	local value = want and not GraphicsController.low
+	written[d] = value;
+	(d :: any).Enabled = value
 end
 
 local function track(d: Instance)
@@ -51,10 +53,12 @@ local function track(d: Instance)
 	local inst = d :: any
 	wanted[d] = inst.Enabled
 	inst:GetPropertyChangedSignal("Enabled"):Connect(function()
-		if writing then
+		local now = (d :: any).Enabled
+		if now == written[d] then
 			return
 		end
-		wanted[d] = (d :: any).Enabled
+		written[d] = nil
+		wanted[d] = now
 		if GraphicsController.low and (d :: any).Enabled then
 			applyTo(d)
 		end

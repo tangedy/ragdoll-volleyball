@@ -226,12 +226,29 @@ local function localLaunch(model: Model, velocity: Vector3)
 		h.PlatformStand = true
 		h:ChangeState(Enum.HumanoidStateType.Physics)
 	end
+	-- same flail, speed cap and tumble as RagdollService.ragdoll, so the stand-in flies the arc a real
+	-- victim does (uncapped, it lands in the jail strip instead of the void)
+	local K = Config.Knockback
 	local rng = Random.new()
+	local axis = Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-1, 1), rng:NextNumber(-1, 1))
+	axis = if axis.Magnitude > 0.1 then axis.Unit else Vector3.xAxis
 	for _, d in model:GetDescendants() do
 		if d:IsA("BasePart") then
-			d.AssemblyLinearVelocity = velocity
-				+ Vector3.new(rng:NextNumber(-8, 8), rng:NextNumber(-2, 6), rng:NextNumber(-8, 8))
-			d.AssemblyAngularVelocity = Vector3.new(rng:NextNumber(-8, 8), rng:NextNumber(-8, 8), rng:NextNumber(-8, 8))
+			local isLimb = d.Name ~= "HumanoidRootPart"
+			local flail = if isLimb
+				then Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-0.3, 1), rng:NextNumber(-1, 1)) * K.LimbFlail
+				else Vector3.zero
+			local v = velocity + flail
+			if v.Magnitude > K.MaxSpeed then
+				v = v.Unit * K.MaxSpeed
+			end
+			d.AssemblyLinearVelocity = v
+			d.AssemblyAngularVelocity = axis * K.TumbleSpin
+				+ (
+					if isLimb
+						then Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-1, 1), rng:NextNumber(-1, 1)) * K.LimbSpin
+						else Vector3.zero
+				)
 		end
 	end
 end
@@ -443,7 +460,9 @@ end
 -- Purely local; nobody else sees it, your real character stays in the hub, and nothing on the server
 -- changes.
 
-local PREVIEW_OFFSET = Vector3.new(0, 0, 1600) -- well clear of the real court and the hub
+-- Clear of the real court and its 800-stud VoidGlow, but well inside the client's ~1000-stud physics
+-- range from a character in the hub: any farther and the stand-in freezes instead of launching.
+local PREVIEW_OFFSET = Vector3.new(0, 0, 800)
 
 -- A local copy of the arena (workspace.Arena), shifted by PREVIEW_OFFSET. Tags are stripped so the
 -- game's effects (rim flashes, neon) never mistake it for the real court.

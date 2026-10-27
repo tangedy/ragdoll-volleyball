@@ -63,3 +63,20 @@ Mark each row with how it was verified: **S** = Studio (state the number of clie
 | The finisher plays for everyone in the match on the match-ending knockout, then the match ends | A + S (one client) |
 | Two clients both see the same finisher | |
 | The shop panel and hub buttons fit on a phone screen | |
+
+## Oct 27 verification sweep
+
+**S** = Studio, one client plus bots, driven through the MCP. Studio was unfocused (about 15 FPS), so these are numeric checks, not visual ones.
+
+| Test | Result |
+| --- | --- |
+| Every finisher preview (all 8) plays, keeps the dummy on screen most of the time, and cleans up (court, actors, FX, camera) | S |
+| A preview's dummy flies the same arc as a real finisher victim | S after two fixes: the preview court was outside the client's physics range, so the dummy froze; and the launch wasn't speed-capped like the server's, so Default landed in the jail. Default now peaks at 215 (server: 214) and falls into the void |
+| A cheer plays on an enemy elimination, never on a teammate's or your own | S: 4 of 4 enemy eliminations cheered, 0 of 2 Red eliminations |
+| An open menu keeps you in the hub and the pill says to close it | S |
+| Play again off: no match starts and the pill says so | S in the hub. The "during a live match" case needs a second real player |
+| Performance mode: on by itself at graphics quality 1; ⚙ off restores shadows, bloom and lights; ⚙ on removes them | S after a fix: turning it off used to bring back only 1 of 101 lights |
+| Throwing with 300 ms incoming lag | Partial: a throw went through. Arc smoothness wasn't judged (15 FPS) |
+| Neon shows at half brightness | S: 48 of 48 arena neon parts are exactly 0.5× the server colour |
+| Practice is private | S: the client has its own dummy and 2 balls, the server has none. Launching the dummy wasn't driven |
+| Intro: 2 s per team, then 3-2-1 | S: Intro 4.0 s, countdown 3.1 s (timing only) |
