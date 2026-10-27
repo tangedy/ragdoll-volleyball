@@ -20,6 +20,7 @@ local Catalog = require(Shared.Catalog)
 local Config = require(Shared.Config)
 local Net = require(script.Parent.Net)
 local HUDController = require(script.Parent.HUDController)
+local AimController = require(script.Parent.AimController)
 local SoundController = require(script.Parent.SoundController)
 local GraphicsController = require(script.Parent.GraphicsController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
@@ -592,6 +593,49 @@ function ShopController.sheet(
 	return s
 end
 
+-- On touch screens the right edge belongs to the controls, so the action column becomes a row along
+-- the bottom, a little larger, centred in the free space between the coins chip and the controls
+-- (and shrunk only if that space is too narrow).
+local ACTION_W, ACTION_H = 84, 56 + Theme.Ledge + 26 -- one Theme.roundAction button
+local ROW_W = 4 * ACTION_W + 3 * Theme.Space.L
+local TOUCH_SCALE = 1.25 -- relative to the rest of the HUD
+local actionLayout: UIListLayout
+local actionScale: UIScale
+local rowMode: boolean? = nil
+local function layoutActions(gui: ScreenGui)
+	local touch = AimController.lastInput == "Touch"
+	if touch ~= rowMode then
+		rowMode = touch
+		actionLayout.FillDirection = if touch then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical
+		actionRow.AnchorPoint = if touch then Vector2.new(0.5, 1) else Vector2.new(1, 0.5)
+		actionRow.Size = if touch
+			then UDim2.fromOffset(ROW_W, ACTION_H)
+			else UDim2.fromOffset(ACTION_W, 4 * ACTION_H + 3 * Theme.Space.L)
+		if not touch then
+			actionRow.Position = UDim2.new(1, -Theme.Space.L, 0.5, 0)
+			local s = Theme.uiScale() * 0.95
+			actionScale:SetAttribute("Base", s)
+			actionScale.Scale = s
+		end
+	end
+	if not touch then
+		return
+	end
+	local pg = player:FindFirstChildOfClass("PlayerGui")
+	local hud = pg and pg:FindFirstChild("HUD")
+	local chip = hud and hud:FindFirstChild("Chip") :: GuiObject?
+	local controls = pg and pg:FindFirstChild("MobileControls") :: ScreenGui?
+	local catch = controls and controls.Enabled and controls:FindFirstChild("Catch") :: GuiObject?
+	local left = if chip then chip.AbsolutePosition.X + chip.AbsoluteSize.X else gui.AbsolutePosition.X
+	local right = if catch then catch.AbsolutePosition.X else gui.AbsolutePosition.X + gui.AbsoluteSize.X
+	local s = math.clamp((right - left - 2 * Theme.Space.M) / ROW_W, 0.3, Theme.uiScale() * TOUCH_SCALE)
+	if actionScale.Scale ~= s then
+		actionScale:SetAttribute("Base", s)
+		actionScale.Scale = s
+	end
+	actionRow.Position = UDim2.new(0, (left + right) / 2 - gui.AbsolutePosition.X, 1, -Theme.Space.S)
+end
+
 -- A destination in the action column (Shop, Spin, Daily, Settings). Returns its button and dot.
 function ShopController.addAction(
 	label: string,
@@ -1076,23 +1120,24 @@ function ShopController.init()
 		ShopController.closeAll()
 	end)
 
-	-- the action column: round destinations stacked down the right edge of the hub
+	-- the action column: round destinations stacked down the right edge of the hub (on touch screens
+	-- a row along the bottom instead; see layoutActions)
 	actionRow = new("Frame", {
 		Name = "Actions",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -Theme.Space.L, 0.5, 0),
-		Size = UDim2.fromOffset(84, 4 * (56 + Theme.Ledge + 26) + 3 * Theme.Space.L),
+		Size = UDim2.fromOffset(ACTION_W, 4 * ACTION_H + 3 * Theme.Space.L),
 		BackgroundTransparency = 1,
 		ZIndex = 1,
 	}, gui)
-	new("UIListLayout", {
+	actionLayout = new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Vertical,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, Theme.Space.L),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, actionRow)
-	Theme.autoScale(actionRow, 0.95)
+	actionScale = Theme.autoScale(actionRow, 0.95)
 	ShopController.addAction("Shop", T.sun, "bag", 1, function()
 		ShopController.openShop(not ShopController.isOpen(shop.frame))
 	end)
@@ -1167,6 +1212,9 @@ function ShopController.start()
 		end
 		-- the row steps aside while a sheet is up
 		actionRow.Visible = not backdrop.Visible
+		if hub then
+			layoutActions(gui)
+		end
 		if not hub and backdrop.Visible then
 			ShopController.closeAll()
 		end

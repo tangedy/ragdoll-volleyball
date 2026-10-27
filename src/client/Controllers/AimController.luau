@@ -21,6 +21,10 @@ local AimController = {}
 AimController.charging = false
 AimController.chargeStartedAt = 0
 AimController.lastInput = "Mouse" -- "Mouse" | "Touch" | "Gamepad"
+-- Where the current aim actually points (the assisted enemy's root when assist locks on), and that
+-- enemy. Updated while charging; the HUD crosshair is drawn on it so it matches the arc preview.
+AimController.aimPoint = nil :: Vector3?
+AimController.assistModel = nil :: Model?
 -- Hub practice is client-side: PracticeController sets these so charging and releasing a practice
 -- ball never talk to the server.
 AimController.localHeld = function(): boolean
@@ -76,33 +80,32 @@ local function excludeList(): { Instance }
 end
 
 -- Mild aim assist: only inside a narrow cone, only with line of sight, only for valid enemies.
-local function assistTarget(ray: Ray): Vector3?
+local function assistTarget(ray: Ray): (Vector3?, Model?)
 	local myTeam = attr("Team")
 	if type(myTeam) ~= "string" or myTeam == "" then
-		return nil
+		return nil, nil
 	end
-	local best, bestAngle = nil, math.rad(ASSIST_DEG)
+	local best, bestModel, bestAngle = nil, nil, math.rad(ASSIST_DEG)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = excludeList()
-	for _, model in Workspace:GetChildren() do
+	local function consider(model: Instance)
 		AimController._consider(model, myTeam, ray, params, function(pos, angle)
 			if angle < bestAngle then
-				best, bestAngle = pos, angle
+				best, bestModel, bestAngle = pos, model :: Model, angle
 			end
 		end)
+	end
+	for _, model in Workspace:GetChildren() do
+		consider(model)
 	end
 	local bots = Workspace:FindFirstChild("Bots")
 	if bots then
 		for _, model in bots:GetChildren() do
-			AimController._consider(model, myTeam, ray, params, function(pos, angle)
-				if angle < bestAngle then
-					best, bestAngle = pos, angle
-				end
-			end)
+			consider(model)
 		end
 	end
-	return best
+	return best, bestModel
 end
 
 function AimController._consider(
@@ -149,7 +152,10 @@ function AimController.computeDirection(): (Vector3?, Vector3?, number)
 	params.FilterDescendantsInstances = excludeList()
 	local hit = Workspace:Raycast(ray.Origin, ray.Direction * 300, params)
 	local point = if hit then hit.Position else ray.Origin + ray.Direction * 300
-	point = assistTarget(ray) or point
+	local assisted, model = assistTarget(ray)
+	point = assisted or point
+	AimController.aimPoint = point
+	AimController.assistModel = model
 	local ballType = attr("HeldBall") or "Standard"
 	local flat = Vector3.new(point.X - r.Position.X, 0, point.Z - r.Position.Z)
 	local forward = if flat.Magnitude > 0.1 then flat.Unit else r.CFrame.LookVector
@@ -191,6 +197,8 @@ end
 
 local function stopCharging()
 	AimController.charging = false
+	AimController.aimPoint = nil
+	AimController.assistModel = nil
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then

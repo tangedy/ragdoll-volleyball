@@ -1024,17 +1024,31 @@ local function update()
 	refs.results.Position = UDim2.new(0.5, 0, 0, below + (if refs.phasePill.Visible then 40 * s else 0) + 16 * s)
 	local hub = not live or not inMatch
 	refs.playAgain.Visible = hub
-	-- on touch screens the action buttons own the bottom-right corner: sit beside them, on the bottom
-	refs.corner.Position = if AimController.lastInput == "Touch"
-		then UDim2.new(1, -290, 1, -12)
+	-- on touch screens the controls own the bottom-right corner and the hub icons the bottom row:
+	-- Play again moves to the top right
+	local touch = AimController.lastInput == "Touch"
+	refs.corner.AnchorPoint = if touch then Vector2.new(1, 0) else Vector2.new(1, 1)
+	refs.corner.Position = if touch
+		then UDim2.new(1, -Theme.Space.M, 0, Theme.Space.M)
 		else UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L)
 
-	-- reticle + charge
+	-- reticle + charge: while charging the crosshair sits where the throw really goes (on the
+	-- aim-assisted enemy when assist locks on), the same point the arc preview heads for. Before
+	-- that it only follows the mouse; touch and gamepad show it with the arc.
 	local holding = AimController.holding()
 	local ret = refs.reticle :: Frame
-	ret.Visible = holding or refs.hitmarker.Visible
-	if ret.Visible then
+	local charging = AimController.charging
+	local aiming = charging or (holding and AimController.lastInput == "Mouse")
+	ret.Visible = aiming or refs.hitmarker.Visible
+	if aiming then
 		local sp = AimController.screenPoint()
+		local aim = AimController.aimPoint
+		if charging and aim then
+			local v, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(aim)
+			if onScreen then
+				sp = Vector2.new(v.X, v.Y)
+			end
+		end
 		ret.Position = UDim2.fromOffset(sp.X, sp.Y)
 	end
 	refs.chargeBack.Visible = AimController.charging

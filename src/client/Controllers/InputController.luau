@@ -315,6 +315,40 @@ local function makeButton(parent: Instance, name: string, size: number, pos: UDi
 	return b
 end
 
+-- The charge ring round Throw: short yellow strokes laid along the inner ring that light up
+-- clockwise from the top as the throw charges, in step with the charge bar under the crosshair.
+local RING_STEPS = 40
+local chargeRing: { Frame } = {}
+local function makeChargeRing(btn: TextButton): { Frame }
+	local holder = Theme.new("Frame", {
+		Name = "ChargeRing",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		ZIndex = 4,
+	}, btn)
+	local r, t = 0.43, 0.06 -- on the white inner ring (0.86 across)
+	local segs = {}
+	for i = 0, RING_STEPS - 1 do
+		local a0 = math.rad(-90 + 360 * i / RING_STEPS)
+		local a1 = math.rad(-90 + 360 * (i + 1) / RING_STEPS)
+		local x1, y1 = 0.5 + r * math.cos(a0), 0.5 + r * math.sin(a0)
+		local x2, y2 = 0.5 + r * math.cos(a1), 0.5 + r * math.sin(a1)
+		local f = bar(
+			holder,
+			(x1 + x2) / 2,
+			(y1 + y2) / 2,
+			math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2) + t * 0.6,
+			t,
+			math.deg(math.atan2(y2 - y1, x2 - x1)),
+			nil,
+			Theme.Colors.Sun
+		)
+		f.Visible = false
+		segs[i + 1] = f
+	end
+	return segs
+end
+
 local function buildMobile()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "MobileControls"
@@ -322,18 +356,27 @@ local function buildMobile()
 	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets -- respect notches and home bars
 	gui.DisplayOrder = 5
 	gui.Parent = player:WaitForChild("PlayerGui")
-	-- big Throw in the middle, Dodge above it, Catch down-left and Jump underneath
-	local throw = makeButton(gui, "Throw", 112, UDim2.new(1, -137, 1, -165))
-	local dodge = makeButton(gui, "Dodge", 68, UDim2.new(1, -137, 1, -266))
-	local catch = makeButton(gui, "Catch", 88, UDim2.new(1, -230, 1, -67))
-	local jump = makeButton(gui, "Jump", 78, UDim2.new(1, -136, 1, -62))
+	-- big Throw in the middle, Dodge above it, Catch down-left and Jump underneath, tucked to the right
+	local throw = makeButton(gui, "Throw", 100, UDim2.new(1, -100, 1, -148))
+	local dodge = makeButton(gui, "Dodge", 62, UDim2.new(1, -100, 1, -239))
+	local catch = makeButton(gui, "Catch", 80, UDim2.new(1, -184, 1, -60))
+	local jump = makeButton(gui, "Jump", 70, UDim2.new(1, -99, 1, -55))
 	InputController.buttons = { Throw = throw, Catch = catch, Dodge = dodge, Jump = jump }
+	chargeRing = makeChargeRing(throw)
 	jump.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.Touch then
-			local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-			if h then
-				h.Jump = true
-			end
+		if input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		-- Humanoid.Jump would be reset by the default control script on the next frame, so start
+		-- the jump state directly (only from the ground, never mid-ragdoll)
+		local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if
+			h
+			and not h.PlatformStand
+			and h.FloorMaterial ~= Enum.Material.Air
+			and h:GetStateEnabled(Enum.HumanoidStateType.Jumping)
+		then
+			h:ChangeState(Enum.HumanoidStateType.Jumping)
 		end
 	end)
 	-- our Jump replaces Roblox's own touch jump button, which would sit under the cluster
@@ -459,6 +502,11 @@ function InputController.start()
 		local hasBall = type(held) == "string" and held ~= ""
 		setDim(b.Throw, if hasBall then 0 else 0.45)
 		setDim(b.Catch, if hasBall then 0.45 else 0)
+		-- the ring round Throw fills with the charge, like the bar under the crosshair
+		local lit = math.floor(AimController.chargeFraction() * #chargeRing + 0.5)
+		for i, seg in chargeRing do
+			seg.Visible = i <= lit
+		end
 	end)
 end
 
