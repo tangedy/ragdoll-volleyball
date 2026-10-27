@@ -289,17 +289,22 @@ Config.Spin = {
 	Slots = 12,
 	RarityWeights = { Common = 60, Rare = 28, Epic = 10, Legendary = 2 },
 	-- rarity of a catalog item by coin price (at least this much); free defaults are never prizes
-	RarityByPrice = { { Rarity = "Legendary", Min = 4000 }, { Rarity = "Epic", Min = 2500 }, { Rarity = "Rare", Min = 1000 } },
+	RarityByPrice = {
+		{ Rarity = "Legendary", Min = 4000 },
+		{ Rarity = "Epic", Min = 2500 },
+		{ Rarity = "Rare", Min = 1000 },
+	},
 	DuplicateCoins = { Common = 100, Rare = 250, Epic = 500, Legendary = 1000 }, -- already owned
 	ExtraSpinCost = 750, -- coins
 	MaxPaidPerDay = 5,
 	RobuxProductId = 0, -- placeholder developer product for an extra spin (not wired until it exists)
 	SpinDuration = 4.2, -- seconds the wheel spins on the client before the reveal
+	-- Toybox Island fills (the UI's design system): sky, leaf, candy, sun
 	RarityColors = {
-		Common = Color3.fromRGB(150, 160, 190),
-		Rare = Color3.fromRGB(70, 150, 255),
-		Epic = Color3.fromRGB(170, 90, 255),
-		Legendary = Color3.fromRGB(255, 196, 40),
+		Common = Color3.fromHex("#8ed2ef"),
+		Rare = Color3.fromHex("#7cc47f"),
+		Epic = Color3.fromHex("#ff9cc0"),
+		Legendary = Color3.fromHex("#f7cd46"),
 	},
 }
 

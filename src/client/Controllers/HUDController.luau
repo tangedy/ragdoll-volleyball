@@ -1,8 +1,11 @@
 --!strict
--- Match HUD (spec §10 "Match HUD"): team plates with player pips and jail counts, timer badge,
--- round stars, reticle with charge ring + hitmarker, cooldown keycaps, held-ball chip, kill feed,
--- big sticker banners and screen flashes. Results show as a non-blocking card (Amendment A3).
--- No shops, purchase prompts or reward pop-ups during active combat.
+-- Match HUD (spec §10 "Match HUD"): team plates with player pips and jail counts, timer pill, round
+-- stars, reticle with charge bar + hitmarker, controller-hint legends with cooldowns, held-ball pill,
+-- kill feed, big sticker banners and screen flashes. Results show as a non-blocking card (Amendment
+-- A3). No shops, purchase prompts or reward pop-ups during active combat.
+--
+-- Built from the Toybox Island kit in Theme: chrome is quiet (surface pills, ink text) and color
+-- belongs to the content (team plates, coins, stickers).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,7 +23,7 @@ local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Them
 
 local player = Players.LocalPlayer
 local MS = Net.MatchState
-local C = Theme.Colors
+local T = Theme.Toybox
 
 local HUDController = {}
 
@@ -32,7 +35,8 @@ local overlay: ScreenGui -- full-screen flashes (ignores insets)
 local refs: { [string]: any } = {}
 local feedFrame: Frame
 local pips: { Red: { Frame }, Blue: { Frame } } = { Red = {}, Blue = {} }
-local stars: { Red: { TextLabel }, Blue: { TextLabel } } = { Red = {}, Blue = {} }
+local stars: { Red: { Frame }, Blue: { Frame } } = { Red = {}, Blue = {} }
+local queueSetters: { (boolean) -> () } = {}
 
 local function tween(
 	inst: Instance,
@@ -55,75 +59,104 @@ local function num(key: string, default: number): number
 	return if type(v) == "number" then v else default
 end
 
+-- Comfort settings: one place that applies a switch (HUD, the UI kit, and the server's copy).
+function HUDController.applySetting(key: string, value: boolean)
+	if key == "PlayAgain" then
+		-- the player's explicit choice; the shop restores this (not a stale value) when it closes
+		player:SetAttribute("QueuePreference", value)
+		Net.request(Net.Actions.SetAutoQueue, { value = value })
+		return
+	end
+	HUDController.settings[key] = value
+	if key == "ReducedMotion" then
+		Theme.settings.reducedMotion = value
+	end
+	Net.request(Net.Actions.SetSetting, { key = key, value = value })
+end
+
+-- Register a "Play again" toggle setter so every copy follows the server's AutoQueue.
+function HUDController.followQueue(setter: (boolean) -> ())
+	table.insert(queueSetters, setter)
+	setter(player:GetAttribute("AutoQueue") ~= false)
+end
+
 -- Building ------------------------------------------------------------------------------------------
 
 local function teamPlate(team: string, parent: Instance, x: number, anchorX: number)
 	local col = Config.Teams[team].Color
+	local onCol = Theme.textOn(col)
+	local isRed = team == "Red"
 	local plate = Theme.new("Frame", {
 		Name = team .. "Plate",
 		AnchorPoint = Vector2.new(anchorX, 0),
-		Position = UDim2.new(0.5, x, 0, 6),
-		Size = UDim2.fromOffset(190, 54),
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		Position = UDim2.new(0.5, x, 0, 8),
+		Size = UDim2.fromOffset(196, 56),
+		BackgroundColor3 = col,
 	}, parent)
-	Theme.corner(plate, 16)
-	Theme.gradient(plate, Theme.lighten(col, 0.2), Theme.darken(col, 0.25))
-	Theme.stroke(plate, Theme.darken(col, 0.6), 3)
-	local isRed = team == "Red"
+	Theme.corner(plate, 20)
+	Theme.stroke(plate, T.outline, Theme.StrokeToy)
 	Theme.label(plate, {
 		Name = "Name",
-		Size = UDim2.new(0, 70, 0, 26),
-		Position = if isRed then UDim2.fromOffset(10, 4) else UDim2.new(1, -80, 0, 4),
+		Size = UDim2.fromOffset(80, 24),
+		Position = if isRed then UDim2.fromOffset(14, 5) else UDim2.new(1, -94, 0, 5),
 		Text = Config.Teams[team].Name,
+		TextColor3 = onCol,
 		TextXAlignment = if isRed then Enum.TextXAlignment.Left else Enum.TextXAlignment.Right,
-	})
-	refs[team .. "Jail"] = Theme.label(plate, {
-		Size = UDim2.new(0, 90, 0, 20),
-		Position = if isRed then UDim2.new(1, -96, 0, 6) else UDim2.fromOffset(6, 6),
+	}, 0)
+	refs[team .. "Jail"] = Theme.text(plate, 13, {
+		Size = UDim2.fromOffset(90, 22),
+		Position = if isRed then UDim2.new(1, -100, 0, 6) else UDim2.fromOffset(10, 6),
 		Text = "",
-		TextColor3 = Color3.fromRGB(255, 230, 160),
+		TextColor3 = onCol,
 		TextXAlignment = if isRed then Enum.TextXAlignment.Right else Enum.TextXAlignment.Left,
-	}, 2)
-	-- player pips: filled = on court, hollow = jailed/out
+	})
+	-- player pips: filled = on court, sun = in jail, hollow = out
 	local row = Theme.new("Frame", {
-		Size = UDim2.new(1, -20, 0, 16),
-		Position = UDim2.fromOffset(10, 32),
+		Size = UDim2.new(1, -28, 0, 16),
+		Position = UDim2.fromOffset(14, 32),
 		BackgroundTransparency = 1,
 	}, plate)
 	Theme.new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
-		Padding = UDim.new(0, 5),
+		Padding = UDim.new(0, 6),
 		HorizontalAlignment = if isRed then Enum.HorizontalAlignment.Left else Enum.HorizontalAlignment.Right,
 	}, row)
 	for i = 1, 6 do
 		local p = Theme.new("Frame", {
 			LayoutOrder = i,
 			Size = UDim2.fromOffset(16, 16),
-			BackgroundColor3 = Color3.new(1, 1, 1),
+			BackgroundColor3 = T.ink,
 		}, row)
 		Theme.round(p)
-		Theme.stroke(p, C.Ink, 2)
+		Theme.stroke(p, T.outline, 2)
 		table.insert(pips[team], p)
 	end
 	-- round-win stars under the plate
 	local starRow = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(anchorX, 0),
-		Position = UDim2.new(0.5, x + (if isRed then 8 else -8), 0, 62),
-		Size = UDim2.fromOffset(60, 24),
+		Position = UDim2.new(0.5, x + (if isRed then -10 else 10), 0, 70),
+		Size = UDim2.fromOffset(70, 22),
 		BackgroundTransparency = 1,
 	}, parent)
 	Theme.new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
-		Padding = UDim.new(0, 2),
-		HorizontalAlignment = if isRed then Enum.HorizontalAlignment.Left else Enum.HorizontalAlignment.Right,
+		Padding = UDim.new(0, 6),
+		HorizontalAlignment = if isRed then Enum.HorizontalAlignment.Right else Enum.HorizontalAlignment.Left,
 	}, starRow)
 	for i = 1, Config.Match.RoundsToWin do
-		local s = Theme.label(starRow, {
+		local s = Theme.new("Frame", {
 			LayoutOrder = i,
-			Size = UDim2.fromOffset(24, 24),
-			Text = "★",
-			TextColor3 = Color3.fromRGB(80, 70, 110),
-		}, 2)
+			Size = UDim2.fromOffset(22, 22),
+			BackgroundColor3 = T.surfaceSunk,
+		}, starRow)
+		Theme.round(s)
+		Theme.stroke(s, T.outline, 2)
+		Theme.glyph(s, "star", T.line, {
+			Name = "Star",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.52),
+			Size = UDim2.fromScale(0.7, 0.7),
+		})
 		table.insert(stars[team], s)
 	end
 	refs[team .. "Plate"] = plate
@@ -154,7 +187,7 @@ local function build()
 	-- red-edged vignette for when you get hit
 	refs.vignette = Theme.new("Frame", {
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.fromRGB(255, 40, 40),
+		BackgroundColor3 = T.joyRed,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 	}, overlay)
@@ -167,59 +200,58 @@ local function build()
 		}),
 	}, refs.vignette)
 
-	-- Scoreboard
+	-- Scoreboard: two team plates either side of the timer
 	local board = Theme.new("Frame", {
 		Name = "Board",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.fromScale(0.5, 0),
-		Size = UDim2.fromOffset(560, 90),
+		Size = UDim2.fromOffset(580, 96),
 		BackgroundTransparency = 1,
 	}, gui)
 	refs.board = board
 	Theme.autoScale(board)
-	teamPlate("Red", board, -44, 1)
-	teamPlate("Blue", board, 44, 0)
+	teamPlate("Red", board, -52, 1)
+	teamPlate("Blue", board, 52, 0)
 	local timer = Theme.new("Frame", {
 		Name = "Timer",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 2),
-		Size = UDim2.fromOffset(84, 62),
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		Position = UDim2.new(0.5, 0, 0, 4),
+		Size = UDim2.fromOffset(92, 64),
+		BackgroundColor3 = T.surface,
 	}, board)
-	Theme.corner(timer, 18)
-	refs.timerGrad = Theme.gradient(timer, C.PanelLight, C.Ink)
-	refs.timerStroke = Theme.stroke(timer, C.Gold, 3)
+	Theme.corner(timer, 22)
+	refs.timerStroke = Theme.stroke(timer, T.outline, Theme.StrokeToy)
+	refs.timerFace = timer
 	refs.timer = Theme.label(timer, {
-		Size = UDim2.new(1, -10, 0, 34),
-		Position = UDim2.fromOffset(5, 6),
+		Size = UDim2.new(1, -14, 0, 32),
+		Position = UDim2.fromOffset(7, 7),
 		Text = "1:15",
-	})
-	refs.round = Theme.body(timer, {
-		Size = UDim2.new(1, -10, 0, 14),
-		Position = UDim2.fromOffset(5, 42),
-		Text = "ROUND 1",
-		TextColor3 = C.Gold,
+	}, 0)
+	refs.round = Theme.text(timer, 13, {
+		Size = UDim2.new(1, -10, 0, 16),
+		Position = UDim2.fromOffset(5, 41),
+		FontFace = Theme.TextFace,
+		Text = "Round 1",
+		TextColor3 = T.inkMuted,
 	})
 
-	-- Phase pill
-	local phase = Theme.new("Frame", {
+	-- Phase line: a quiet surface pill under the scoreboard
+	local phase = Theme.pill(gui, {
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 92),
-		Size = UDim2.fromOffset(360, 30),
-		BackgroundColor3 = C.Ink,
-		BackgroundTransparency = 0.35,
-	}, gui)
-	Theme.round(phase)
-	Theme.stroke(phase, Color3.new(1, 1, 1), 1.5, 0.85)
+		Position = UDim2.new(0.5, 0, 0, 98),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 36),
+	})
+	Theme.new("UIPadding", { PaddingLeft = UDim.new(0, 18), PaddingRight = UDim.new(0, 18) }, phase)
 	Theme.autoScale(phase)
 	refs.phasePill = phase
-	refs.phase = Theme.label(phase, {
-		Size = UDim2.new(1, -24, 1, -8),
-		Position = UDim2.fromOffset(12, 4),
+	refs.phase = Theme.text(phase, 17, {
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromScale(0, 1),
 		Text = "",
-	}, 2)
+	})
 
-	-- Banner (sticker text) + subtitle
+	-- Banner (sticker text): fill-colored display type in a thick toy outline
 	refs.banner = Theme.label(gui, {
 		Name = "Banner",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -231,106 +263,106 @@ local function build()
 	}, 5)
 	refs.bannerGrad = Theme.new("UIGradient", { Rotation = 90 }, refs.banner)
 	refs.bannerScale = Theme.new("UIScale", nil, refs.banner)
-	-- big 3-2-1 countdown number (server-driven)
+	-- big 3-2-1 countdown number (server-driven): sun numerals in the toy outline
 	refs.countdown = Theme.label(gui, {
 		Name = "Countdown",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.42),
 		Size = UDim2.fromOffset(220, 200),
 		Text = "",
+		TextColor3 = T.sun,
 		TextTransparency = 1,
 		ZIndex = 21,
 	}, 6)
-	refs.countdownGrad = Theme.gradient(refs.countdown, Color3.new(1, 1, 1), C.Gold)
-	refs.hint = Theme.label(gui, {
+	-- Hint: a bubble (surface pill, select-colored type) like a tile's title bubble
+	local hint = Theme.pill(gui, {
 		Name = "Hint",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.4),
-		Size = UDim2.fromScale(0.5, 0.05),
-		Text = "",
-		TextTransparency = 1,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 44),
+		BackgroundTransparency = 0,
+		Visible = false,
 		ZIndex = 19,
-	}, 3)
+	})
+	Theme.new("UIPadding", { PaddingLeft = UDim.new(0, 22), PaddingRight = UDim.new(0, 22) }, hint)
+	Theme.autoScale(hint)
+	refs.hintPill = hint
+	refs.hint = Theme.text(hint, 22, {
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromScale(0, 1),
+		FontFace = Theme.DisplayFace,
+		Text = "",
+		TextColor3 = T.select,
+		ZIndex = 20,
+	})
 
-	-- Kill feed (top right)
+	-- Kill feed (top right): surface pills
 	feedFrame = Theme.new("Frame", {
 		Name = "Feed",
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -Theme.Space.M, 0, Theme.Space.S),
-		Size = UDim2.fromOffset(320, 170),
+		Size = UDim2.fromOffset(340, 180),
 		BackgroundTransparency = 1,
 	}, gui)
 	Theme.autoScale(feedFrame, 0.95)
 	Theme.new("UIListLayout", {
 		SortOrder = Enum.SortOrder.LayoutOrder,
-		Padding = UDim.new(0, 4),
+		Padding = UDim.new(0, 6),
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
 	}, feedFrame)
 
-	-- Profile chip (bottom left, big): coin balance, level badge + XP bar
+	-- Profile card (bottom left): coin balance, level sticker + XP track
 	local chip = Theme.panel(gui, {
 		Name = "Chip",
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, Theme.Space.M, 1, -Theme.Space.M),
-		Size = UDim2.fromOffset(270, 80),
+		Position = UDim2.new(0, Theme.Space.L, 1, -Theme.Space.L - 10),
+		Size = UDim2.fromOffset(260, 84),
 	}, Theme.Radius.L)
 	refs.chip = chip
 	Theme.autoScale(chip, 0.9)
-	local coin = Theme.new("Frame", {
-		Position = UDim2.fromOffset(12, 10),
-		Size = UDim2.fromOffset(44, 44),
-		BackgroundColor3 = Color3.new(1, 1, 1),
-	}, chip)
-	Theme.round(coin)
-	Theme.gradient(coin, C.Gold, C.GoldDark)
-	Theme.stroke(coin, Theme.darken(C.GoldDark, 0.5), 3)
-	Theme.label(coin, { Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.15, 0.15), Text = "C" }, 2)
+	Theme.coin(chip, 42, { Position = UDim2.fromOffset(16, 12) })
 	refs.coins = Theme.label(chip, {
-		Position = UDim2.fromOffset(64, 8),
-		Size = UDim2.new(1, -140, 0, 48),
+		Position = UDim2.fromOffset(68, 12),
+		Size = UDim2.new(1, -150, 0, 42),
 		Text = "0",
-		TextColor3 = C.Gold,
 		TextXAlignment = Enum.TextXAlignment.Left,
-	}, 3)
+	}, 0)
 	local lvl = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -10, 0, 10),
-		Size = UDim2.fromOffset(64, 44),
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		Position = UDim2.new(1, -16, 0, 16),
+		Size = UDim2.fromOffset(66, 34),
+		BackgroundColor3 = T.sky,
 	}, chip)
-	Theme.corner(lvl, 12)
-	Theme.gradient(lvl, Theme.lighten(C.Purple, 0.2), C.Purple)
-	Theme.stroke(lvl, C.Ink, 2.5)
-	Theme.body(lvl, {
-		Size = UDim2.new(1, 0, 0, 12),
-		Position = UDim2.fromOffset(0, 3),
-		Text = "LEVEL",
-		TextColor3 = Color3.new(1, 1, 1),
+	Theme.round(lvl)
+	Theme.stroke(lvl, T.outline, Theme.StrokeToy)
+	refs.level = Theme.text(lvl, 16, {
+		Size = UDim2.fromScale(1, 1),
+		Text = "Lv 1",
+		TextColor3 = T.onFill,
 	})
-	refs.level =
-		Theme.label(lvl, { Size = UDim2.new(1, -8, 1, -18), Position = UDim2.fromOffset(4, 15), Text = "1" }, 2)
 	local xpBack = Theme.new("Frame", {
-		Position = UDim2.new(0, 12, 1, -16),
-		Size = UDim2.new(1, -24, 0, 9),
-		BackgroundColor3 = C.Ink,
+		Position = UDim2.new(0, 16, 1, -22),
+		Size = UDim2.new(1, -32, 0, 10),
+		BackgroundColor3 = T.surfaceSunk,
 	}, chip)
 	Theme.round(xpBack)
 	refs.xpBar = Theme.new("Frame", {
 		Size = UDim2.fromScale(0, 1),
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		BackgroundColor3 = T.sky,
 	}, xpBack)
 	Theme.round(refs.xpBar)
-	Theme.gradient(refs.xpBar, Color3.fromRGB(140, 240, 255), Color3.fromRGB(70, 160, 255), 0)
 	refs.saveWarn = Theme.body(gui, {
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, Theme.Space.M, 1, -98),
-		Size = UDim2.fromOffset(200, 16),
+		Position = UDim2.new(0, Theme.Space.L + 4, 1, -112),
+		Size = UDim2.fromOffset(220, 16),
+		FontFace = Theme.TextFace,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = Color3.fromRGB(255, 170, 120),
+		TextColor3 = T.danger,
 		Text = "",
 	})
 
-	-- Reticle: crosshair ring + ticks, charge ring underneath, hitmarker
+	-- Reticle: crosshair ring + ticks, charge bar underneath, hitmarker
 	local reticleGui = Theme.new("ScreenGui", {
 		Name = "Reticle",
 		ResetOnSpawn = false,
@@ -347,10 +379,10 @@ local function build()
 	refs.reticle = ret
 	local ring = Theme.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1 }, ret)
 	Theme.round(ring)
-	Theme.stroke(ring, Color3.new(1, 1, 1), 2.5, 0.05)
+	Theme.stroke(ring, T.ink, 2.5)
 	Theme.new(
 		"UIStroke",
-		{ Color = C.Ink, Thickness = 5, Transparency = 0.6 },
+		{ Color = T.outline, Thickness = 5, Transparency = 0.5 },
 		Theme.new("Frame", {
 			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
@@ -362,32 +394,29 @@ local function build()
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5 + 0.62 * math.sin(i * math.pi / 2), 0.5 - 0.62 * math.cos(i * math.pi / 2)),
 			Size = if i % 2 == 0 then UDim2.fromOffset(3, 9) else UDim2.fromOffset(9, 3),
-			BackgroundColor3 = Color3.new(1, 1, 1),
+			BackgroundColor3 = T.ink,
 			BorderSizePixel = 0,
 		}, ret)
-		Theme.stroke(tick, C.Ink, 1, 0.3)
+		Theme.stroke(tick, T.outline, 1, 0.3)
 	end
 	local dot = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(6, 6),
-		BackgroundColor3 = C.Gold,
+		BackgroundColor3 = T.sun,
 	}, ret)
 	Theme.round(dot)
 	refs.chargeBack = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 1, 10),
-		Size = UDim2.fromOffset(84, 10),
-		BackgroundColor3 = C.Ink,
-		BackgroundTransparency = 0.2,
+		Size = UDim2.fromOffset(88, 12),
+		BackgroundColor3 = T.surfaceSunk,
 		Visible = false,
 	}, ret)
 	Theme.round(refs.chargeBack)
-	Theme.stroke(refs.chargeBack, Color3.new(1, 1, 1), 1.5, 0.4)
-	refs.chargeFill =
-		Theme.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = Color3.new(1, 1, 1) }, refs.chargeBack)
+	Theme.stroke(refs.chargeBack, T.outline, 2)
+	refs.chargeFill = Theme.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.sun }, refs.chargeBack)
 	Theme.round(refs.chargeFill)
-	Theme.gradient(refs.chargeFill, C.Gold, Color3.fromRGB(255, 90, 60), 0)
 	local hm = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
@@ -402,310 +431,173 @@ local function build()
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
 			Size = sz,
-			BackgroundColor3 = Color3.new(1, 1, 1),
+			BackgroundColor3 = T.ink,
 			BorderSizePixel = 0,
 		}, hm)
-		Theme.stroke(bar, C.Ink, 1.5, 0.2)
+		Theme.stroke(bar, T.outline, 1.5, 0.2)
 	end
 
-	-- Bottom: held ball chip + cooldown keycaps
-	local held = Theme.new("Frame", {
+	-- Held ball: a pill with the ball's swatch, bottom centre
+	local held = Theme.pill(gui, {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -70),
-		Size = UDim2.fromOffset(170, 34),
-		BackgroundColor3 = C.Ink,
-		BackgroundTransparency = 0.3,
+		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L),
+		Size = UDim2.fromOffset(180, 42),
 		Visible = false,
-	}, gui)
-	Theme.round(held)
+	})
 	Theme.autoScale(held)
 	refs.held = held
 	refs.heldSwatch = Theme.new("Frame", {
-		Position = UDim2.fromOffset(5, 5),
-		Size = UDim2.fromOffset(24, 24),
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 7, 0.5, 0),
+		Size = UDim2.fromOffset(28, 28),
 		BackgroundColor3 = Color3.new(1, 0, 0),
 	}, held)
 	Theme.round(refs.heldSwatch)
-	Theme.stroke(refs.heldSwatch, Color3.new(1, 1, 1), 2)
-	refs.heldText = Theme.label(held, {
-		Position = UDim2.fromOffset(36, 5),
-		Size = UDim2.new(1, -44, 1, -10),
-		Text = "BALL",
+	Theme.stroke(refs.heldSwatch, T.outline, 2.5)
+	refs.heldText = Theme.text(held, 17, {
+		Position = UDim2.fromOffset(44, 0),
+		Size = UDim2.new(1, -54, 1, 0),
+		Text = "Ball",
 		TextXAlignment = Enum.TextXAlignment.Left,
-	}, 2)
-	local chips = Theme.new("Frame", {
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L),
-		Size = UDim2.fromOffset(250, 46),
+	})
+
+	-- Bottom right: controller legends (with cooldowns) and, in the hub, the Play again toggle
+	local corner = Theme.new("Frame", {
+		Name = "Corner",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L - 10),
+		Size = UDim2.fromOffset(300, 110),
 		BackgroundTransparency = 1,
 	}, gui)
-	refs.chips = chips
-	Theme.autoScale(chips)
-	local function keycap(name: string, key: string, text: string, x: number, color: Color3)
-		local f = Theme.new("Frame", {
-			Name = name,
-			Position = UDim2.fromScale(x, 0),
-			Size = UDim2.new(0.48, 0, 1, 0),
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			ClipsDescendants = true,
-		}, chips)
-		Theme.corner(f, 12)
-		Theme.gradient(f, Theme.lighten(color, 0.15), Theme.darken(color, 0.25))
-		Theme.stroke(f, C.Ink, 2.5)
-		local kc = Theme.new("Frame", {
-			Position = UDim2.fromOffset(6, 7),
-			Size = UDim2.fromOffset(32, 32),
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			ZIndex = 3,
-		}, f)
-		Theme.corner(kc, 8)
-		Theme.stroke(kc, C.Ink, 2)
-		local keyLabel = Theme.body(kc, {
-			Name = "Key",
-			Size = UDim2.fromScale(0.8, 0.8),
-			Position = UDim2.fromScale(0.1, 0.1),
-			Text = key,
-			TextColor3 = C.Ink,
-			ZIndex = 4,
-		})
-		Theme.label(f, {
-			Name = "Text",
-			Position = UDim2.fromOffset(44, 9),
-			Size = UDim2.new(1, -50, 1, -18),
-			Text = text,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			ZIndex = 3,
-		}, 2)
-		Theme.new("Frame", {
-			Name = "Fill",
-			Size = UDim2.fromScale(0, 1),
-			BackgroundColor3 = C.Ink,
-			BackgroundTransparency = 0.35,
-			BorderSizePixel = 0,
-			ZIndex = 2,
-		}, f)
-		return f, keyLabel
-	end
-	refs.dodgeChip, refs.dodgeKey = keycap("Dodge", "Q", "DODGE", 0, Color3.fromRGB(70, 130, 240))
-	refs.catchChip, refs.catchKey = keycap("Catch", "E", "CATCH", 0.52, Color3.fromRGB(60, 190, 100))
+	Theme.new("UIListLayout", {
+		Padding = UDim.new(0, Theme.Space.S),
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		VerticalAlignment = Enum.VerticalAlignment.Bottom,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, corner)
+	refs.corner = corner
+	Theme.autoScale(corner, 0.95)
+	local legends = Theme.new("Frame", {
+		Name = "Legends",
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 46),
+		BackgroundTransparency = 1,
+	}, corner)
+	Theme.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		Padding = UDim.new(0, Theme.Space.S),
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, legends)
+	refs.chips = legends
+	refs.dodgeChip, refs.dodgeKey = Theme.legend(legends, "Q", "Dodge", { LayoutOrder = 1 })
+	refs.catchChip, refs.catchKey = Theme.legend(legends, "E", "Catch", { LayoutOrder = 2 })
+	-- Play again: a pill with a toggle
+	local playAgain = Theme.pill(corner, {
+		Name = "PlayAgain",
+		LayoutOrder = 2,
+		Size = UDim2.fromOffset(200, 48),
+	})
+	Theme.text(playAgain, 17, {
+		Position = UDim2.fromOffset(18, 0),
+		Size = UDim2.new(1, -90, 1, 0),
+		Text = "Play again",
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+	local _, setQueue = Theme.toggle(playAgain, true, function(v)
+		HUDController.applySetting("PlayAgain", v)
+	end, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0) })
+	HUDController.followQueue(setQueue)
+	refs.playAgain = playAgain
 
-	-- Results card (non-blocking): ribbon title, coins counting up, three stat tiles, XP and streak.
+	-- Results card (non-blocking): title + tier sticker, coins counting up, three stat wells, level
 	local results = Theme.panel(gui, {
 		Name = "Results",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 126),
-		Size = UDim2.fromOffset(400, 236),
+		Position = UDim2.new(0.5, 0, 0, 140),
+		Size = UDim2.fromOffset(420, 280),
 		Visible = false,
-	}, Theme.Radius.XL)
+	}, Theme.Radius.L)
 	refs.results = results
 	Theme.autoScale(results)
-	local ribbon = Theme.new("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0, 0),
-		Size = UDim2.new(1, 30, 0, 54),
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		ZIndex = 3,
-	}, results)
-	Theme.corner(ribbon, Theme.Radius.M)
-	refs.ribbonGrad = Theme.gradient(ribbon, C.Gold, C.GoldDark)
-	Theme.stroke(ribbon, C.Ink, 3)
-	refs.resultTitle = Theme.label(ribbon, {
-		Size = UDim2.new(1, -20, 1, -10),
-		Position = UDim2.fromOffset(10, 5),
+	refs.resultTitle = Theme.label(results, {
+		Position = UDim2.fromOffset(24, 18),
+		Size = UDim2.new(1, -48, 0, 36),
 		Text = "",
-		ZIndex = 4,
-	}, 3)
-	local coinRow = Theme.new("Frame", {
-		Position = UDim2.fromOffset(Theme.Space.L, 36),
-		Size = UDim2.new(1, -Theme.Space.L * 2, 0, 50),
-		BackgroundTransparency = 1,
-	}, results)
-	Theme.coin(coinRow, 40, { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0.5, -110, 0.5, 0) })
-	refs.resultCoins = Theme.label(coinRow, {
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0.5, -62, 0.5, 0),
-		Size = UDim2.new(0.5, 62, 1, 0),
-		Text = "+0",
-		TextColor3 = C.Gold,
 		TextXAlignment = Enum.TextXAlignment.Left,
-	}, 3)
-	local statRow = Theme.new("Frame", {
-		Position = UDim2.fromOffset(Theme.Space.L, 94),
-		Size = UDim2.new(1, -Theme.Space.L * 2, 0, 64),
+	}, 0)
+	refs.resultSticker = Theme.new("Frame", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -24, 0, 26),
+		Size = UDim2.fromOffset(160, 22),
 		BackgroundTransparency = 1,
 	}, results)
 	Theme.new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
-		Padding = UDim.new(0, Theme.Space.S),
-		HorizontalAlignment = Enum.HorizontalAlignment.Center,
-	}, statRow)
-	local chipSize = UDim2.new(1 / 3, -Theme.Space.S * 2 / 3, 1, 0)
-	refs.statHits = Theme.statChip(statRow, "HITS", Color3.fromRGB(255, 120, 90), { Size = chipSize, LayoutOrder = 1 })
-	refs.statCatches = Theme.statChip(statRow, "CATCHES", C.Green, { Size = chipSize, LayoutOrder = 2 })
-	refs.statKOs = Theme.statChip(statRow, "KNOCKOUTS", C.Purple, { Size = chipSize, LayoutOrder = 3 })
-	-- XP + streak footer
-	local footer = Theme.new("Frame", {
-		Position = UDim2.new(0, Theme.Space.L, 1, -64),
-		Size = UDim2.new(1, -Theme.Space.L * 2, 0, 48),
-		BackgroundColor3 = C.Ink,
-		BackgroundTransparency = 0.35,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+	}, refs.resultSticker)
+	local coinRow = Theme.new("Frame", {
+		Position = UDim2.fromOffset(24, 64),
+		Size = UDim2.new(1, -48, 0, 46),
+		BackgroundTransparency = 1,
 	}, results)
-	Theme.corner(footer, Theme.Radius.S)
-	refs.resultLevel = Theme.label(footer, {
-		Position = UDim2.fromOffset(Theme.Space.M, 6),
-		Size = UDim2.new(0.5, -Theme.Space.M, 0, 22),
-		Text = "LEVEL 1",
+	Theme.coin(coinRow, 40, { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.fromScale(0, 0.5) })
+	refs.resultCoins = Theme.label(coinRow, {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 52, 0.5, 0),
+		Size = UDim2.new(1, -52, 1, 0),
+		Text = "+0",
+		TextColor3 = T.sun,
 		TextXAlignment = Enum.TextXAlignment.Left,
-	}, 2)
-	refs.resultXP = Theme.body(footer, {
-		Position = UDim2.fromOffset(Theme.Space.M, 28),
-		Size = UDim2.new(0.5, -Theme.Space.M, 0, 14),
-		Text = "+0 XP",
-		TextColor3 = Color3.fromRGB(140, 240, 255),
+	}, 0)
+	local statRow = Theme.new("Frame", {
+		Position = UDim2.fromOffset(24, 122),
+		Size = UDim2.new(1, -48, 0, 74),
+		BackgroundTransparency = 1,
+	}, results)
+	Theme.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		Padding = UDim.new(0, Theme.Space.M),
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, statRow)
+	local chipSize = UDim2.new(1 / 3, -Theme.Space.M * 2 / 3, 1, 0)
+	refs.statHits = Theme.statChip(statRow, "Hits", T.peach, { Size = chipSize, LayoutOrder = 1 })
+	refs.statCatches = Theme.statChip(statRow, "Catches", T.leaf, { Size = chipSize, LayoutOrder = 2 })
+	refs.statKOs = Theme.statChip(statRow, "Knockouts", T.candy, { Size = chipSize, LayoutOrder = 3 })
+	-- level + XP footer
+	refs.resultLevel = Theme.text(results, 17, {
+		Position = UDim2.new(0, 24, 1, -64),
+		Size = UDim2.new(0.5, -24, 0, 22),
+		Text = "Level 1",
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
-	refs.resultStreak = Theme.label(footer, {
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -Theme.Space.M, 0.5, 0),
-		Size = UDim2.new(0.5, -Theme.Space.M, 0, 24),
-		Text = "",
-		TextColor3 = Color3.fromRGB(255, 170, 80),
-		TextXAlignment = Enum.TextXAlignment.Right,
-	}, 2)
+	refs.resultXP = Theme.body(results, {
+		Position = UDim2.new(0, 24, 1, -40),
+		Size = UDim2.new(0.5, -24, 0, 16),
+		FontFace = Theme.TextFace,
+		Text = "+0 XP",
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+	refs.resultStreak = Theme.new("Frame", {
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -24, 1, -34),
+		Size = UDim2.fromOffset(180, 24),
+		BackgroundTransparency = 1,
+	}, results)
+	Theme.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+	}, refs.resultStreak)
 	-- kept for the gallery/debug text path (aborted matches etc.)
 	refs.resultBody = refs.resultXP
-
-	-- Hub switches: "Play again" is always in reach; the comfort settings live behind the gear.
-	local lobby = Theme.new("Frame", {
-		Name = "Lobby",
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -Theme.Space.M, 1, -Theme.Space.M),
-		Size = UDim2.fromOffset(220, 150),
-		BackgroundTransparency = 1,
-	}, gui)
-	Theme.new("UIListLayout", {
-		Padding = UDim.new(0, Theme.Space.S),
-		VerticalAlignment = Enum.VerticalAlignment.Bottom,
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	}, lobby)
-	refs.lobby = lobby
-	Theme.autoScale(lobby, 0.95)
-	-- (no parent at creation: a panel's drop shadow would become a layout item in the list)
-	local settingsCard = Theme.panel(nil, {
-		Name = "Settings",
-		LayoutOrder = 1,
-		Size = UDim2.new(1, 0, 0, 104),
-		Visible = false,
-	}, Theme.Radius.M)
-	settingsCard.Parent = lobby
-	Theme.padding(settingsCard, Theme.Space.S)
-	Theme.new("UIListLayout", { Padding = UDim.new(0, Theme.Space.XS), SortOrder = Enum.SortOrder.LayoutOrder }, settingsCard)
-	Theme.body(settingsCard, {
-		LayoutOrder = 0,
-		Size = UDim2.new(1, 0, 0, 14),
-		Text = "SETTINGS",
-		TextColor3 = C.Gold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	})
-	refs.settingsCard = settingsCard
-	local bottomRow = Theme.new("Frame", {
-		LayoutOrder = 2,
-		Size = UDim2.new(1, 0, 0, 38),
-		BackgroundTransparency = 1,
-	}, lobby)
-	local function switch(parent: Instance, name: string, initial: boolean, onChange: (boolean) -> ()): (boolean) -> ()
-		local state = initial
-		local row = Theme.new("TextButton", {
-			Name = name,
-			Text = "",
-			AutoButtonColor = false,
-			Size = if parent == bottomRow then UDim2.new(1, -46, 1, 0) else UDim2.new(1, 0, 0, 38),
-			LayoutOrder = 1,
-			BackgroundColor3 = C.Ink,
-			BackgroundTransparency = 0.3,
-		}, parent)
-		Theme.round(row)
-		Theme.label(row, {
-			Position = UDim2.fromOffset(14, 9),
-			Size = UDim2.new(1, -74, 0, 20),
-			Text = name,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		}, 2)
-		local track = Theme.new("Frame", {
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, -8, 0.5, 0),
-			Size = UDim2.fromOffset(48, 24),
-			BackgroundColor3 = C.Green,
-		}, row)
-		Theme.round(track)
-		Theme.stroke(track, C.Ink, 2)
-		local knob = Theme.new("Frame", {
-			AnchorPoint = Vector2.new(0, 0.5),
-			Size = UDim2.fromOffset(18, 18),
-			BackgroundColor3 = Color3.new(1, 1, 1),
-		}, track)
-		Theme.round(knob)
-		local function render(animate: boolean)
-			local pos = if state then UDim2.new(1, -21, 0.5, 0) else UDim2.new(0, 3, 0.5, 0)
-			local col = if state then C.Green else Color3.fromRGB(110, 100, 140)
-			if animate then
-				tween(knob, 0.15, { Position = pos })
-				tween(track, 0.15, { BackgroundColor3 = col })
-			else
-				knob.Position = pos
-				track.BackgroundColor3 = col
-			end
-		end
-		render(false)
-		row.Activated:Connect(function()
-			state = not state
-			render(true)
-			SoundController.play("UIClick")
-			onChange(state)
-		end)
-		-- external setter so the switch can follow server state
-		return function(v: boolean)
-			if v ~= state then
-				state = v
-				render(true)
-			end
-		end
-	end
-	local setQueue = switch(bottomRow, "Play again", true, function(v)
-		-- the player's explicit choice; the shop restores this (not a stale value) when it closes
-		player:SetAttribute("QueuePreference", v)
-		Net.request(Net.Actions.SetAutoQueue, { value = v })
-	end)
-	player:GetAttributeChangedSignal("AutoQueue"):Connect(function()
-		setQueue(player:GetAttribute("AutoQueue") ~= false)
-	end)
-	local gear = Theme.button(bottomRow, "⚙", C.PanelLight, {
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromScale(1, 0),
-		Size = UDim2.fromOffset(40, 38),
-	})
-	gear.Activated:Connect(function()
-		if settingsCard.Visible and settingsCard:GetAttribute("ThemeOpen") ~= false then
-			Theme.hide(settingsCard)
-		else
-			Theme.show(settingsCard)
-		end
-	end)
-	switch(settingsCard, "Camera shake", true, function(v)
-		HUDController.settings.CameraShake = v
-		Net.request(Net.Actions.SetSetting, { key = "CameraShake", value = v })
-	end)
-	switch(settingsCard, "Reduced motion", false, function(v)
-		HUDController.settings.ReducedMotion = v
-		Net.request(Net.Actions.SetSetting, { key = "ReducedMotion", value = v })
-	end)
 end
 
 -- Public effects --------------------------------------------------------------------------------------
 
 local bannerToken = 0
 -- Big sticker text that slams in, wobbles, and fades. opts.scale shrinks it (1 = full size);
--- opts.rich takes the text as rich text with its own <font color> runs (no gradient tint).
+-- opts.rich takes the text as rich text with its own <font color> runs.
 function HUDController.banner(
 	text: string,
 	color: Color3?,
@@ -716,13 +608,13 @@ function HUDController.banner(
 	bannerToken += 1
 	local token = bannerToken
 	local b = refs.banner :: TextLabel
-	local col = color or Color3.new(1, 1, 1)
+	local col = color or T.ink
 	local size = opts and opts.scale or 1
 	local rich = opts ~= nil and opts.rich == true
 	b.RichText = rich
 	b.Text = text
 	refs.bannerGrad.Enabled = not rich
-	refs.bannerGrad.Color = ColorSequence.new(Theme.lighten(col, 0.65), col)
+	refs.bannerGrad.Color = Theme.flat(col)
 	b.TextTransparency = 0
 	local stroke = b:FindFirstChildOfClass("UIStroke")
 	if stroke then
@@ -753,44 +645,35 @@ local hintToken = 0
 function HUDController.hint(text: string, duration: number?)
 	hintToken += 1
 	local token = hintToken
-	local h = refs.hint :: TextLabel
-	h.Text = text
-	h.TextTransparency = 0
-	local stroke = h:FindFirstChildOfClass("UIStroke")
-	if stroke then
-		stroke.Transparency = 0
+	local pill = refs.hintPill :: Frame
+	refs.hint.Text = text
+	pill.Visible = text ~= ""
+	if text == "" then
+		return
 	end
-	Theme.pop(h, 0.8, 0.2)
+	Theme.pop(pill, 0.6, Theme.Motion.Slow)
 	task.delay(duration or 1.5, function()
 		if token == hintToken then
-			tween(h, 0.3, { TextTransparency = 1 })
-			if stroke then
-				tween(stroke, 0.3, { Transparency = 1 })
-			end
+			pill.Visible = false
 		end
 	end)
 end
 
 local feedOrder = 0
--- Feed line as a pill; names can carry rich-text colors.
+-- Feed line as a surface pill; names can carry rich-text colors.
 function HUDController.feed(text: string)
 	feedOrder -= 1
-	local pill = Theme.new("Frame", {
+	local pill = Theme.pill(feedFrame, {
 		LayoutOrder = feedOrder,
-		Size = UDim2.fromOffset(0, 26),
+		Size = UDim2.fromOffset(0, 30),
 		AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundColor3 = C.Ink,
-		BackgroundTransparency = 0.3,
-	}, feedFrame)
-	Theme.round(pill)
-	Theme.new("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, pill)
-	local l = Theme.body(pill, {
-		Size = UDim2.fromOffset(0, 26),
+	})
+	Theme.new("UIPadding", { PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14) }, pill)
+	local l = Theme.text(pill, 15, {
+		Size = UDim2.fromOffset(0, 30),
 		AutomaticSize = Enum.AutomaticSize.X,
-		TextScaled = false,
-		TextSize = 15,
+		FontFace = Theme.BodyFace,
 		RichText = true,
-		TextColor3 = Color3.new(1, 1, 1),
 		Text = text,
 	})
 	-- keep at most 5
@@ -806,12 +689,12 @@ function HUDController.feed(text: string)
 	while #items > 5 do
 		(table.remove(items, 1) :: Frame):Destroy()
 	end
-	Theme.pop(pill, 0.7, 0.25)
+	Theme.pop(pill, 0.6, Theme.Motion.Slow)
 	task.delay(5, function()
 		if pill.Parent then
-			tween(pill, 0.4, { BackgroundTransparency = 1 })
-			tween(l, 0.4, { TextTransparency = 1 })
-			task.delay(0.45, function()
+			tween(pill, 0.3, { BackgroundTransparency = 1 })
+			tween(l, 0.3, { TextTransparency = 1 })
+			task.delay(0.35, function()
 				pill:Destroy()
 			end)
 		end
@@ -833,7 +716,7 @@ function HUDController.vignette(intensity: number, duration: number)
 	tween(v, duration, { BackgroundTransparency = 1 })
 end
 
--- "+25" coin reward under the banner: bounces in, then flies into the coin counter.
+-- "+25" coin reward under the banner: pops in, then flies into the coin counter.
 function HUDController.coinPop(amount: number)
 	local reduced = HUDController.settings.ReducedMotion
 	local holder = Theme.new("Frame", {
@@ -843,29 +726,19 @@ function HUDController.coinPop(amount: number)
 		BackgroundTransparency = 1,
 		ZIndex = 22,
 	}, gui)
-	local coin = Theme.new("Frame", {
+	local coin = Theme.coin(holder, 52, {
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 6, 0.5, 0),
-		Size = UDim2.fromOffset(52, 52),
-		BackgroundColor3 = Color3.new(1, 1, 1),
 		ZIndex = 22,
-	}, holder)
-	Theme.round(coin)
-	Theme.gradient(coin, C.Gold, C.GoldDark)
-	Theme.stroke(coin, Theme.darken(C.GoldDark, 0.5), 3)
-	Theme.label(
-		coin,
-		{ Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.15, 0.15), Text = "C", ZIndex = 23 },
-		2
-	)
+	})
 	local text = Theme.label(holder, {
-		Position = UDim2.fromOffset(64, 0),
-		Size = UDim2.new(1, -64, 1, 0),
+		Position = UDim2.fromOffset(66, 0),
+		Size = UDim2.new(1, -66, 1, 0),
 		Text = ("+%d"):format(amount),
+		TextColor3 = T.sun,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 22,
 	}, 4)
-	Theme.gradient(text, Color3.fromRGB(255, 250, 200), C.Gold)
 	SoundController.play("CoinGain")
 	if reduced then
 		task.delay(1.2, function()
@@ -877,7 +750,7 @@ function HUDController.coinPop(amount: number)
 	-- coin spins while it hangs there
 	tween(coin, 0.6, { Rotation = 360 }, Enum.EasingStyle.Back)
 	task.delay(0.9, function()
-		-- fly to the coin counter (top-left chip) and shrink away
+		-- fly to the coin counter (the profile card) and shrink away
 		local target = refs.chip.AbsolutePosition + Vector2.new(20, 20) - gui.AbsolutePosition
 		local tw = tween(holder, 0.45, {
 			Position = UDim2.fromOffset(target.X, target.Y),
@@ -886,7 +759,7 @@ function HUDController.coinPop(amount: number)
 		tween(text, 0.45, { TextTransparency = 1 })
 		tw.Completed:Once(function()
 			holder:Destroy()
-			Theme.pop(refs.chip, 1.2, 0.3)
+			Theme.pop(refs.chip, 1.12, 0.3)
 		end)
 	end)
 end
@@ -939,29 +812,41 @@ local function showResults(data: any, persist: boolean?)
 	resultsToken += 1
 	local token = resultsToken
 	local r = refs.results :: Frame
-	local title = if data.aborted
-		then "MATCH OVER"
-		elseif data.won and data.coins > 0 then string.upper(data.tier) .. "!"
-		elseif data.won then "YOU WIN!"
-		elseif data.winner then "GOOD GAME!"
-		else "DRAW!"
-	refs.resultTitle.Text = title
-	local top, bottom = C.Gold, C.GoldDark
-	if not data.won then
-		top, bottom = Color3.fromRGB(150, 140, 190), Color3.fromRGB(90, 80, 130)
+	refs.resultTitle.Text = if data.aborted
+		then "Match over"
+		elseif data.won then "You win!"
+		elseif data.winner then "Good game!"
+		else "Draw!"
+	for _, s in refs.resultSticker:GetChildren() do
+		if s:IsA("Frame") then
+			s:Destroy()
+		end
 	end
-	refs.ribbonGrad.Color = ColorSequence.new(top, bottom)
+	if data.won and data.coins > 0 and data.tier then
+		Theme.sticker(refs.resultSticker, tostring(data.tier), T.sun, { Size = UDim2.fromOffset(0, 22) })
+	elseif data.aborted then
+		Theme.sticker(refs.resultSticker, "Aborted", T.sky, { Size = UDim2.fromOffset(0, 22) })
+	end
 	local stats = data.stats or { hits = 0, catches = 0, knockouts = 0 }
 	refs.statHits.Text = tostring(stats.hits or 0)
 	refs.statCatches.Text = tostring(stats.catches or 0)
 	refs.statKOs.Text = tostring(stats.knockouts or 0)
-	refs.resultLevel.Text = if data.leveledUp then ("LEVEL UP!  %d"):format(data.level or 1) else ("LEVEL %d"):format(data.level or 1)
-	refs.resultLevel.TextColor3 = if data.leveledUp then C.Gold else Color3.new(1, 1, 1)
+	refs.resultLevel.Text = if data.leveledUp
+		then ("Level up! You're level %d"):format(data.level or 1)
+		else ("Level %d"):format(data.level or 1)
+	refs.resultLevel.TextColor3 = if data.leveledUp then T.sun else T.ink
 	refs.resultXP.Text = ("+%d XP"):format(data.xp or 0)
+	for _, s in refs.resultStreak:GetChildren() do
+		if s:IsA("Frame") then
+			s:Destroy()
+		end
+	end
 	local streak = tonumber(data.streak) or 0
-	refs.resultStreak.Text = if streak >= Config.Progression.StreakFlameAt then ("🔥 %d WIN STREAK"):format(streak) else ""
+	if streak >= Config.Progression.StreakFlameAt then
+		Theme.sticker(refs.resultStreak, ("%d win streak"):format(streak), T.peach, { Size = UDim2.fromOffset(0, 24) })
+	end
 	Theme.show(r)
-	-- count the coins up, then pop the stat tiles in one after another
+	-- count the coins up, then pop the stat wells in one after another
 	local target = data.coins or 0
 	task.spawn(function()
 		local t0 = os.clock()
@@ -973,18 +858,17 @@ local function showResults(data: any, persist: boolean?)
 		end
 		refs.resultCoins.Text = ("+%d"):format(target)
 	end)
-	if not HUDController.settings.ReducedMotion then
-		for i, v in { refs.statHits, refs.statCatches, refs.statKOs } do
-			local tile = (v :: TextLabel).Parent :: GuiObject
-			task.delay(0.25 + i * 0.12, function()
-				Theme.pop(tile, 0.5, 0.3)
-			end)
-		end
-		if data.leveledUp then
-			task.delay(0.8, function()
-				Theme.pop(refs.resultLevel, 1.6, 0.4)
-			end)
-		end
+	local wells = {}
+	for _, v in { refs.statHits, refs.statCatches, refs.statKOs } do
+		table.insert(wells, (v :: TextLabel).Parent :: GuiObject)
+	end
+	task.delay(0.2, function()
+		Theme.popIn(wells, 0.08)
+	end)
+	if data.leveledUp then
+		task.delay(0.8, function()
+			Theme.pop(refs.resultLevel, 1.4, 0.4)
+		end)
 	end
 	SoundController.play(if data.won then "Purchase" else "UIOpen")
 	if not persist then
@@ -1031,39 +915,43 @@ local function update()
 			for i, p in pips[team] do
 				p.Visible = i <= teamSize
 				if i <= active then
-					p.BackgroundColor3 = Color3.new(1, 1, 1)
+					p.BackgroundColor3 = T.ink
 					p.BackgroundTransparency = 0
 				elseif i <= active + jailed then
-					p.BackgroundColor3 = Color3.fromRGB(255, 220, 140)
-					p.BackgroundTransparency = 0.55
+					p.BackgroundColor3 = T.sun
+					p.BackgroundTransparency = 0
 				else
-					p.BackgroundColor3 = C.Ink
-					p.BackgroundTransparency = 0.6
+					p.BackgroundColor3 = T.outline
+					p.BackgroundTransparency = 0.5
 				end
 			end
-			refs[team .. "Jail"].Text = if jailed > 0 then ("%d IN JAIL"):format(jailed) else ""
+			refs[team .. "Jail"].Text = if jailed > 0 then ("%d in jail"):format(jailed) else ""
 			local wins = num(team .. "Wins", 0)
 			for i, s in stars[team] do
-				s.TextColor3 = if i <= wins then C.Gold else Color3.fromRGB(80, 70, 110)
+				local won = i <= wins
+				s.BackgroundColor3 = if won then T.sun else T.surfaceSunk
+				local glyph = s:FindFirstChild("Star")
+				local label = glyph and glyph:FindFirstChildOfClass("TextLabel")
+				if label then
+					label.TextColor3 = if won then T.onFill else T.line
+				end
 			end
 		end
-		refs.round.Text = ("ROUND %d"):format(num("Round", 1))
+		refs.round.Text = ("Round %d"):format(num("Round", 1))
+		local face = refs.timerFace :: Frame
 		if MS:GetAttribute("Overtime") and state == "RoundActive" then
-			refs.timer.Text = "SUDDEN\nDEATH"
-			refs.timer.TextColor3 = Color3.fromRGB(255, 220, 220)
-			refs.timerStroke.Color = Color3.fromRGB(255, 60, 60)
-			refs.timerGrad.Color = ColorSequence.new(Color3.fromRGB(220, 50, 50), Color3.fromRGB(110, 10, 30))
+			refs.timer.Text = "Sudden\ndeath"
+			face.BackgroundColor3 = T.joyRed
+			refs.timer.TextColor3 = T.ink
+			refs.round.TextColor3 = T.ink
 			local pulse = 1 + 0.06 * math.sin(os.clock() * 10)
-			local sc = refs.timer.Parent:FindFirstChildOfClass("UIScale")
-				or Theme.new("UIScale", nil, refs.timer.Parent)
+			local sc = face:FindFirstChildOfClass("UIScale") or Theme.new("UIScale", nil, face)
 			sc.Scale = if HUDController.settings.ReducedMotion then 1 else pulse
 		else
 			refs.timer.Text = if endsAt > 0 then fmtTime(left) else "--"
-			refs.timer.TextColor3 = if left < 10 and state == "RoundActive"
-				then Color3.fromRGB(255, 120, 100)
-				else Color3.new(1, 1, 1)
-			refs.timerStroke.Color = C.Gold
-			refs.timerGrad.Color = ColorSequence.new(C.PanelLight, C.Ink)
+			face.BackgroundColor3 = T.surface
+			refs.timer.TextColor3 = if left < 10 and state == "RoundActive" then T.danger else T.ink
+			refs.round.TextColor3 = T.inkMuted
 		end
 	end
 
@@ -1072,35 +960,36 @@ local function update()
 		phase = "Getting a match ready..."
 	elseif state == "Intermission" then
 		phase = if player:GetAttribute("AutoQueue") == false
-			then "Play again is OFF"
+			then "Play again is off"
 			else ("Next match in %d"):format(math.max(0, math.ceil(left)))
 	elseif state == "RoundCountdown" and inMatch then
 		phase = "Get ready!"
 	elseif not inMatch and live then
-		phase = "Match in progress · you join next round"
+		phase = "Match in progress · you'll join next round"
 	elseif status == "Spectating" then
 		phase = "Next round soon"
 	elseif status == "Jailed" then
-		phase = "JAIL: hit an enemy to get back in!"
+		phase = "In jail: hit an enemy to get back in!"
 	end
 	if state == "Intro" then
 		phase = "Match starting!"
 	end
 	if refs.phase.Text ~= phase and phase ~= "" and refs.phasePill.Visible then
-		Theme.pop(refs.phasePill, 0.92, 0.2)
+		Theme.pop(refs.phasePill, 0.9, 0.25)
 	end
 	refs.phase.Text = phase
 	refs.phasePill.Visible = phase ~= ""
 	-- stack under the scoreboard, which shrinks on small screens
 	local s = Theme.uiScale()
-	local below = if live then 92 * s else Theme.Space.S
+	local below = if live then 100 * s else Theme.Space.M
 	refs.phasePill.Position = UDim2.new(0.5, 0, 0, below)
-	refs.results.Position = UDim2.new(0.5, 0, 0, below + (if refs.phasePill.Visible then 34 * s else 0) + 30 * s)
-	refs.lobby.Visible = not live or not inMatch
+	refs.results.Position = UDim2.new(0.5, 0, 0, below + (if refs.phasePill.Visible then 40 * s else 0) + 16 * s)
+	local hub = not live or not inMatch
+	refs.playAgain.Visible = hub
 	-- on touch screens the action buttons own the bottom-right corner: sit above them
-	refs.lobby.Position = if AimController.lastInput == "Touch"
+	refs.corner.Position = if AimController.lastInput == "Touch"
 		then UDim2.new(1, -12, 1, -250)
-		else UDim2.new(1, -12, 1, -12)
+		else UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L - 10)
 
 	-- reticle + charge
 	local holding = AimController.holding()
@@ -1119,18 +1008,19 @@ local function update()
 		local def = BallDefinitions.get(heldType)
 		refs.held.Visible = true
 		refs.heldSwatch.BackgroundColor3 = def.Color
-		refs.heldText.Text = if heldType == "Standard" then "BALL" else def.DisplayName
-		refs.heldText.TextColor3 = if heldType == "Standard" then Color3.new(1, 1, 1) else Theme.lighten(def.Color, 0.3)
+		refs.heldText.Text = if heldType == "Standard" then "Ball" else def.DisplayName
 	else
 		refs.held.Visible = false
 	end
 
-	-- cooldown keycaps
+	-- legends + cooldowns (touch screens have their own buttons)
 	refs.chips.Visible = AimController.lastInput ~= "Touch"
 	local t = Workspace:GetServerTimeNow()
 	local function fill(chip: Frame, readyAt: any, duration: number)
 		local frac = if type(readyAt) == "number" then math.clamp((readyAt - t) / duration, 0, 1) else 0
 		(chip:FindFirstChild("Fill") :: Frame).Size = UDim2.fromScale(frac, 1)
+		local key = chip:FindFirstChild("Key") :: Frame
+		key.BackgroundTransparency = if frac > 0 then 0.55 else 0
 	end
 	fill(refs.dodgeChip, player:GetAttribute("DodgeReadyAt"), Config.Player.DodgeCooldown)
 	fill(refs.catchChip, player:GetAttribute("CatchReadyAt"), Config.Player.CatchCooldown)
@@ -1194,14 +1084,21 @@ function HUDController.start()
 	local lastCoins: number? = nil
 	Net.on("Profile", function(d)
 		local coins = d.coins or 0
-		refs.coins.Text = tostring(coins)
+		local s = tostring(math.floor(coins)):reverse():gsub("(%d%d%d)", "%1,"):reverse()
+		refs.coins.Text = (s:gsub("^,", ""))
 		if lastCoins and coins ~= lastCoins then
-			Theme.pop(refs.chip, 1.15, 0.3)
+			Theme.pop(refs.chip, 1.1, 0.3)
 		end
 		lastCoins = coins
-		refs.level.Text = tostring(d.level)
+		refs.level.Text = ("Lv %d"):format(d.level or 1)
 		tween(refs.xpBar, 0.4, { Size = UDim2.fromScale(math.clamp(d.xp / math.max(d.xpNext, 1), 0, 1), 1) })
-		refs.saveWarn.Text = if d.persistent then "" else "Progress not saving"
+		refs.saveWarn.Text = if d.persistent then "" else "Progress isn't saving in this server"
+	end)
+	player:GetAttributeChangedSignal("AutoQueue"):Connect(function()
+		local v = player:GetAttribute("AutoQueue") ~= false
+		for _, set in queueSetters do
+			set(v)
+		end
 	end)
 	RunService.RenderStepped:Connect(update)
 end

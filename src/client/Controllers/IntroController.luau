@@ -60,7 +60,7 @@ local function showTeam(label: TextLabel, team: string)
 	local t = Config.Teams[team]
 	local grad = label:FindFirstChild("TeamTint") :: UIGradient?
 	if grad then
-		grad.Color = ColorSequence.new(Theme.lighten(t.Color, 0.6), t.Color)
+		grad.Color = Theme.flat(t.Color)
 	end
 	label.Text = ("%s TEAM"):format(t.Name)
 	label.TextTransparency = 1

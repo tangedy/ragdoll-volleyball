@@ -32,20 +32,20 @@ local function charge(): { Layer }
 		while t < hold - 1e-3 do
 			local v = if t == 0 then 1 else 0.55
 			local len = math.min(0.2, hold - t)
-			table.insert(
-				layers,
-				{ id = S .. "electronicpingshort.wav", volume = 0.5 * v, pitch = pitch, delay = at + t, stopAfter = len }
-			)
-			table.insert(
-				layers,
-				{
-					id = S .. "electronicpingshort.wav",
-					volume = 0.2 * v,
-					pitch = pitch * 2,
-					delay = at + t,
-					stopAfter = len,
-				}
-			)
+			table.insert(layers, {
+				id = S .. "electronicpingshort.wav",
+				volume = 0.5 * v,
+				pitch = pitch,
+				delay = at + t,
+				stopAfter = len,
+			})
+			table.insert(layers, {
+				id = S .. "electronicpingshort.wav",
+				volume = 0.2 * v,
+				pitch = pitch * 2,
+				delay = at + t,
+				stopAfter = len,
+			})
 			t += 0.1
 		end
 	end
@@ -524,6 +524,14 @@ local Cues: { [string]: { Layer } } = {
 	-- UI
 	UIClick = {
 		{ id = S .. "clickfast.wav", volume = 0.4, pitch = 1.1, jitter = 0.05 },
+	},
+	-- the selection ring moving to something new: a soft tick
+	UIMove = {
+		{ id = S .. "clickfast.wav", volume = 0.16, pitch = 1.9, jitter = 0.04 },
+	},
+	-- back / close: a lower thunk
+	UIBack = {
+		{ id = S .. "clickfast.wav", volume = 0.35, pitch = 0.7, jitter = 0.03 },
 	},
 	UIOpen = {
 		{ id = S .. "switch.wav", volume = 0.4, pitch = 1.2 },

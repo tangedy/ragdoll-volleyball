@@ -1,5 +1,5 @@
 --!strict
--- Daily cosmetic spin panel (hub only). Shows the exact wheel the server will spin (the server sends
+-- Daily cosmetic spin sheet (hub only). Shows the exact wheel the server will spin (the server sends
 -- the slots with the profile), the odds of this wheel by rarity, and the free / paid spin buttons.
 -- A spin request starts the wheel at once; when the server's result arrives the wheel eases out onto
 -- the winning slot, ticking past each slot, then the prize is revealed. The server decides and saves
@@ -22,16 +22,17 @@ local SoundController = require(script.Parent.SoundController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
 local player = Players.LocalPlayer
-local C = Theme.Colors
+local T = Theme.Toybox
 local SP = Config.Spin
 local new = Theme.new
 
 local SpinController = {}
 
-local panel: Frame
-local wheelHolder: Frame
+local SHEET_SIZE = Vector2.new(820, 500)
+
+local sheet: any
+local panel: CanvasGroup
 local rotor: Frame
-local infoCol: Frame
 local statusLabel: TextLabel
 local oddsList: Frame
 local spinButton: TextButton
@@ -49,53 +50,6 @@ local lastTick = -1
 
 local function inHub(): boolean
 	return player:GetAttribute("Status") == "Lobby" and (player:GetAttribute("Team") or "") == ""
-end
-
--- Small icon for a prize: a ball swatch, a trail stripe, a title word or the item's emoji.
-local function icon(item: Catalog.Item, parent: Instance, z: number)
-	local d = item.Data
-	if item.Category == "BallSkin" then
-		local ball = new("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.45),
-			Size = UDim2.fromScale(0.55, 0.55),
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			ZIndex = z,
-		}, parent)
-		new("UIAspectRatioConstraint", nil, ball)
-		Theme.round(ball)
-		local col = d.Color or Color3.fromRGB(214, 48, 49)
-		Theme.gradient(ball, Theme.lighten(col, 0.45), Theme.darken(col, 0.15), 45)
-		Theme.stroke(ball, C.Ink, 2)
-	elseif item.Category == "Trail" and d.Colors then
-		local keys = {}
-		for i, col in d.Colors do
-			table.insert(keys, ColorSequenceKeypoint.new(if #d.Colors == 1 then 0 else (i - 1) / (#d.Colors - 1), col))
-		end
-		if #keys == 1 then
-			table.insert(keys, ColorSequenceKeypoint.new(1, d.Colors[1]))
-		end
-		local bar = new("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.45),
-			Size = UDim2.fromScale(0.8, 0.18),
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			Rotation = -15,
-			ZIndex = z,
-		}, parent)
-		Theme.round(bar)
-		new("UIGradient", { Color = ColorSequence.new(keys) }, bar)
-	else
-		local text = if item.Category == "Title" then d.Text else (d.Icon or "🎬")
-		Theme.label(parent, {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.45),
-			Size = UDim2.fromScale(0.85, if item.Category == "Title" then 0.3 else 0.5),
-			Text = text,
-			TextColor3 = if item.Category == "Title" then C.Gold else Color3.new(1, 1, 1),
-			ZIndex = z,
-		}, 1.5)
-	end
 end
 
 -- Build the wheel's slots around the rim (they ride on `rotor`, which is what spins).
@@ -120,45 +74,34 @@ local function buildWheel(slots: { string })
 			Position = UDim2.fromScale(0.5 + 0.24 * math.sin(spokeAngle), 0.5 - 0.24 * math.cos(spokeAngle)),
 			Size = UDim2.new(0, 3, 0.48, 0),
 			Rotation = angle + 180 / n,
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			BackgroundTransparency = 0.55,
+			BackgroundColor3 = T.line,
 			BorderSizePixel = 0,
-			ZIndex = 4,
+			ZIndex = 5,
 		}, rotor)
 		if not item then
 			continue
 		end
 		local rarity = Catalog.rarity(item)
-		local col = Theme.Rarity[rarity]
 		local slot = new("Frame", {
 			Name = "Slot" .. i,
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5 + 0.34 * math.sin(rad), 0.5 - 0.34 * math.cos(rad)),
-			Size = UDim2.fromScale(0.2, 0.2),
+			Position = UDim2.fromScale(0.5 + 0.35 * math.sin(rad), 0.5 - 0.35 * math.cos(rad)),
+			Size = UDim2.fromScale(0.19, 0.19),
 			Rotation = angle,
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			ZIndex = 5,
+			BackgroundColor3 = Theme.Rarity[rarity],
+			ZIndex = 6,
 		}, rotor)
 		Theme.corner(slot, Theme.Radius.S)
-		Theme.gradient(slot, Theme.lighten(col, 0.15), Theme.darken(col, 0.45))
-		Theme.stroke(slot, C.Ink, 2)
-		icon(item, slot, 6)
+		Theme.stroke(slot, T.outline, 2.5)
+		ShopController.drawArt(item, slot)
 		if owned[id] then
 			-- already owned: it would pay coins instead
-			local tag = new("Frame", {
-				AnchorPoint = Vector2.new(0.5, 1),
-				Position = UDim2.fromScale(0.5, 1.05),
-				Size = UDim2.fromScale(0.9, 0.3),
-				BackgroundColor3 = C.Ink,
-				ZIndex = 7,
-			}, slot)
-			Theme.round(tag)
-			Theme.label(tag, {
-				Size = UDim2.fromScale(1, 1),
-				Text = ("+%d"):format(SP.DuplicateCoins[rarity] or 0),
-				TextColor3 = C.Gold,
-				ZIndex = 8,
-			}, 1)
+			Theme.sticker(slot, "+" .. tostring(SP.DuplicateCoins[rarity] or 0), T.sun, {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 1),
+				Size = UDim2.fromOffset(0, 18),
+				ZIndex = 9,
+			})
 		end
 		table.insert(slotFrames, slot)
 	end
@@ -183,23 +126,23 @@ local function renderOdds()
 		local n = counts[r] or 0
 		local row = new("Frame", {
 			LayoutOrder = i,
-			Size = UDim2.new(1, 0, 0, 22),
+			Size = UDim2.new(1, 0, 0, 26),
 			BackgroundTransparency = 1,
+			ZIndex = 4,
 		}, oddsList)
-		local dot = new("Frame", {
+		Theme.sticker(row, r, Theme.Rarity[r], {
 			AnchorPoint = Vector2.new(0, 0.5),
 			Position = UDim2.fromScale(0, 0.5),
-			Size = UDim2.fromOffset(14, 14),
-			BackgroundColor3 = Theme.Rarity[r],
-		}, row)
-		Theme.round(dot)
-		Theme.stroke(dot, C.Ink, 1.5)
-		Theme.body(row, {
-			Position = UDim2.fromOffset(22, 0),
-			Size = UDim2.new(1, -22, 1, 0),
-			Text = ("%s  %d%%"):format(string.upper(r), math.floor(n / math.max(#slotsShown, 1) * 100 + 0.5)),
-			TextColor3 = if n > 0 then Theme.lighten(Theme.Rarity[r], 0.3) else C.Muted,
-			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 5,
+		})
+		Theme.text(row, 16, {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.fromScale(1, 0.5),
+			Size = UDim2.fromScale(0.4, 1),
+			Text = ("%d%%"):format(math.floor(n / math.max(#slotsShown, 1) * 100 + 0.5)),
+			TextColor3 = if n > 0 then T.ink else T.inkMuted,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			ZIndex = 5,
 		})
 	end
 end
@@ -214,14 +157,17 @@ local function renderButtons()
 		return
 	end
 	if status.free then
-		Theme.setText(spinButton, "SPIN FREE!")
-		Theme.recolor(spinButton, C.Gold)
+		Theme.setText(spinButton, "Spin for free")
+		Theme.recolor(spinButton, "primary")
+		Theme.setEnabled(spinButton, true)
 	elseif status.paidLeft > 0 then
-		Theme.setText(spinButton, ("SPIN · %d COINS"):format(status.cost))
-		Theme.recolor(spinButton, C.Purple)
+		Theme.setText(spinButton, ("Spin for %s coins"):format(ShopController.commas(status.cost)))
+		Theme.recolor(spinButton, "primary")
+		Theme.setEnabled(spinButton, true)
 	else
-		Theme.setText(spinButton, "COME BACK TOMORROW")
-		Theme.recolor(spinButton, Color3.fromRGB(90, 85, 120))
+		Theme.setText(spinButton, "Come back tomorrow")
+		Theme.recolor(spinButton, "secondary")
+		Theme.setEnabled(spinButton, false)
 	end
 	robuxButton.Visible = (status.robux or 0) > 0 and not status.free
 	badge.Visible = status.free == true
@@ -237,54 +183,39 @@ function SpinController.open(on: boolean)
 		end
 		ShopController.openShop(false)
 		ShopController.openDaily(false)
+		ShopController.openSettings(false)
 		Theme.show(panel, ShopController.getBackdrop())
-		SpinController.layout()
+		Theme.focus(spinButton)
 	elseif not spinning then
+		if ShopController.isOpen(panel) then
+			Theme.setHome(nil)
+		end
 		Theme.hide(panel, ShopController.getBackdrop())
 		Theme.hide(reveal)
 	end
 end
 
--- Phones: the wheel goes on top and the info column below it.
-function SpinController.layout()
-	local compact = Theme.isCompact()
-	panel.Size = if compact then UDim2.fromScale(0.94, 0.9) else UDim2.fromScale(0.74, 0.74)
-	if compact then
-		wheelHolder.AnchorPoint = Vector2.new(0.5, 0)
-		wheelHolder.Position = UDim2.new(0.5, 0, 0, 40)
-		wheelHolder.Size = UDim2.new(1, -Theme.Space.L * 2, 0.55, -40)
-		infoCol.AnchorPoint = Vector2.new(0.5, 1)
-		infoCol.Position = UDim2.new(0.5, 0, 1, -Theme.Space.M)
-		infoCol.Size = UDim2.new(1, -Theme.Space.L * 2, 0.45, -Theme.Space.L)
-		oddsList.Visible = false
-	else
-		wheelHolder.AnchorPoint = Vector2.new(0, 0.5)
-		wheelHolder.Position = UDim2.new(0, Theme.Space.L, 0.5, 14)
-		wheelHolder.Size = UDim2.new(0.55, -Theme.Space.L, 1, -70)
-		infoCol.AnchorPoint = Vector2.new(1, 0.5)
-		infoCol.Position = UDim2.new(1, -Theme.Space.L, 0.5, 14)
-		infoCol.Size = UDim2.new(0.45, -Theme.Space.L, 1, -70)
-		oddsList.Visible = true
-	end
-end
+-- Kept for older callers: the sheet is fixed size and scales with the screen.
+function SpinController.layout() end
 
 -- Confetti burst inside the reveal card.
 local function confetti(parent: GuiObject, color: Color3)
 	if HUDController.settings.ReducedMotion then
 		return
 	end
-	local palette = { color, C.Gold, Color3.new(1, 1, 1), Theme.lighten(color, 0.4) }
+	local palette = { color, T.sun, T.candy, T.sky, T.leaf }
 	local rng = Random.new()
 	for _ = 1, 26 do
 		local bit = new("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.35),
-			Size = UDim2.fromOffset(rng:NextInteger(6, 11), rng:NextInteger(10, 16)),
+			Size = UDim2.fromOffset(rng:NextInteger(7, 11), rng:NextInteger(10, 15)),
 			BackgroundColor3 = palette[rng:NextInteger(1, #palette)],
 			Rotation = rng:NextNumber(0, 360),
 			BorderSizePixel = 0,
 			ZIndex = 30,
 		}, parent)
+		Theme.corner(bit, 3)
 		local tx, ty = rng:NextNumber(-0.1, 1.1), rng:NextNumber(0.6, 1.2)
 		Theme.tween(bit, rng:NextNumber(0.9, 1.4), {
 			Position = UDim2.fromScale(tx, ty),
@@ -303,23 +234,19 @@ local function showReveal(result: any)
 		return
 	end
 	for _, f in reveal:GetChildren() do
-		if not f:IsA("UICorner") and not f:IsA("UIGradient") and not f:IsA("UIStroke") and not f:IsA("UIScale") then
+		if not f:IsA("UICorner") and not f:IsA("UIStroke") and not f:IsA("UIScale") then
 			f:Destroy()
 		end
 	end
-	local col = Theme.Rarity[result.rarity] or C.Gold
-	local grad = reveal:FindFirstChildOfClass("UIGradient")
-	if grad then
-		grad.Color = ColorSequence.new(Theme.darken(col, 0.35), C.Panel)
-	end
+	local col = Theme.Rarity[result.rarity] or T.sun
 	local stroke = reveal:FindFirstChildOfClass("UIStroke")
 	if stroke then
 		stroke.Color = col
 	end
-	-- spinning light rays behind the prize
+	-- slow light rays behind the prize (illustration)
 	local rays = new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.38),
+		Position = UDim2.fromScale(0.5, 0.4),
 		Size = UDim2.fromScale(0.9, 0.9),
 		BackgroundTransparency = 1,
 		ZIndex = 21,
@@ -332,7 +259,7 @@ local function showReveal(result: any)
 			Size = UDim2.fromScale(0.14, 1),
 			Rotation = i * 30,
 			BackgroundColor3 = col,
-			BackgroundTransparency = 0.75,
+			BackgroundTransparency = 0.8,
 			BorderSizePixel = 0,
 			ZIndex = 21,
 		}, rays)
@@ -348,44 +275,47 @@ local function showReveal(result: any)
 	if not HUDController.settings.ReducedMotion then
 		Theme.tween(rays, 6, { Rotation = 180 }, Enum.EasingStyle.Linear)
 	end
-	Theme.label(reveal, {
-		Position = UDim2.fromOffset(Theme.Space.L, Theme.Space.M),
-		Size = UDim2.new(1, -Theme.Space.L * 2, 0.12, 0),
-		Text = string.upper(result.rarity) .. "!",
-		TextColor3 = Theme.lighten(col, 0.25),
+	Theme.sticker(reveal, result.rarity, col, {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, Theme.Space.L),
+		Size = UDim2.fromOffset(0, 24),
 		ZIndex = 24,
-	}, 3)
+	})
 	local box = new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.38),
-		Size = UDim2.fromScale(0.34, 0.34),
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		Position = UDim2.fromScale(0.5, 0.4),
+		Size = UDim2.fromScale(0.36, 0.36),
+		BackgroundColor3 = col,
 		ZIndex = 22,
 	}, reveal)
 	new("UIAspectRatioConstraint", nil, box)
 	Theme.corner(box, Theme.Radius.L)
-	Theme.gradient(box, Theme.lighten(col, 0.15), Theme.darken(col, 0.45))
-	Theme.stroke(box, C.Ink, 3)
-	icon(item, box, 23)
+	Theme.stroke(box, T.outline, Theme.StrokeToy)
+	ShopController.drawArt(item, box)
 	Theme.label(reveal, {
-		Position = UDim2.fromScale(0.05, 0.6),
-		Size = UDim2.fromScale(0.9, 0.1),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromScale(0.5, 0.62),
+		Size = UDim2.new(0.9, 0, 0, 34),
 		Text = item.Name,
 		ZIndex = 24,
-	}, 2.5)
+	}, 0)
 	Theme.body(reveal, {
-		Position = UDim2.fromScale(0.05, 0.7),
-		Size = UDim2.fromScale(0.9, 0.06),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromScale(0.5, 0.62),
+		Size = UDim2.new(0.9, 0, 0, 18),
+		FontFace = Theme.TextFace,
 		Text = if result.duplicate
-			then ("ALREADY OWNED · +%d COINS"):format(result.coins)
-			else ("NEW %s!"):format(string.upper(Catalog.CategoryNames[item.Category] or item.Category)),
-		TextColor3 = if result.duplicate then C.Gold else C.Green,
+			then ("You already had this, so here's %s coins instead."):format(ShopController.commas(result.coins))
+			else ("New %s!"):format(
+				(string.lower(Catalog.CategoryNames[item.Category] or item.Category):gsub("s$", ""))
+			),
 		ZIndex = 24,
-	})
+	}).Position =
+		UDim2.new(0.5, 0, 0.62, 40)
 	local buttons = new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L),
-		Size = UDim2.new(1, -Theme.Space.L * 2, 0, 52),
+		Size = UDim2.new(1, -Theme.Space.L * 2, 0, 56),
 		BackgroundTransparency = 1,
 		ZIndex = 24,
 	}, reveal)
@@ -393,21 +323,37 @@ local function showReveal(result: any)
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		Padding = UDim.new(0, Theme.Space.M),
+		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, buttons)
+	local focusOn: TextButton
 	if not result.duplicate then
-		local equip = Theme.button(buttons, "EQUIP", C.Green, { Size = UDim2.fromOffset(150, 52), ZIndex = 25 })
+		local equip = Theme.button(buttons, "Equip it", "primary", {
+			LayoutOrder = 1,
+			Size = UDim2.fromOffset(150, 56),
+			ZIndex = 25,
+		})
 		equip.Activated:Connect(function()
 			Net.request(Net.Actions.EquipItem, { id = item.Id })
 			Theme.hide(reveal)
+			Theme.focus(spinButton)
 		end)
+		focusOn = equip
 	end
-	local ok = Theme.button(buttons, "AWESOME!", C.Gold, { Size = UDim2.fromOffset(150, 52), ZIndex = 25 })
+	local ok = Theme.button(buttons, "Nice!", if result.duplicate then "primary" else "secondary", {
+		LayoutOrder = 2,
+		Size = UDim2.fromOffset(130, 56),
+		ZIndex = 25,
+	})
 	ok.Activated:Connect(function()
 		Theme.hide(reveal)
+		Theme.focus(spinButton)
 	end)
 	Theme.show(reveal)
+	Theme.focus(focusOn or ok)
 	confetti(reveal, col)
-	SoundController.play(if result.rarity == "Legendary" or result.rarity == "Epic" then "SpinLegendary" else "SpinReveal")
+	SoundController.play(
+		if result.rarity == "Legendary" or result.rarity == "Epic" then "SpinLegendary" else "SpinReveal"
+	)
 	if result.duplicate and result.coins > 0 then
 		task.delay(0.6, function()
 			HUDController.coinPop(result.coins)
@@ -493,48 +439,74 @@ function SpinController.spin()
 end
 
 function SpinController.init()
-	local gui = ShopController.gui :: ScreenGui
-	local close
-	panel, close = ShopController.panel("Spin", "DAILY SPIN", Vector2.new(780, 500))
-	close.Activated:Connect(function()
+	sheet = ShopController.sheet("Spin", "Daily spin", SHEET_SIZE, "One free spin a day. Every slot is equally likely.")
+	panel = sheet.frame
+	sheet.close.Activated:Connect(function()
 		SpinController.open(false)
 	end)
-	panel.Parent = gui
-	-- wheel: a dark disc with a gold rim; the rotor (slots + spokes) is what turns
-	wheelHolder = new("Frame", { BackgroundTransparency = 1, ZIndex = 3 }, panel)
-	new("UIAspectRatioConstraint", nil, wheelHolder)
-	local disc = new("Frame", {
+	local body = sheet.body :: Frame
+	-- wheel: a sunk disc in the toy outline; the rotor (slots + spokes) is what turns
+	local wheelHolder = new("Frame", {
+		Name = "Wheel",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 8, 0.5, 4),
+		Size = UDim2.fromOffset(380, 380),
+		BackgroundTransparency = 1,
+		ZIndex = 3,
+	}, body)
+	local ledge = new("Frame", {
+		Position = UDim2.fromOffset(0, Theme.Ledge + 2),
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		BackgroundColor3 = T.shadowToy,
 		ZIndex = 3,
 	}, wheelHolder)
+	Theme.round(ledge)
+	local disc = new("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = T.surfaceSunk,
+		ZIndex = 4,
+	}, wheelHolder)
 	Theme.round(disc)
-	Theme.gradient(disc, C.PanelLight, C.Ink)
-	Theme.stroke(disc, C.Gold, 5)
-	rotor = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 4 }, disc)
+	Theme.stroke(disc, T.outline, 4)
+	rotor = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 5 }, disc)
 	local hub = new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(0.22, 0.22),
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		ZIndex = 9,
+		Size = UDim2.fromScale(0.24, 0.24),
+		BackgroundColor3 = T.sun,
+		ZIndex = 10,
 	}, disc)
 	Theme.round(hub)
-	Theme.gradient(hub, Theme.lighten(C.Gold, 0.3), C.GoldDark)
-	Theme.stroke(hub, C.Ink, 3)
-	Theme.label(hub, { Size = UDim2.fromScale(0.8, 0.4), Position = UDim2.fromScale(0.1, 0.3), Text = "SPIN", ZIndex = 10 }, 2)
-	local pointer = Theme.label(wheelHolder, {
+	Theme.stroke(hub, T.outline, Theme.StrokeToy)
+	Theme.label(hub, {
+		Size = UDim2.fromScale(0.7, 0.34),
+		Position = UDim2.fromScale(0.15, 0.33),
+		Text = "Spin",
+		TextColor3 = T.onFill,
+		ZIndex = 11,
+	}, 0)
+	-- pointer: a sun wedge in the toy outline at the top
+	local pointer = new("Frame", {
+		Name = "Pointer",
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.02),
-		Size = UDim2.fromScale(0.14, 0.12),
-		Text = "▼",
-		TextColor3 = C.Gold,
+		Position = UDim2.fromScale(0.5, 0.01),
+		Size = UDim2.fromOffset(30, 30),
+		Rotation = 45,
+		BackgroundColor3 = T.sun,
 		ZIndex = 12,
-	}, 3)
-	pointer.Name = "Pointer"
+	}, wheelHolder)
+	Theme.corner(pointer, 5)
+	Theme.stroke(pointer, T.outline, Theme.StrokeToy)
 
 	-- info column: status line, odds, buttons
-	infoCol = new("Frame", { BackgroundTransparency = 1, ZIndex = 3 }, panel)
+	local infoCol = new("Frame", {
+		Name = "Info",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.new(1, -420, 1, 0),
+		BackgroundTransparency = 1,
+		ZIndex = 3,
+	}, body)
 	new("UIListLayout", {
 		Padding = UDim.new(0, Theme.Space.M),
 		SortOrder = Enum.SortOrder.LayoutOrder,
@@ -542,30 +514,43 @@ function SpinController.init()
 	}, infoCol)
 	statusLabel = Theme.label(infoCol, {
 		LayoutOrder = 1,
-		Size = UDim2.new(1, 0, 0, 34),
+		Size = UDim2.new(1, 0, 0, 30),
 		Text = "",
-		TextColor3 = C.Gold,
+		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
-	}, 2.5)
-	Theme.body(infoCol, {
+	}, 0)
+	local oddsWell = Theme.well(infoCol, {
 		LayoutOrder = 2,
-		Size = UDim2.new(1, 0, 0, 16),
-		Text = ("ODDS ON THIS WHEEL · %d SLOTS, 1 IN %d EACH"):format(SP.Slots, SP.Slots),
-		TextColor3 = C.Muted,
+		Size = UDim2.new(1, 0, 0, 4 * 26 + 3 * 6 + 24 + 36),
 		ZIndex = 4,
+	}, Theme.Radius.M)
+	Theme.padding(oddsWell, Theme.Space.L, Theme.Space.M)
+	new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, oddsWell)
+	Theme.body(oddsWell, {
+		LayoutOrder = 0,
+		Size = UDim2.new(1, 0, 0, 22),
+		FontFace = Theme.LabelFace,
+		Text = "Odds on this wheel",
+		TextColor3 = T.ink,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 5,
 	})
 	oddsList = new("Frame", {
-		LayoutOrder = 3,
-		Size = UDim2.new(1, 0, 0, 4 * 22 + 3 * 4),
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 4 * 26 + 3 * 6),
 		BackgroundTransparency = 1,
+		ZIndex = 5,
+	}, oddsWell)
+	new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, oddsList)
+	spinButton = Theme.button(infoCol, "Spin for free", "primary", {
+		LayoutOrder = 4,
+		Size = UDim2.new(1, 0, 0, 60),
 		ZIndex = 4,
-	}, infoCol)
-	new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, oddsList)
-	spinButton = Theme.button(infoCol, "SPIN FREE!", C.Gold, { LayoutOrder = 4, Size = UDim2.new(1, 0, 0, 60), ZIndex = 4 })
+	})
 	spinButton.Activated:Connect(SpinController.spin)
-	robuxButton = Theme.button(infoCol, "EXTRA SPIN · ROBUX", Color3.fromRGB(40, 190, 120), {
+	robuxButton = Theme.button(infoCol, "Extra spin with Robux", "secondary", {
 		LayoutOrder = 5,
-		Size = UDim2.new(1, 0, 0, 44),
+		Size = UDim2.new(1, 0, 0, 52),
 		Visible = false,
 		ZIndex = 4,
 	})
@@ -576,36 +561,36 @@ function SpinController.init()
 	end)
 	Theme.body(infoCol, {
 		LayoutOrder = 6,
-		Size = UDim2.new(1, 0, 0, 14),
-		Text = "OWNED PRIZES PAY COINS INSTEAD",
-		TextColor3 = C.Muted,
+		Size = UDim2.new(1, 0, 0, 16),
+		FontFace = Theme.TextFace,
+		Text = "Prizes you already own pay coins instead.",
+		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
 	})
 
-	-- prize reveal card (over the panel)
+	-- prize reveal card (over the sheet's content)
 	reveal = new("Frame", {
 		Name = "Reveal",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(0.62, 0.86),
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		Size = UDim2.fromOffset(440, 400),
+		BackgroundColor3 = T.surfaceSunk,
 		Visible = false,
 		ZIndex = 20,
+		Active = true,
 		ClipsDescendants = true,
-	}, panel)
-	Theme.corner(reveal, Theme.Radius.XL)
-	Theme.gradient(reveal, C.PanelLight, C.Panel)
-	Theme.stroke(reveal, C.Gold, 4)
-	new("UISizeConstraint", { MinSize = Vector2.new(280, 300) }, reveal)
+	}, body)
+	Theme.corner(reveal, Theme.Radius.L)
+	Theme.stroke(reveal, T.sun, 4)
 
-	local btn = ShopController.addHubButton("🎡 SPIN", Color3.fromRGB(255, 80, 190), 2, function()
+	local btn
+	btn, badge = ShopController.addAction("Spin", T.candy, "star", 2, function()
 		SpinController.open(not ShopController.isOpen(panel))
 	end)
-	badge = Theme.badge(btn)
+	local _ = btn
 	ShopController.onCloseAll(function()
 		SpinController.open(false)
 	end)
-	SpinController.layout()
 end
 
 function SpinController.start()
@@ -626,7 +611,7 @@ function SpinController.start()
 			HUDController.hint(tostring(d.message or "Can't spin right now"), 1.6)
 			return
 		end
-		-- a Robux spin can arrive while the panel is closed: open it to show the spin
+		-- a Robux spin can arrive while the sheet is closed: open it to show the spin
 		if not ShopController.isOpen(panel) and inHub() then
 			SpinController.open(true)
 			spinUp()
@@ -674,18 +659,17 @@ function SpinController.start()
 		end
 		nextStatusAt = os.clock() + 0.5
 		if spinning then
-			statusLabel.Text = "SPINNING..."
+			statusLabel.Text = "Spinning..."
 		elseif status.free then
-			statusLabel.Text = "FREE SPIN READY!"
+			statusLabel.Text = "Free spin ready!"
 		else
 			local left = 86400 - (os.time() % 86400)
-			statusLabel.Text = ("FREE SPIN IN %s"):format(fmtCountdown(left))
+			statusLabel.Text = ("Next free spin in %s"):format(fmtCountdown(left))
 		end
 		if spinButton then
 			spinButton.Active = not spinning
 		end
 	end)
-	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(SpinController.layout)
 end
 
 return SpinController

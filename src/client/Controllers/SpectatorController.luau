@@ -23,7 +23,12 @@ local function teammates(): { Model }
 	local list = {}
 	local function scan(parent: Instance)
 		for _, m in parent:GetChildren() do
-			if m:IsA("Model") and m ~= player.Character and m:GetAttribute("Team") == team and m:GetAttribute("Status") == "Active" then
+			if
+				m:IsA("Model")
+				and m ~= player.Character
+				and m:GetAttribute("Team") == team
+				and m:GetAttribute("Status") == "Active"
+			then
 				table.insert(list, m)
 			end
 		end
@@ -79,39 +84,35 @@ function SpectatorController.init()
 	gui.Enabled = false
 	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
 	gui.Parent = player:WaitForChild("PlayerGui")
-	local bar = Theme.new("Frame", {
+	-- a surface pill: round back/next buttons either side of who you're watching
+	local bar = Theme.panel(gui, {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -110),
-		Size = UDim2.fromOffset(380, 56),
-		BackgroundColor3 = Theme.Colors.Ink,
-		BackgroundTransparency = 0.25,
-	}, gui)
-	Theme.round(bar)
-	Theme.stroke(bar, Color3.new(1, 1, 1), 2, 0.8)
+		Position = UDim2.new(0.5, 0, 1, -120),
+		Size = UDim2.fromOffset(400, 68),
+	}, 34)
 	Theme.autoScale(bar)
-	local function arrow(text: string, left: boolean, delta: number)
-		local b = Theme.button(bar, text, Theme.Colors.Purple, {
+	local function arrow(glyph: string, left: boolean, delta: number)
+		local b = Theme.iconButton(bar, glyph, "secondary", 48, {
 			AnchorPoint = Vector2.new(if left then 0 else 1, 0.5),
-			Position = if left then UDim2.new(0, 4, 0.5, 0) else UDim2.new(1, -4, 0.5, 0),
-			Size = UDim2.fromOffset(48, 48),
+			Position = if left then UDim2.new(0, 10, 0.5, 0) else UDim2.new(1, -10, 0.5, 0),
 		})
 		b.Activated:Connect(function()
 			switch(delta)
 		end)
 	end
-	arrow("<", true, -1)
-	arrow(">", false, 1)
+	arrow("back", true, -1)
+	arrow("next", false, 1)
 	Theme.body(bar, {
-		Position = UDim2.fromOffset(60, 6),
-		Size = UDim2.new(1, -120, 0, 14),
-		Text = "SPECTATING",
-		TextColor3 = Theme.Colors.Gold,
+		Position = UDim2.fromOffset(70, 10),
+		Size = UDim2.new(1, -140, 0, 16),
+		FontFace = Theme.TextFace,
+		Text = "Spectating",
 	})
 	nameLabel = Theme.label(bar, {
-		Position = UDim2.fromOffset(60, 20),
-		Size = UDim2.new(1, -120, 0, 28),
+		Position = UDim2.fromOffset(70, 28),
+		Size = UDim2.new(1, -140, 0, 28),
 		Text = "",
-	}, 2.5)
+	}, 0)
 end
 
 function SpectatorController.start()

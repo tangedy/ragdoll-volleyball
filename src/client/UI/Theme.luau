@@ -1,36 +1,138 @@
 --!strict
--- Shared UI look: chunky rounded type with ink outlines, gradient panels, 3D "lip" buttons that
--- squash on press, and pop-in animations. Every screen builds from these helpers so the game has
--- one consistent, playful style.
+-- The game's UI kit, built on the Toybox Island design system (a cozy, toy-like interface language:
+-- calm grid-first layouts, a pulsing selection ring, warm rounded type, thick toy outlines, pastel
+-- fills, and a little bounce on every press). Chrome uses the system's Night roles (the arena is an
+-- island after dark); fills are the same in both of its themes.
+--
+-- Components (one per Toybox component, plus the pieces screens need):
+--   button     pill Button: "primary" (leaf, once per screen), "secondary" (surface), "quiet", or a
+--              fill color. Sinks into its toy ledge when pressed, pops back with an overshoot.
+--   selectable the selection ring: exactly one thing wears it, it breathes, mouse hover and gamepad
+--              selection both move it, and a sheet can set a "home" it returns to.
+--   sheet      a floating surface with a title, an optional subtitle and a round close button;
+--              opens with a short slide + fade.
+--   segmented  tabs on a sunk track with a sliding outlined indicator.
+--   tile       GameTile: a square tile that grows, wears the ring and shows its title in a bubble
+--              when selected.
+--   roundAction RoundAction: round outlined destination button with a caption and optional dot.
+--   sticker    Badge: micro uppercase outlined sticker (NEW, EPIC, OWNED...).
+--   dot        joy-red notification dot with a stepped wiggle.
+--   toggle     switch on a sunk track; leaf when on.
+--   legend     controller-hint legend: a filled key disc and a caption ("Q Dodge").
+--   glyph      simple glyphs drawn on the 24px grid idea (star, sparkle, bag, gear, check...).
+--   popIn      staggered pop-in (scale 0.6 -> 1, ease-pop, 40ms per item, at most 8 staggered).
 
-local TweenService = game:GetService("TweenService")
+local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
 local Theme = {}
 
+-- Comfort settings the kit honors (HUDController keeps these in sync with the player's switches).
+Theme.settings = { reducedMotion = false }
+local function reduced(): boolean
+	return Theme.settings.reducedMotion
+end
+
+-- Tokens -------------------------------------------------------------------------------------------
+
+-- Toybox Island color tokens (names as in its tokens.json; chrome values from the Night theme).
+local T = {
+	ground = Color3.fromHex("#1c1f2b"), -- page background
+	surface = Color3.fromHex("#282c3b"), -- cards, sheets, panels
+	surfaceSunk = Color3.fromHex("#161923"), -- wells and tracks inside a surface
+	ink = Color3.fromHex("#f7f0de"), -- primary text
+	inkMuted = Color3.fromHex("#bdb5a2"), -- secondary text, captions
+	line = Color3.fromHex("#3a3f55"), -- hairline dividers
+	outline = Color3.fromHex("#0e1018"), -- the toy outline around fills, text strokes
+	onFill = Color3.fromHex("#4a3423"), -- text and glyphs on any pastel fill
+	leaf = Color3.fromHex("#7cc47f"), -- primary fill: the one main action
+	sun = Color3.fromHex("#f7cd46"), -- highlight fill: coins, rewards, "new"
+	sky = Color3.fromHex("#8ed2ef"), -- calm secondary fill
+	candy = Color3.fromHex("#ff9cc0"), -- playful accent, celebrations (sparingly)
+	peach = Color3.fromHex("#ffb38a"), -- warm tertiary fill
+	joyBlue = Color3.fromHex("#0ab9e6"),
+	joyRed = Color3.fromHex("#ff4b3a"), -- notification dots, big numerals only
+	select = Color3.fromHex("#22d3f0"), -- the selection ring (never a fill)
+	success = Color3.fromHex("#8fd694"),
+	danger = Color3.fromHex("#ff7a68"), -- error text
+	shadowToy = Color3.fromHex("#0e1018"), -- the hard ledge under pressable things
+}
+Theme.Toybox = T
+
 Theme.Colors = {
-	Ink = Color3.fromRGB(16, 12, 34),
-	Panel = Color3.fromRGB(30, 24, 58),
-	PanelLight = Color3.fromRGB(58, 46, 104),
-	Card = Color3.fromRGB(44, 36, 82),
-	Text = Color3.fromRGB(255, 255, 255),
-	Muted = Color3.fromRGB(190, 182, 230),
-	Gold = Color3.fromRGB(255, 204, 64),
-	GoldDark = Color3.fromRGB(230, 140, 20),
-	Green = Color3.fromRGB(80, 224, 120),
-	GreenDark = Color3.fromRGB(30, 150, 70),
-	Danger = Color3.fromRGB(255, 84, 84),
-	Purple = Color3.fromRGB(160, 100, 255),
+	-- Toybox roles
+	Ground = T.ground,
+	Surface = T.surface,
+	SurfaceSunk = T.surfaceSunk,
+	Line = T.line,
+	Outline = T.outline,
+	OnFill = T.onFill,
+	Leaf = T.leaf,
+	Sun = T.sun,
+	Sky = T.sky,
+	Candy = T.candy,
+	Peach = T.peach,
+	JoyBlue = T.joyBlue,
+	JoyRed = T.joyRed,
+	Select = T.select,
+	Success = T.success,
+	-- older names, mapped onto those roles
+	Ink = T.outline,
+	Panel = T.surface,
+	PanelLight = T.line,
+	Card = T.surfaceSunk,
+	Text = T.ink,
+	Muted = T.inkMuted,
+	Gold = T.sun,
+	GoldDark = Color3.fromHex("#c99a1c"),
+	Green = T.leaf,
+	GreenDark = T.success,
+	Danger = T.joyRed,
+	DangerText = T.danger,
+	Purple = T.sky,
 	Red = Config.Teams.Red.Color,
 	Blue = Config.Teams.Blue.Color,
 }
 
-Theme.Display = Enum.Font.FredokaOne
-Theme.Body = Enum.Font.GothamBold
+-- The fills, in the order a grid of things should use them (repeat only after all six).
+Theme.Fills = { T.sun, T.sky, T.leaf, T.candy, T.peach, T.joyBlue }
 
-local C = Theme.Colors
+-- Display: Fredoka (titles and big moments). Body: a heavy rounded sans (Nunito, the closest Roblox
+-- face to the system's M PLUS Rounded 1c): 800 for labels, lighter for running text.
+Theme.Display = Enum.Font.FredokaOne
+Theme.Body = Enum.Font.Nunito
+local nunito = Font.fromEnum(Enum.Font.Nunito).Family
+Theme.DisplayFace = Font.fromEnum(Enum.Font.FredokaOne)
+Theme.LabelFace = Font.new(nunito, Enum.FontWeight.ExtraBold)
+Theme.BodyFace = Font.new(nunito, Enum.FontWeight.Bold)
+Theme.TextFace = Font.new(nunito, Enum.FontWeight.SemiBold)
+
+Theme.StrokeToy = 3 -- the toy outline
+Theme.StrokeSelect = 4 -- the selection ring
+Theme.Ledge = 4 -- shadow-toy: the hard ledge under pressable things (1 when pressed)
+
+-- 4px spacing scale, radius-sm/md/lg/xl, type sizes (px), and duration-quick/move/pop.
+Theme.Space = { XS = 4, S = 8, M = 12, L = 16, XL = 24, XXL = 32 }
+Theme.Radius = { S = 10, M = 16, L = 24, XL = 36 }
+Theme.TextSize = { Micro = 11, Caption = 13, Label = 15, Body = 16, Heading = 20, Title = 28, Display = 40 }
+Theme.Motion = { Tap = 0.08, Fast = 0.15, Base = 0.24, Slow = 0.42, Pulse = 1.4 }
+
+-- Rarity tones come from Config so the hub wheel, the shop and the spin panel always agree.
+Theme.Rarity = Config.Spin.RarityColors :: { [string]: Color3 }
+
+-- Text color for a fill: on-fill brown on light (pastel) fills, ink on dark ones. Never white on a
+-- fill.
+function Theme.textOn(fill: Color3): Color3
+	local lum = 0.2126 * fill.R + 0.7152 * fill.G + 0.0722 * fill.B
+	return if lum > 0.5 then T.onFill else T.ink
+end
+
+-- Basics -------------------------------------------------------------------------------------------
 
 function Theme.new(className: string, props: { [string]: any }?, parent: Instance?): any
 	local inst = Instance.new(className)
@@ -44,19 +146,20 @@ function Theme.new(className: string, props: { [string]: any }?, parent: Instanc
 	end
 	return inst
 end
+local new = Theme.new
 
 function Theme.corner(inst: Instance, radius: number?): UICorner
-	return Theme.new("UICorner", { CornerRadius = UDim.new(0, radius or 14) }, inst)
+	return new("UICorner", { CornerRadius = UDim.new(0, radius or Theme.Radius.M) }, inst)
 end
 
 function Theme.round(inst: Instance): UICorner
-	return Theme.new("UICorner", { CornerRadius = UDim.new(1, 0) }, inst)
+	return new("UICorner", { CornerRadius = UDim.new(1, 0) }, inst)
 end
 
 function Theme.stroke(inst: Instance, color: Color3?, thickness: number?, transparency: number?): UIStroke
-	return Theme.new("UIStroke", {
-		Color = color or C.Ink,
-		Thickness = thickness or 2,
+	return new("UIStroke", {
+		Color = color or T.outline,
+		Thickness = thickness or Theme.StrokeToy,
 		Transparency = transparency or 0,
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 	}, inst)
@@ -64,25 +167,29 @@ end
 
 -- Outline around text (the "sticker" look).
 function Theme.textStroke(label: Instance, thickness: number?, color: Color3?): UIStroke
-	return Theme.new("UIStroke", {
-		Color = color or C.Ink,
-		Thickness = thickness or 2.5,
+	return new("UIStroke", {
+		Color = color or T.outline,
+		Thickness = thickness or Theme.StrokeToy,
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
 		LineJoinMode = Enum.LineJoinMode.Round,
 	}, label)
 end
 
+-- Toybox has no gradients: this paints one flat color, the middle of the pair (older screens pass
+-- light->base, base->dark or light->dark around the color they mean).
 function Theme.gradient(inst: Instance, top: Color3, bottom: Color3, rotation: number?): UIGradient
-	return Theme.new("UIGradient", {
-		Color = ColorSequence.new(top, bottom),
-		Rotation = rotation or 90,
-	}, inst)
+	return new("UIGradient", { Color = ColorSequence.new(top:Lerp(bottom, 0.5)), Rotation = rotation or 90 }, inst)
 end
 
-function Theme.padding(inst: Instance, px: number)
-	Theme.new("UIPadding", {
-		PaddingTop = UDim.new(0, px),
-		PaddingBottom = UDim.new(0, px),
+-- The flat ColorSequence Theme.gradient paints, for code that recolors a gradient later.
+function Theme.flat(top: Color3, bottom: Color3?): ColorSequence
+	return ColorSequence.new(if bottom then top:Lerp(bottom, 0.5) else top)
+end
+
+function Theme.padding(inst: Instance, px: number, py: number?)
+	new("UIPadding", {
+		PaddingTop = UDim.new(0, py or px),
+		PaddingBottom = UDim.new(0, py or px),
 		PaddingLeft = UDim.new(0, px),
 		PaddingRight = UDim.new(0, px),
 	}, inst)
@@ -93,16 +200,51 @@ function Theme.lighten(c: Color3, t: number): Color3
 end
 
 function Theme.darken(c: Color3, t: number): Color3
-	return c:Lerp(C.Ink, t)
+	return c:Lerp(T.outline, t)
 end
 
--- Display text: rounded font, scaled, white with an ink outline.
+function Theme.tween(
+	inst: Instance,
+	t: number,
+	props: { [string]: any },
+	style: Enum.EasingStyle?,
+	dir: Enum.EasingDirection?
+): Tween
+	local tw = TweenService:Create(
+		inst,
+		TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out),
+		props
+	)
+	tw:Play()
+	return tw
+end
+local tween = Theme.tween
+
+-- ease-out-soft ≈ Quint out; ease-pop ≈ Back out.
+local SOFT = Enum.EasingStyle.Quint
+local POP = Enum.EasingStyle.Back
+
+local clickSound: ((string) -> ())? = nil
+function Theme.setClickSound(fn: (string) -> ())
+	clickSound = fn
+end
+local function sound(cue: string)
+	if clickSound then
+		clickSound(cue)
+	end
+end
+Theme.sound = sound
+
+-- Text ---------------------------------------------------------------------------------------------
+
+-- Display text: Fredoka, scaled, ink with the toy outline (the "sticker" look). Pass a stroke of 0
+-- for plain display text (titles on a surface).
 function Theme.label(parent: Instance?, props: { [string]: any }?, strokeThickness: number?): TextLabel
-	local l = Theme.new("TextLabel", {
+	local l = new("TextLabel", {
 		BackgroundTransparency = 1,
-		Font = Theme.Display,
+		FontFace = Theme.DisplayFace,
 		TextScaled = true,
-		TextColor3 = C.Text,
+		TextColor3 = T.ink,
 		Text = "",
 	}, nil)
 	if props then
@@ -110,18 +252,20 @@ function Theme.label(parent: Instance?, props: { [string]: any }?, strokeThickne
 			(l :: any)[k] = v
 		end
 	end
-	Theme.textStroke(l, strokeThickness)
+	if strokeThickness ~= 0 then
+		Theme.textStroke(l, strokeThickness)
+	end
 	l.Parent = parent
 	return l
 end
 
--- Small body text without the heavy outline.
+-- Body text (rounded sans, muted by default, no outline).
 function Theme.body(parent: Instance?, props: { [string]: any }?): TextLabel
-	local l = Theme.new("TextLabel", {
+	local l = new("TextLabel", {
 		BackgroundTransparency = 1,
-		Font = Theme.Body,
+		FontFace = Theme.BodyFace,
 		TextScaled = true,
-		TextColor3 = C.Muted,
+		TextColor3 = T.inkMuted,
 		Text = "",
 	}, nil)
 	if props then
@@ -133,71 +277,35 @@ function Theme.body(parent: Instance?, props: { [string]: any }?): TextLabel
 	return l
 end
 
--- A panel: purple-ink gradient, rounded, thin light rim and a soft drop shadow.
-function Theme.panel(parent: Instance?, props: { [string]: any }?, radius: number?): Frame
-	local f = Theme.new("Frame", {
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		BorderSizePixel = 0,
+-- Fixed-size text (for auto-sized pills and stickers, where TextScaled can't be used).
+function Theme.text(parent: Instance?, size: number, props: { [string]: any }?): TextLabel
+	local l = new("TextLabel", {
+		BackgroundTransparency = 1,
+		FontFace = Theme.LabelFace,
+		TextScaled = false,
+		TextSize = size,
+		TextColor3 = T.ink,
+		Text = "",
 	}, nil)
 	if props then
 		for k, v in props do
-			(f :: any)[k] = v
+			(l :: any)[k] = v
 		end
 	end
-	Theme.corner(f, radius or 18)
-	Theme.gradient(f, C.PanelLight, C.Panel)
-	Theme.stroke(f, Color3.new(1, 1, 1), 2, 0.82)
-	f.Parent = parent
-	if parent then
-		Theme.shadow(f, radius or 18)
-	end
-	return f
+	l.Parent = parent
+	return l
 end
 
--- Soft shadow behind a frame (a dark rounded copy offset down).
-function Theme.shadow(f: GuiObject, radius: number?)
-	local parent = f.Parent
-	if not parent then
-		return
-	end
-	local sh = Theme.new("Frame", {
-		Name = f.Name .. "_Shadow",
-		AnchorPoint = f.AnchorPoint,
-		Position = f.Position + UDim2.fromOffset(0, 5),
-		Size = f.Size,
-		BackgroundColor3 = Color3.new(0, 0, 0),
-		BackgroundTransparency = 0.6,
-		BorderSizePixel = 0,
-		ZIndex = math.max(0, f.ZIndex - 1),
-		Visible = f.Visible,
-	}, parent)
-	Theme.corner(sh, radius or 18)
-	-- keep the shadow glued to its frame
-	f:GetPropertyChangedSignal("Visible"):Connect(function()
-		sh.Visible = f.Visible
-	end)
-	f:GetPropertyChangedSignal("Position"):Connect(function()
-		sh.Position = f.Position + UDim2.fromOffset(0, 5)
-	end)
-	-- follow the frame's rendered size, so size constraints on the frame apply to the shadow too
-	local function syncSize()
-		sh.Size = UDim2.fromOffset(f.AbsoluteSize.X, f.AbsoluteSize.Y)
-	end
-	f:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncSize)
-	task.defer(syncSize)
-	f.AncestryChanged:Connect(function()
-		if not f.Parent then
-			sh:Destroy()
-		end
-	end)
-end
+-- Responsive scale ------------------------------------------------------------------------------------
+-- 1 on a 1280x720-or-bigger screen, down to 0.62 on small phones. Elements registered with
+-- Theme.autoScale keep a UIScale in sync as the window/device changes.
 
 -- Every element has at most one UIScale (Roblox applies only one). Its "Base" attribute is the
 -- element's resting scale (set by Theme.autoScale); animations scale relative to it.
 local function scaleOf(inst: GuiObject): UIScale
 	local sc = inst:FindFirstChildOfClass("UIScale")
 	if not sc then
-		sc = Theme.new("UIScale", nil, inst)
+		sc = new("UIScale", nil, inst)
 	end
 	return sc :: UIScale
 end
@@ -205,100 +313,8 @@ local function baseOf(sc: UIScale): number
 	local b = sc:GetAttribute("Base")
 	return if type(b) == "number" then b else 1
 end
+Theme.scaleOf = scaleOf
 
--- Scale-pop an element (uses/creates its UIScale).
-function Theme.pop(inst: GuiObject, from: number?, duration: number?)
-	local scale = scaleOf(inst)
-	local base = baseOf(scale)
-	scale.Scale = (from or 0.6) * base
-	TweenService:Create(scale, TweenInfo.new(duration or 0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = base }):Play()
-end
-
-local clickSound: ((string) -> ())? = nil
-function Theme.setClickSound(fn: (string) -> ())
-	clickSound = fn
-end
-
--- A chunky 3D button: gradient face, darker "lip" underneath, ink outline, squash on press,
--- grow on hover, click sound. Returns the TextButton (face).
-function Theme.button(parent: Instance?, text: string, color: Color3, props: { [string]: any }?): TextButton
-	local b = Theme.new("TextButton", {
-		Text = "",
-		AutoButtonColor = false,
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		BorderSizePixel = 0,
-	}, nil)
-	if props then
-		for k, v in props do
-			(b :: any)[k] = v
-		end
-	end
-	Theme.corner(b, 14)
-	local grad = Theme.gradient(b, Theme.lighten(color, 0.25), color)
-	grad.Name = "Face"
-	Theme.stroke(b, Theme.darken(color, 0.55), 3)
-	local lip = Theme.new("Frame", {
-		Name = "Lip",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 0, 1, 0),
-		Size = UDim2.new(1, 0, 0, 6),
-		BackgroundColor3 = Theme.darken(color, 0.35),
-		BackgroundTransparency = 0,
-		BorderSizePixel = 0,
-		ZIndex = b.ZIndex,
-	}, b)
-	Theme.corner(lip, 14)
-	Theme.label(b, {
-		Name = "Label",
-		Size = UDim2.new(1, -16, 1, -12),
-		Position = UDim2.fromOffset(8, 3),
-		Text = text,
-		ZIndex = b.ZIndex + 1,
-	}, 2.5)
-	local scale = Theme.new("UIScale", nil, b)
-	local function to(v: number, t: number)
-		TweenService:Create(scale, TweenInfo.new(t, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = v }):Play()
-	end
-	b.MouseEnter:Connect(function()
-		to(1.05, 0.15)
-	end)
-	b.MouseLeave:Connect(function()
-		to(1, 0.15)
-	end)
-	b.MouseButton1Down:Connect(function()
-		to(0.92, 0.08)
-	end)
-	b.MouseButton1Up:Connect(function()
-		to(1, 0.2)
-	end)
-	b.Activated:Connect(function()
-		if clickSound then
-			clickSound("UIClick")
-		end
-	end)
-	b.Parent = parent
-	return b
-end
-
--- Layout tokens -------------------------------------------------------------------------------------
--- One spacing / radius / type scale for every screen, so gaps and corners line up everywhere.
-
-Theme.Space = { XS = 4, S = 8, M = 12, L = 18, XL = 24 }
-Theme.Radius = { S = 10, M = 14, L = 18, XL = 22 }
-Theme.TextSize = { Caption = 13, Body = 16, Title = 22 }
-Theme.Motion = { Fast = 0.12, Base = 0.22, Slow = 0.4 }
-
--- Rarity colors come from Config so the hub wheel, the shop and the spin panel always agree.
-Theme.Rarity = Config.Spin.RarityColors :: { [string]: Color3 }
-
-function Theme.tween(inst: Instance, t: number, props: { [string]: any }, style: Enum.EasingStyle?, dir: Enum.EasingDirection?): Tween
-	local tw = TweenService:Create(inst, TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
-	tw:Play()
-	return tw
-end
-
--- Responsive scale: 1 on a 1280x720-or-bigger screen, down to 0.62 on small phones. Elements
--- registered with Theme.autoScale keep a UIScale in sync as the window/device changes.
 local scaled: { [UIScale]: number } = {}
 function Theme.uiScale(): number
 	local camera = workspace.CurrentCamera
@@ -347,9 +363,711 @@ task.defer(function()
 	end)
 end)
 
--- Panel transitions -----------------------------------------------------------------------------------
--- Every pop-up opens and closes the same way: a quick scale + fade in with a little overshoot, and a
--- faster shrink + fade out. The optional backdrop dims the game behind modal panels.
+-- Motion ----------------------------------------------------------------------------------------------
+
+-- Scale-pop an element (uses/creates its UIScale).
+function Theme.pop(inst: GuiObject, from: number?, duration: number?)
+	local scale = scaleOf(inst)
+	local base = baseOf(scale)
+	if reduced() then
+		scale.Scale = base
+		return
+	end
+	scale.Scale = (from or 0.6) * base
+	tween(scale, duration or Theme.Motion.Slow, { Scale = base }, POP)
+end
+
+-- Pop a group in one after another (40ms apart, at most 8 staggered; the rest land with the 8th).
+function Theme.popIn(items: { GuiObject }, stagger: number?)
+	for i, inst in items do
+		local delay = math.min(i - 1, 7) * (stagger or 0.04)
+		if delay <= 0 then
+			Theme.pop(inst, 0.6)
+		else
+			local sc = scaleOf(inst)
+			sc.Scale = if reduced() then baseOf(sc) else 0.6 * baseOf(sc)
+			task.delay(delay, function()
+				Theme.pop(inst, 0.6)
+			end)
+		end
+	end
+end
+
+-- Stepped wiggle (the hand-drawn frame-by-frame touch): rotate -4, 3, 0 in hard steps, forever.
+local wiggling: { [GuiObject]: boolean } = {}
+function Theme.wiggle(inst: GuiObject, on: boolean?)
+	if on == false then
+		wiggling[inst] = nil
+	else
+		wiggling[inst] = true
+	end
+	if on == false then
+		inst.Rotation = 0
+	end
+end
+task.spawn(function()
+	local frames = { -4, 3, 0, 3 }
+	local i = 0
+	while true do
+		task.wait(0.18)
+		i = i % #frames + 1
+		for inst in wiggling do
+			if not inst.Parent then
+				wiggling[inst] = nil
+			else
+				inst.Rotation = if reduced() then 0 else frames[i]
+			end
+		end
+	end
+end)
+
+-- The selection ring ----------------------------------------------------------------------------------
+-- Exactly one thing wears it. A 4px select-colored outline 3px off the element, breathing a soft
+-- glow once every duration-pulse. Mouse hover and gamepad selection move it (with a soft tick); when
+-- nothing is hovered it rests on the current "home" (e.g. the selected shop tile).
+
+type Ring = { frame: Frame, glow: UIStroke }
+local rings: { [GuiObject]: Ring } = {}
+local hovered: GuiObject? = nil
+local home: GuiObject? = nil
+local shownRing: Ring? = nil
+local shownTarget: GuiObject? = nil
+local lastMoveSound = 0
+
+-- an empty frame used as every selectable's SelectionImageObject (hides Roblox's own highlight)
+local noSelection = new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) })
+
+local function onScreen(inst: GuiObject): boolean
+	local node: Instance? = inst
+	while node do
+		if node:IsA("GuiObject") and not node.Visible then
+			return false
+		elseif node:IsA("LayerCollector") then
+			return (node :: any).Enabled ~= false and node:IsDescendantOf(Players.LocalPlayer)
+		end
+		node = node.Parent
+	end
+	return false
+end
+
+local function refreshRing()
+	local target = hovered or home
+	-- disabled buttons don't take the ring
+	if target and target:IsA("GuiButton") and not target.Interactable then
+		target = if target == hovered and home ~= hovered then home else nil
+	end
+	if target and (not target.Parent or not rings[target] or not onScreen(target)) then
+		if target == hovered then
+			hovered = nil
+		end
+		target = if home and home.Parent and rings[home] and onScreen(home) then home else nil
+	end
+	if target ~= shownTarget then
+		if shownRing then
+			shownRing.frame.Visible = false
+		end
+		shownTarget = target
+		shownRing = if target then rings[target] else nil
+		if shownRing then
+			shownRing.frame.Visible = true
+			if target == hovered and os.clock() - lastMoveSound > 0.05 then
+				lastMoveSound = os.clock()
+				sound("UIMove")
+			end
+		end
+	end
+end
+
+RunService.RenderStepped:Connect(function()
+	refreshRing()
+	if shownRing then
+		-- breathe: the glow grows and fades once per duration-pulse
+		local b = if reduced() then 0 else (math.sin(os.clock() * math.pi * 2 / Theme.Motion.Pulse) + 1) / 2
+		shownRing.glow.Thickness = 2 + 7 * b
+		shownRing.glow.Transparency = 0.55 + 0.4 * (1 - b)
+	end
+end)
+
+-- Make `hit` selectable; the ring draws around `around` (defaults to hit). `radius` is the
+-- element's corner radius (nil = pill/round).
+function Theme.selectable(hit: GuiObject, around: GuiObject?, radius: number?): Frame
+	local target = around or hit
+	local gap = 3 + Theme.StrokeSelect / 2
+	local frame = new("Frame", {
+		Name = "SelectRing",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, gap * 2, 1, gap * 2),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = target.ZIndex + 6,
+	}, target)
+	new("UICorner", { CornerRadius = if radius then UDim.new(0, radius + gap) else UDim.new(1, 0) }, frame)
+	new("UIStroke", {
+		Color = T.select,
+		Thickness = Theme.StrokeSelect,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	}, frame)
+	local glowFrame = new("Frame", {
+		Name = "Glow",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, Theme.StrokeSelect * 2, 1, Theme.StrokeSelect * 2),
+		BackgroundTransparency = 1,
+		ZIndex = frame.ZIndex,
+	}, frame)
+	new("UICorner", {
+		CornerRadius = if radius then UDim.new(0, radius + gap + Theme.StrokeSelect) else UDim.new(1, 0),
+	}, glowFrame)
+	local glow = new("UIStroke", {
+		Color = T.select,
+		Thickness = 4,
+		Transparency = 0.7,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	}, glowFrame)
+	rings[hit] = { frame = frame, glow = glow }
+	hit.SelectionImageObject = noSelection
+	hit.Selectable = true
+	hit.MouseEnter:Connect(function()
+		hovered = hit
+	end)
+	hit.MouseLeave:Connect(function()
+		if hovered == hit then
+			hovered = nil
+		end
+	end)
+	hit.SelectionGained:Connect(function()
+		hovered = hit
+	end)
+	hit.SelectionLost:Connect(function()
+		if hovered == hit then
+			hovered = nil
+		end
+	end)
+	hit.Destroying:Connect(function()
+		rings[hit] = nil
+	end)
+	return frame
+end
+
+-- Where the ring rests when nothing is hovered (nil clears it).
+function Theme.setHome(target: GuiObject?)
+	home = target
+end
+
+-- Move gamepad selection onto `target` (if a gamepad is in use) and make it the ring's home.
+function Theme.focus(target: GuiObject)
+	home = target
+	hovered = nil -- a stale hover (e.g. under a card that just opened) shouldn't keep the ring
+	if GuiService.SelectedObject ~= nil then
+		GuiService.SelectedObject = target
+	end
+end
+
+-- Pressables -----------------------------------------------------------------------------------------
+
+-- The press: the face sinks into its ledge in duration-tap and pops back with ease-pop.
+local function pressable(hit: GuiButton, face: GuiObject, ledge: GuiObject?, restY: number)
+	local function sink(down: boolean)
+		local y = if down then restY + Theme.Ledge - 1 else restY
+		if reduced() then
+			face.Position = UDim2.new(face.Position.X, UDim.new(face.Position.Y.Scale, y))
+			return
+		end
+		tween(
+			face,
+			if down then Theme.Motion.Tap else Theme.Motion.Slow,
+			{ Position = UDim2.new(face.Position.X, UDim.new(face.Position.Y.Scale, y)) },
+			if down then Enum.EasingStyle.Quad else POP
+		)
+	end
+	hit.MouseButton1Down:Connect(function()
+		sink(true)
+	end)
+	hit.MouseButton1Up:Connect(function()
+		sink(false)
+	end)
+	hit.MouseLeave:Connect(function()
+		sink(false)
+	end)
+	hit.SelectionLost:Connect(function()
+		sink(false)
+	end)
+	local _ = ledge
+end
+
+-- Toybox Button. `kind` is "primary" (leaf: the one action a screen is for), "secondary" (surface,
+-- outlined), "quiet" (no outline or ledge), or a fill Color3 for a toned button. Labels are
+-- verb-first and sentence case. Returns the TextButton (the hit area); its "Face" holds the label.
+-- props.back = true makes it sound like a back/close action.
+local function kindColors(kind: any): (Color3, Color3, boolean)
+	if kind == "primary" then
+		return T.leaf, T.onFill, true
+	elseif kind == "secondary" then
+		return T.surface, T.ink, true
+	elseif kind == "quiet" then
+		return T.surface, T.ink, false
+	elseif typeof(kind) == "Color3" then
+		return kind, Theme.textOn(kind), true
+	end
+	return T.leaf, T.onFill, true
+end
+
+function Theme.button(parent: Instance?, text: string, kind: any, props: { [string]: any }?): TextButton
+	local fill, textColor, toy = kindColors(kind)
+	local isBack = props ~= nil and props.back == true
+	local b = new("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromOffset(160, 52),
+	}, nil)
+	if props then
+		for k, v in props do
+			if k ~= "back" then
+				(b :: any)[k] = v
+			end
+		end
+	end
+	local ledgeH = if toy then Theme.Ledge else 0
+	local ledge = new("Frame", {
+		Name = "Ledge",
+		Position = UDim2.fromOffset(0, ledgeH),
+		Size = UDim2.new(1, 0, 1, -ledgeH),
+		BackgroundColor3 = T.shadowToy,
+		BackgroundTransparency = if toy then 0 else 1,
+		BorderSizePixel = 0,
+		ZIndex = b.ZIndex,
+	}, b)
+	Theme.round(ledge)
+	local face = new("Frame", {
+		Name = "Face",
+		Size = UDim2.new(1, 0, 1, -ledgeH),
+		BackgroundColor3 = fill,
+		BackgroundTransparency = if kind == "quiet" then 1 else 0,
+		BorderSizePixel = 0,
+		ZIndex = b.ZIndex + 1,
+	}, b)
+	Theme.round(face)
+	if toy then
+		Theme.stroke(face, T.outline, Theme.StrokeToy)
+	end
+	Theme.body(face, {
+		Name = "Label",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, -28, 0.5, 0),
+		FontFace = Theme.LabelFace,
+		Text = text,
+		TextColor3 = textColor,
+		ZIndex = b.ZIndex + 2,
+	})
+	new("UITextSizeConstraint", { MaxTextSize = 22 }, face:FindFirstChild("Label"))
+	pressable(b, face, ledge, 0)
+	Theme.selectable(b, face)
+	if kind == "quiet" then
+		b.MouseEnter:Connect(function()
+			face.BackgroundColor3 = T.surfaceSunk
+			face.BackgroundTransparency = 0
+		end)
+		b.MouseLeave:Connect(function()
+			face.BackgroundTransparency = 1
+		end)
+	end
+	b.Activated:Connect(function()
+		sound(if isBack then "UIBack" else "UIClick")
+	end)
+	b:SetAttribute("Kind", if typeof(kind) == "string" then kind else "tone")
+	b.Parent = parent
+	return b
+end
+
+-- A round icon button (close, arrows, the settings gear): same toy press, a glyph instead of text.
+function Theme.iconButton(
+	parent: Instance?,
+	glyphName: string,
+	kind: any,
+	size: number,
+	props: { [string]: any }?
+): TextButton
+	local b = Theme.button(nil, "", kind, props)
+	b.Size = UDim2.fromOffset(size, size + Theme.Ledge)
+	local face = b:FindFirstChild("Face") :: Frame
+	local _, textColor = kindColors(kind)
+	Theme.glyph(face, glyphName, textColor, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.5, 0.5),
+		ZIndex = b.ZIndex + 2,
+	})
+	if props then
+		for k, v in props do
+			if k ~= "back" then
+				(b :: any)[k] = v
+			end
+		end
+	end
+	b.Size = UDim2.fromOffset(size, size + Theme.Ledge)
+	b.Parent = parent
+	return b
+end
+
+-- Recolor a button (e.g. owned -> equipped states). `kind` as in Theme.button.
+function Theme.recolor(b: TextButton, kind: any)
+	local fill, textColor = kindColors(kind)
+	local face = b:FindFirstChild("Face") :: Frame?
+	if face then
+		face.BackgroundColor3 = fill
+		local label = face:FindFirstChild("Label") :: TextLabel?
+		if label then
+			label.TextColor3 = textColor
+		end
+	end
+end
+
+function Theme.setText(b: GuiObject, text: string)
+	local l = b:FindFirstChild("Label", true) :: TextLabel?
+	if l then
+		l.Text = text
+	end
+end
+
+-- Disabled: 45% faded, no ledge, ignores input.
+function Theme.setEnabled(b: GuiButton, on: boolean)
+	b.Interactable = on
+	b:SetAttribute("Disabled", not on)
+	local face = b:FindFirstChild("Face") :: Frame?
+	local ledge = b:FindFirstChild("Ledge") :: Frame?
+	if face then
+		face.BackgroundTransparency = if b:GetAttribute("Kind") == "quiet" then 1 elseif on then 0 else 0.45
+		local label = face:FindFirstChild("Label") :: TextLabel?
+		if label then
+			label.TextTransparency = if on then 0 else 0.45
+		end
+		local st = face:FindFirstChildOfClass("UIStroke")
+		if st then
+			st.Transparency = if on then 0 else 0.45
+		end
+	end
+	if ledge and b:GetAttribute("Kind") ~= "quiet" then
+		ledge.BackgroundTransparency = if on then 0 else 1
+	end
+end
+
+-- Glyphs ---------------------------------------------------------------------------------------------
+-- Simple, neutral glyphs (round caps, solid shapes). Text glyphs for the shapes a font draws well;
+-- frames for the bag and gear.
+
+local TEXT_GLYPHS = {
+	star = "★",
+	sparkle = "✦",
+	check = "✓",
+	back = "‹",
+	next = "›",
+	play = "▶",
+	plus = "+",
+	coin = "C",
+}
+
+function Theme.glyph(parent: Instance, name: string, color: Color3, props: { [string]: any }?): GuiObject
+	local holder = new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(24, 24) }, nil)
+	if props then
+		for k, v in props do
+			(holder :: any)[k] = v
+		end
+	end
+	new("UIAspectRatioConstraint", nil, holder)
+	local z = holder.ZIndex
+	local textGlyph = TEXT_GLYPHS[name]
+	if textGlyph then
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			FontFace = if name == "coin" then Theme.DisplayFace else Theme.LabelFace,
+			TextScaled = true,
+			Text = textGlyph,
+			TextColor3 = color,
+			ZIndex = z,
+		}, holder)
+	elseif name == "close" then
+		-- two round-capped bars crossed
+		for _, r in { 45, -45 } do
+			local bar = new("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromScale(1, 0.2),
+				Rotation = r,
+				BackgroundColor3 = color,
+				ZIndex = z,
+			}, holder)
+			Theme.round(bar)
+		end
+	elseif name == "bag" then
+		-- shopping bag: a wide body with only the top of its handle loop showing
+		local handle = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.fromScale(0.5, 0.02),
+			Size = UDim2.fromScale(0.5, 0.46),
+			BackgroundTransparency = 1,
+			ZIndex = z,
+		}, holder)
+		Theme.round(handle)
+		new("UIStroke", { Color = color, Thickness = 2.5 }, handle)
+		local body = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.fromScale(0.5, 1),
+			Size = UDim2.fromScale(0.96, 0.72),
+			BackgroundColor3 = color,
+			ZIndex = z + 1,
+		}, holder)
+		Theme.corner(body, 3)
+	elseif name == "gear" then
+		-- eight square teeth around a disc with a hole
+		for i = 0, 3 do
+			local tooth = new("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromScale(0.26, 1.04),
+				Rotation = i * 45,
+				BackgroundColor3 = color,
+				BorderSizePixel = 0,
+				ZIndex = z,
+			}, holder)
+			Theme.corner(tooth, 2)
+		end
+		local ring = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.7, 0.7),
+			BackgroundColor3 = color,
+			ZIndex = z + 1,
+		}, holder)
+		Theme.round(ring)
+		local hole = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.34, 0.34),
+			BackgroundColor3 = T.outline,
+			ZIndex = z + 2,
+		}, holder)
+		Theme.round(hole)
+	elseif name == "gift" then
+		local box = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.fromScale(0.5, 1),
+			Size = UDim2.fromScale(0.86, 0.62),
+			BackgroundColor3 = color,
+			ZIndex = z,
+		}, holder)
+		Theme.corner(box, 3)
+		local lid = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.fromScale(0.5, 0.18),
+			Size = UDim2.fromScale(1, 0.22),
+			BackgroundColor3 = color,
+			ZIndex = z,
+		}, holder)
+		Theme.corner(lid, 3)
+		for _, x in { 0.36, 0.64 } do
+			local bow = new("Frame", {
+				AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.fromScale(x, 0.22),
+				Size = UDim2.fromScale(0.26, 0.22),
+				BackgroundTransparency = 1,
+				ZIndex = z,
+			}, holder)
+			Theme.round(bow)
+			new("UIStroke", { Color = color, Thickness = 2.5 }, bow)
+		end
+	end
+	holder.Parent = parent
+	return holder
+end
+
+-- Surfaces --------------------------------------------------------------------------------------------
+
+-- shadow-lift behind a floating frame: a soft dark copy below it (a wide faint stroke feathers it).
+local LIFT = 10
+function Theme.shadow(f: GuiObject, radius: number?)
+	local parent = f.Parent
+	if not parent then
+		return
+	end
+	local sh = new("Frame", {
+		Name = f.Name .. "_Shadow",
+		AnchorPoint = f.AnchorPoint,
+		Position = f.Position + UDim2.fromOffset(0, LIFT),
+		Size = f.Size,
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.6,
+		BorderSizePixel = 0,
+		ZIndex = math.max(0, f.ZIndex - 1),
+		Visible = f.Visible,
+	}, parent)
+	Theme.corner(sh, radius or Theme.Radius.L)
+	Theme.stroke(sh, Color3.new(0, 0, 0), 10, 0.85)
+	sh:SetAttribute("Rest", 0.6)
+	f:GetPropertyChangedSignal("Visible"):Connect(function()
+		sh.Visible = f.Visible
+	end)
+	f:GetPropertyChangedSignal("Position"):Connect(function()
+		sh.Position = f.Position + UDim2.fromOffset(0, LIFT)
+	end)
+	f:GetPropertyChangedSignal("AnchorPoint"):Connect(function()
+		sh.AnchorPoint = f.AnchorPoint
+	end)
+	-- follow the frame's rendered size, so size constraints on the frame apply to the shadow too
+	local function syncSize()
+		sh.Size = UDim2.fromOffset(f.AbsoluteSize.X, f.AbsoluteSize.Y)
+	end
+	f:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncSize)
+	task.defer(syncSize)
+	f.AncestryChanged:Connect(function()
+		if not f.Parent then
+			sh:Destroy()
+		end
+	end)
+end
+
+-- A surface (card, sheet, panel): flat, rounded (radius-lg), no outline, floating on shadow-lift.
+function Theme.panel(parent: Instance?, props: { [string]: any }?, radius: number?): Frame
+	local f = new("Frame", {
+		BackgroundColor3 = T.surface,
+		BorderSizePixel = 0,
+	}, nil)
+	if props then
+		for k, v in props do
+			(f :: any)[k] = v
+		end
+	end
+	Theme.corner(f, radius or Theme.Radius.L)
+	f.Parent = parent
+	if parent then
+		Theme.shadow(f, radius or Theme.Radius.L)
+	end
+	return f
+end
+
+-- A small info pill on a surface (phase line, feed lines, hints): no outline.
+function Theme.pill(parent: Instance?, props: { [string]: any }?): Frame
+	local f = new("Frame", {
+		BackgroundColor3 = T.surface,
+		BackgroundTransparency = 0.06,
+		BorderSizePixel = 0,
+	}, nil)
+	if props then
+		for k, v in props do
+			(f :: any)[k] = v
+		end
+	end
+	Theme.round(f)
+	f.Parent = parent
+	return f
+end
+
+-- A sunk well inside a surface (tracks, stat tiles, the area behind a shelf).
+function Theme.well(parent: Instance?, props: { [string]: any }?, radius: number?): Frame
+	local f = new("Frame", { BackgroundColor3 = T.surfaceSunk, BorderSizePixel = 0 }, nil)
+	if props then
+		for k, v in props do
+			(f :: any)[k] = v
+		end
+	end
+	Theme.corner(f, radius or Theme.Radius.M)
+	f.Parent = parent
+	return f
+end
+
+-- Sheet: the floating surface every hub screen lives on. A CanvasGroup (so it can fade as one),
+-- radius-lg, shadow-lift, a display-font title (sentence case) with an optional caption under it,
+-- and a round secondary close button. Content goes in the returned `body`, which already has the
+-- sheet's padding. opts: maxSize (Vector2), subtitle, closeLabel.
+export type Sheet = {
+	frame: CanvasGroup,
+	body: Frame,
+	header: Frame,
+	title: TextLabel,
+	subtitle: TextLabel,
+	close: TextButton,
+}
+function Theme.sheet(parent: Instance, name: string, title: string, opts: { [string]: any }?): Sheet
+	local o: { [string]: any } = opts or {}
+	local pad = Theme.Space.XL
+	local f = new("CanvasGroup", {
+		Name = name,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.8, 0.8),
+		BackgroundColor3 = T.surface,
+		BorderSizePixel = 0,
+		Visible = false,
+		Active = true,
+		ZIndex = 2,
+	}, parent)
+	Theme.corner(f, Theme.Radius.L)
+	if o.maxSize then
+		new("UISizeConstraint", { MaxSize = o.maxSize }, f)
+	end
+	Theme.shadow(f, Theme.Radius.L)
+	local header = new("Frame", {
+		Name = "Header",
+		Position = UDim2.fromOffset(pad, pad - 4),
+		Size = UDim2.new(1, -pad * 2, 0, 52),
+		BackgroundTransparency = 1,
+		ZIndex = 3,
+	}, f)
+	local titleLabel = Theme.label(header, {
+		Name = "Title",
+		Size = UDim2.new(1, -64, 0, 34),
+		Text = title,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 3,
+	}, 0)
+	local subtitle = Theme.body(header, {
+		Name = "Subtitle",
+		Position = UDim2.fromOffset(0, 34),
+		Size = UDim2.new(1, -64, 0, 18),
+		Text = o.subtitle or "",
+		FontFace = Theme.TextFace,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 3,
+	})
+	local close = Theme.iconButton(header, "close", "secondary", 44, {
+		Name = "Close",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		ZIndex = 4,
+		back = true,
+	})
+	local body = new("Frame", {
+		Name = "Body",
+		Position = UDim2.fromOffset(pad, pad + 60),
+		Size = UDim2.new(1, -pad * 2, 1, -(pad * 2 + 60)),
+		BackgroundTransparency = 1,
+		ZIndex = 3,
+	}, f)
+	return { frame = f, body = body, header = header, title = titleLabel, subtitle = subtitle, close = close }
+end
+
+-- Sheets and pop-ups ----------------------------------------------------------------------------------
+-- Navigation motion is fast and quiet: a sheet slides 24px and fades in duration-move; closing is a
+-- quicker fade back down. Plain Frames (older pop-ups) do the same with a small scale instead of the
+-- fade. Never blocks input. The optional backdrop dims the game behind modal sheets.
+
+local function shadowOf(panel: GuiObject): Frame?
+	local p = panel.Parent
+	return if p then p:FindFirstChild(panel.Name .. "_Shadow") :: Frame? else nil
+end
+
+local function restOf(panel: GuiObject): UDim2
+	local r = panel:GetAttribute("RestPosition")
+	if typeof(r) == "UDim2" then
+		return r
+	end
+	panel:SetAttribute("RestPosition", panel.Position)
+	return panel.Position
+end
 
 function Theme.show(panel: GuiObject, backdrop: GuiObject?)
 	local closing = panel.Visible and panel:GetAttribute("ThemeOpen") == false
@@ -361,16 +1079,32 @@ function Theme.show(panel: GuiObject, backdrop: GuiObject?)
 			backdrop.BackgroundTransparency = 1
 		end
 		backdrop.Visible = true
-		Theme.tween(backdrop, Theme.Motion.Base, { BackgroundTransparency = 0.45 })
+		tween(backdrop, Theme.Motion.Base, { BackgroundTransparency = 0.45 })
 	end
 	if wasOpen then
 		return
 	end
-	local sc = scaleOf(panel)
-	if not closing then
-		sc.Scale = 0.82 * baseOf(sc)
+	local rest = restOf(panel)
+	local sh = shadowOf(panel)
+	if panel:IsA("CanvasGroup") then
+		if not reduced() and not closing then
+			panel.GroupTransparency = 1
+			panel.Position = rest + UDim2.fromOffset(0, 24)
+			if sh then
+				sh.BackgroundTransparency = 1
+			end
+		end
+		tween(panel, Theme.Motion.Base, { GroupTransparency = 0, Position = rest }, SOFT)
+		if sh then
+			tween(sh, Theme.Motion.Base, { BackgroundTransparency = sh:GetAttribute("Rest") or 0.6 }, SOFT)
+		end
+	else
+		local sc = scaleOf(panel)
+		if not closing and not reduced() then
+			sc.Scale = 0.9 * baseOf(sc)
+		end
+		tween(sc, Theme.Motion.Base, { Scale = baseOf(sc) }, POP)
 	end
-	Theme.tween(sc, Theme.Motion.Slow * 0.8, { Scale = baseOf(sc) }, Enum.EasingStyle.Back)
 end
 
 function Theme.hide(panel: GuiObject, backdrop: GuiObject?)
@@ -379,33 +1113,53 @@ function Theme.hide(panel: GuiObject, backdrop: GuiObject?)
 	end
 	panel:SetAttribute("ThemeOpen", false)
 	if backdrop and backdrop.Visible then
-		Theme.tween(backdrop, Theme.Motion.Fast, { BackgroundTransparency = 1 }).Completed:Once(function(state)
-			-- a panel opening meanwhile restarts the backdrop tween, which cancels this one
+		tween(backdrop, Theme.Motion.Fast, { BackgroundTransparency = 1 }).Completed:Once(function(state)
+			-- a sheet opening meanwhile restarts the backdrop tween, which cancels this one
 			if state == Enum.PlaybackState.Completed then
 				backdrop.Visible = false
 			end
 		end)
 	end
-	local sc = scaleOf(panel)
-	local base = baseOf(sc)
-	Theme.tween(sc, Theme.Motion.Fast, { Scale = 0.86 * base }, Enum.EasingStyle.Quad, Enum.EasingDirection.In).Completed:Once(function()
+	local function finish()
 		-- only finish closing if nothing reopened it meanwhile
 		if panel:GetAttribute("ThemeOpen") == false then
 			panel.Visible = false
-			sc.Scale = baseOf(sc)
+			if panel:IsA("CanvasGroup") then
+				panel.Position = restOf(panel)
+				panel.GroupTransparency = 0
+			else
+				local sc = scaleOf(panel)
+				sc.Scale = baseOf(sc)
+			end
 		end
-	end)
+	end
+	if panel:IsA("CanvasGroup") then
+		local rest = restOf(panel)
+		local sh = shadowOf(panel)
+		if sh then
+			tween(sh, Theme.Motion.Fast, { BackgroundTransparency = 1 })
+		end
+		tween(panel, Theme.Motion.Fast, { GroupTransparency = 1, Position = rest + UDim2.fromOffset(0, 16) }).Completed:Once(
+			finish
+		)
+	else
+		local sc = scaleOf(panel)
+		tween(sc, Theme.Motion.Fast, { Scale = 0.92 * baseOf(sc) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In).Completed:Once(
+			finish
+		)
+	end
 end
 
--- Full-screen dim layer behind modal panels; clicking it calls onClose.
+-- Full-screen dim layer behind modal sheets; clicking it calls onClose.
 function Theme.backdrop(parent: Instance, onClose: (() -> ())?): TextButton
-	local b = Theme.new("TextButton", {
+	local b = new("TextButton", {
 		Name = "Backdrop",
 		Text = "",
 		AutoButtonColor = false,
+		Selectable = false,
 		Size = UDim2.new(1, 0, 1, 80),
 		Position = UDim2.fromOffset(0, -60),
-		BackgroundColor3 = C.Ink,
+		BackgroundColor3 = T.outline,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Visible = false,
@@ -417,65 +1171,73 @@ function Theme.backdrop(parent: Instance, onClose: (() -> ())?): TextButton
 	return b
 end
 
--- Small widgets -----------------------------------------------------------------------------------------
+-- Small components ------------------------------------------------------------------------------------
 
--- Red "!" notification dot on the corner of a button.
-function Theme.badge(parent: GuiObject, text: string?): Frame
-	local dot = Theme.new("Frame", {
-		Name = "Badge",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(1, -6, 0, 6),
-		Size = UDim2.fromOffset(28, 28),
-		BackgroundColor3 = C.Danger,
-		Visible = false,
-		ZIndex = (parent.ZIndex or 1) + 5,
-	}, parent)
-	Theme.round(dot)
-	Theme.stroke(dot, Color3.new(1, 1, 1), 2.5)
-	Theme.label(dot, {
-		Size = UDim2.fromScale(0.7, 0.7),
-		Position = UDim2.fromScale(0.15, 0.15),
-		Text = text or "!",
-		ZIndex = dot.ZIndex + 1,
-	}, 1.5)
-	return dot
-end
-
--- A rounded stat tile: big value over a small caption, tinted by color.
-function Theme.statChip(parent: Instance, caption: string, color: Color3, props: { [string]: any }?): TextLabel
-	local f = Theme.new("Frame", {
-		BackgroundColor3 = Color3.new(1, 1, 1),
+-- Badge sticker: micro uppercase text in an outlined pill (sun = new, candy = limited, leaf =
+-- complete, sky = info). Auto-sizes to its text.
+function Theme.sticker(parent: Instance?, text: string, tone: Color3, props: { [string]: any }?): Frame
+	local f = new("Frame", {
+		Name = "Sticker",
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 20),
+		BackgroundColor3 = tone,
+		BorderSizePixel = 0,
 	}, nil)
 	if props then
 		for k, v in props do
 			(f :: any)[k] = v
 		end
 	end
-	Theme.corner(f, Theme.Radius.S)
-	Theme.gradient(f, Theme.darken(color, 0.35), Theme.darken(color, 0.7))
-	Theme.stroke(f, Theme.lighten(color, 0.2), 2, 0.3)
-	local value = Theme.label(f, {
-		Name = "Value",
-		Position = UDim2.fromOffset(Theme.Space.XS, Theme.Space.XS),
-		Size = UDim2.new(1, -Theme.Space.S, 0.6, -Theme.Space.XS),
-		Text = "0",
-	}, 2)
-	Theme.body(f, {
-		Name = "Caption",
-		Position = UDim2.fromScale(0, 0.62),
-		Size = UDim2.fromScale(1, 0.3),
-		Text = caption,
-		TextColor3 = Theme.lighten(color, 0.5),
+	Theme.round(f)
+	Theme.stroke(f, T.outline, 2)
+	new("UIPadding", { PaddingLeft = UDim.new(0, 9), PaddingRight = UDim.new(0, 9) }, f)
+	Theme.text(f, 12, {
+		Name = "Label",
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromScale(0, 1),
+		Text = string.upper(text),
+		TextColor3 = Theme.textOn(tone),
+		ZIndex = f.ZIndex + 1,
 	})
 	f.Parent = parent
-	return value
+	return f
 end
 
--- Coin icon (gold disc with a "C").
+-- Notification dot (joy-red, outlined, stepped wiggle). Optional text = a sun count bubble instead.
+function Theme.dot(parent: GuiObject, text: string?): Frame
+	local count = text ~= nil and text ~= ""
+	local dot = new("Frame", {
+		Name = "Badge",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(1, -4, 0, 4),
+		Size = if count then UDim2.fromOffset(24, 24) else UDim2.fromOffset(16, 16),
+		BackgroundColor3 = if count then T.sun else T.joyRed,
+		Visible = false,
+		ZIndex = (parent.ZIndex or 1) + 6,
+	}, parent)
+	Theme.round(dot)
+	Theme.stroke(dot, T.outline, Theme.StrokeToy)
+	if count then
+		Theme.text(
+			dot,
+			12,
+			{ Size = UDim2.fromScale(1, 1), Text = text or "", TextColor3 = T.onFill, ZIndex = dot.ZIndex + 1 }
+		)
+	end
+	Theme.wiggle(dot)
+	return dot
+end
+
+-- Older name for the notification dot.
+function Theme.badge(parent: GuiObject, _text: string?): Frame
+	return Theme.dot(parent)
+end
+
+-- Coin icon: a sun disc in the toy outline with an on-fill "C".
 function Theme.coin(parent: Instance, size: number, props: { [string]: any }?): Frame
-	local coin = Theme.new("Frame", {
+	local coin = new("Frame", {
 		Size = UDim2.fromOffset(size, size),
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		BackgroundColor3 = T.sun,
 	}, nil)
 	if props then
 		for k, v in props do
@@ -483,34 +1245,409 @@ function Theme.coin(parent: Instance, size: number, props: { [string]: any }?): 
 		end
 	end
 	Theme.round(coin)
-	Theme.gradient(coin, C.Gold, C.GoldDark)
-	Theme.stroke(coin, Theme.darken(C.GoldDark, 0.5), math.max(1.5, size / 16))
-	Theme.label(coin, { Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.15, 0.15), Text = "C", ZIndex = coin.ZIndex + 1 }, 1.5)
+	Theme.stroke(coin, T.outline, math.clamp(size / 14, 1.5, Theme.StrokeToy))
+	Theme.body(coin, {
+		Size = UDim2.fromScale(0.6, 0.6),
+		Position = UDim2.fromScale(0.2, 0.2),
+		FontFace = Theme.DisplayFace,
+		Text = "C",
+		TextColor3 = T.onFill,
+		ZIndex = coin.ZIndex + 1,
+	})
 	coin.Parent = parent
 	return coin
 end
 
--- Recolor a Theme.button (e.g. owned -> equipped states).
-function Theme.recolor(b: TextButton, color: Color3)
-	local face = b:FindFirstChild("Face") :: UIGradient?
-	if face then
-		face.Color = ColorSequence.new(Theme.lighten(color, 0.25), color)
+-- A stat tile: a sunk well with a big value over a caption.
+function Theme.statChip(parent: Instance, caption: string, color: Color3, props: { [string]: any }?): TextLabel
+	local f = Theme.well(nil, props, Theme.Radius.M)
+	local value = Theme.label(f, {
+		Name = "Value",
+		Position = UDim2.fromOffset(Theme.Space.S, Theme.Space.S),
+		Size = UDim2.new(1, -Theme.Space.L, 0.56, -Theme.Space.S),
+		Text = "0",
+		TextColor3 = color,
+	}, 0)
+	Theme.body(f, {
+		Name = "Caption",
+		Position = UDim2.fromScale(0, 0.62),
+		Size = UDim2.fromScale(1, 0.24),
+		FontFace = Theme.TextFace,
+		Text = caption,
+	})
+	f.Parent = parent
+	return value
+end
+
+-- Toggle: a sunk, outlined track (leaf when on) with a cream thumb that slides with ease-pop.
+-- Returns the hit button and a setter (for following server state without firing onChange).
+function Theme.toggle(
+	parent: Instance?,
+	initial: boolean,
+	onChange: (boolean) -> (),
+	props: { [string]: any }?
+): (TextButton, (boolean) -> ())
+	local state = initial
+	local b = new("TextButton", {
+		Name = "Toggle",
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundColor3 = T.surfaceSunk,
+		Size = UDim2.fromOffset(56, 32),
+	}, nil)
+	if props then
+		for k, v in props do
+			(b :: any)[k] = v
+		end
 	end
-	local stroke = b:FindFirstChildOfClass("UIStroke")
-	if stroke then
-		stroke.Color = Theme.darken(color, 0.55)
+	Theme.round(b)
+	Theme.stroke(b, T.outline, Theme.StrokeToy)
+	local thumb = new("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Size = UDim2.fromOffset(24, 24),
+		BackgroundColor3 = T.ink,
+		ZIndex = b.ZIndex + 1,
+	}, b)
+	Theme.round(thumb)
+	Theme.stroke(thumb, T.outline, 2)
+	local function render(animate: boolean)
+		local pos = if state then UDim2.new(1, -28, 0.5, 0) else UDim2.new(0, 4, 0.5, 0)
+		local col = if state then T.leaf else T.surfaceSunk
+		if animate and not reduced() then
+			tween(thumb, Theme.Motion.Slow, { Position = pos }, POP)
+			tween(b, Theme.Motion.Fast, { BackgroundColor3 = col })
+		else
+			thumb.Position = pos
+			b.BackgroundColor3 = col
+		end
 	end
-	local lip = b:FindFirstChild("Lip") :: Frame?
-	if lip then
-		lip.BackgroundColor3 = Theme.darken(color, 0.35)
+	render(false)
+	Theme.selectable(b)
+	b.Activated:Connect(function()
+		state = not state
+		render(true)
+		sound("UIClick")
+		onChange(state)
+	end)
+	b.Parent = parent
+	return b, function(v: boolean)
+		if v ~= state then
+			state = v
+			render(true)
+		end
 	end
 end
 
-function Theme.setText(b: TextButton, text: string)
-	local l = b:FindFirstChild("Label") :: TextLabel?
-	if l then
-		l.Text = text
+-- Segmented tabs: labels on a sunk pill track; the active one sits on an outlined surface pill that
+-- slides between them (duration-quick, ease-out-soft). items = { {key, label} }. Returns the track
+-- and a setter.
+function Theme.segmented(
+	parent: Instance?,
+	items: { { key: string, label: string } },
+	initial: string,
+	onSelect: (string) -> (),
+	props: { [string]: any }?
+): (Frame, (string) -> ())
+	local track = new("Frame", {
+		Name = "Tabs",
+		BackgroundColor3 = T.surfaceSunk,
+		Size = UDim2.new(1, 0, 0, 48),
+	}, nil)
+	if props then
+		for k, v in props do
+			(track :: any)[k] = v
+		end
 	end
+	Theme.round(track)
+	local n = #items
+	local inset = 5
+	local indicator = new("Frame", {
+		Name = "Indicator",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, inset, 0.5, 0),
+		Size = UDim2.new(1 / n, -inset * 2, 1, -inset * 2),
+		BackgroundColor3 = T.surface,
+		ZIndex = track.ZIndex + 1,
+	}, track)
+	Theme.round(indicator)
+	Theme.stroke(indicator, T.outline, Theme.StrokeToy)
+	local labels: { [string]: TextLabel } = {}
+	local index: { [string]: number } = {}
+	local current = initial
+	local function place(animate: boolean)
+		local i = index[current] or 1
+		local pos = UDim2.new((i - 1) / n, inset, 0.5, 0)
+		if animate and not reduced() then
+			tween(indicator, Theme.Motion.Fast, { Position = pos }, SOFT)
+		else
+			indicator.Position = pos
+		end
+		for key, l in labels do
+			l.TextColor3 = if key == current then T.ink else T.inkMuted
+		end
+	end
+	for i, item in items do
+		index[item.key] = i
+		local seg = new("TextButton", {
+			Name = item.key,
+			Text = "",
+			AutoButtonColor = false,
+			BackgroundTransparency = 1,
+			Position = UDim2.fromScale((i - 1) / n, 0),
+			Size = UDim2.fromScale(1 / n, 1),
+			ZIndex = track.ZIndex + 2,
+		}, track)
+		labels[item.key] = Theme.body(seg, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.new(1, -16, 0.44, 0),
+			FontFace = Theme.LabelFace,
+			Text = item.label,
+			ZIndex = track.ZIndex + 3,
+		})
+		new("UITextSizeConstraint", { MaxTextSize = 18 }, labels[item.key])
+		Theme.selectable(seg, seg)
+		seg.Activated:Connect(function()
+			if current ~= item.key then
+				current = item.key
+				place(true)
+				sound("UIClick")
+				onSelect(item.key)
+			end
+		end)
+	end
+	place(false)
+	track.Parent = parent
+	return track, function(key: string)
+		if current ~= key then
+			current = key
+			place(true)
+		end
+	end
+end
+
+-- GameTile: a square tile of art on a fill (radius-md). Selecting it grows it to 1.06, puts the
+-- ring on it and shows its title in a bubble above (leave ~56px above a shelf for the bubble).
+-- Returns the hit button, the art frame (draw the art in it) and a setter for selection.
+export type Tile = {
+	button: TextButton,
+	art: Frame,
+	setSelected: (boolean) -> (),
+	setTitle: (string) -> (),
+}
+function Theme.tile(parent: Instance?, size: number, tone: Color3, title: string, props: { [string]: any }?): Tile
+	local b = new("TextButton", {
+		Name = "Tile",
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(size, size),
+	}, nil)
+	if props then
+		for k, v in props do
+			(b :: any)[k] = v
+		end
+	end
+	local art = new("Frame", {
+		Name = "Art",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = tone,
+		ZIndex = b.ZIndex + 1,
+		ClipsDescendants = false,
+	}, b)
+	Theme.corner(art, Theme.Radius.M)
+	local artScale = new("UIScale", nil, art)
+	Theme.selectable(b, art, Theme.Radius.M)
+	-- the title bubble: a pill in select-colored display type (sunk, so it reads on a sheet's surface)
+	local bubble = Theme.pill(b, {
+		Name = "Bubble",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 0, -16),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 34),
+		BackgroundColor3 = T.surfaceSunk,
+		BackgroundTransparency = 0,
+		Visible = false,
+		ZIndex = b.ZIndex + 8,
+	})
+	new("UIPadding", { PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16) }, bubble)
+	local bubbleText = Theme.text(bubble, 18, {
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromScale(0, 1),
+		FontFace = Theme.DisplayFace,
+		Text = title,
+		TextColor3 = T.select,
+		ZIndex = bubble.ZIndex + 1,
+	})
+	local selected = false
+	b.Parent = parent
+	return {
+		button = b,
+		art = art,
+		setSelected = function(on: boolean)
+			if on == selected then
+				return
+			end
+			selected = on
+			bubble.Visible = on
+			if reduced() then
+				artScale.Scale = 1
+			else
+				tween(artScale, Theme.Motion.Fast, { Scale = if on then 1.06 else 1 }, SOFT)
+				if on then
+					Theme.pop(bubble, 0.6, Theme.Motion.Fast * 2)
+				end
+			end
+			if on then
+				Theme.setHome(b)
+			end
+		end,
+		setTitle = function(text: string)
+			bubbleText.Text = text
+		end,
+	}
+end
+
+-- RoundAction: a round outlined disc (56px) on a toy ledge with a muted caption under it that turns
+-- ink and heavy when selected. Destinations, not actions. Returns the hit button and its dot.
+function Theme.roundAction(
+	parent: Instance?,
+	label: string,
+	tone: Color3,
+	glyphName: string,
+	props: { [string]: any }?
+): (TextButton, Frame)
+	local disc = 56
+	local b = new("TextButton", {
+		Name = label,
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(84, disc + Theme.Ledge + 26),
+	}, nil)
+	if props then
+		for k, v in props do
+			(b :: any)[k] = v
+		end
+	end
+	local ledge = new("Frame", {
+		Name = "Ledge",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, Theme.Ledge),
+		Size = UDim2.fromOffset(disc, disc),
+		BackgroundColor3 = T.shadowToy,
+		ZIndex = b.ZIndex,
+	}, b)
+	Theme.round(ledge)
+	local face = new("Frame", {
+		Name = "Face",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 0),
+		Size = UDim2.fromOffset(disc, disc),
+		BackgroundColor3 = tone,
+		ZIndex = b.ZIndex + 1,
+	}, b)
+	Theme.round(face)
+	Theme.stroke(face, T.outline, Theme.StrokeToy)
+	Theme.glyph(face, glyphName, T.onFill, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.46, 0.46),
+		ZIndex = b.ZIndex + 2,
+	})
+	local caption = Theme.text(b, 14, {
+		Name = "Caption",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.fromScale(0.5, 1),
+		Size = UDim2.new(1, 0, 0, 20),
+		FontFace = Theme.TextFace,
+		Text = label,
+		TextColor3 = T.inkMuted,
+		ZIndex = b.ZIndex + 1,
+	})
+	Theme.textStroke(caption, 2, T.outline)
+	pressable(b, face, ledge, 0)
+	Theme.selectable(b, face)
+	local function emphasize(on: boolean)
+		caption.TextColor3 = if on then T.ink else T.inkMuted
+		caption.FontFace = if on then Theme.LabelFace else Theme.TextFace
+	end
+	b.MouseEnter:Connect(function()
+		emphasize(true)
+	end)
+	b.MouseLeave:Connect(function()
+		emphasize(false)
+	end)
+	b.SelectionGained:Connect(function()
+		emphasize(true)
+	end)
+	b.SelectionLost:Connect(function()
+		emphasize(false)
+	end)
+	b.Activated:Connect(function()
+		sound("UIClick")
+	end)
+	local dot = Theme.dot(face)
+	dot.Position = UDim2.new(1, -6, 0, 6)
+	b.Parent = parent
+	return b, dot
+end
+
+-- Controller-hint legend: a filled ink disc with the key in micro type, then a caption. Returns the
+-- frame plus its key and caption labels; set `Cooldown` (0..1) on the frame's "Fill" to show a
+-- cooldown draining across the pill.
+function Theme.legend(
+	parent: Instance?,
+	key: string,
+	caption: string,
+	props: { [string]: any }?
+): (Frame, TextLabel, TextLabel)
+	local f = Theme.pill(nil, {
+		Name = caption,
+		Size = UDim2.fromOffset(144, 46),
+		ClipsDescendants = true,
+	})
+	if props then
+		for k, v in props do
+			(f :: any)[k] = v
+		end
+	end
+	local fill = new("Frame", {
+		Name = "Fill",
+		Size = UDim2.fromScale(0, 1),
+		BackgroundColor3 = T.surfaceSunk,
+		BorderSizePixel = 0,
+		ZIndex = f.ZIndex + 1,
+	}, f)
+	local disc = new("Frame", {
+		Name = "Key",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 7, 0.5, 0),
+		Size = UDim2.fromOffset(32, 32),
+		BackgroundColor3 = T.ink,
+		ZIndex = f.ZIndex + 2,
+	}, f)
+	Theme.round(disc)
+	local keyLabel = Theme.text(disc, 15, {
+		Name = "Letter",
+		Size = UDim2.fromScale(1, 1),
+		Text = key,
+		TextColor3 = T.outline,
+		ZIndex = f.ZIndex + 3,
+	})
+	local captionLabel = Theme.text(f, 18, {
+		Name = "Caption",
+		Position = UDim2.fromOffset(48, 0),
+		Size = UDim2.new(1, -50, 1, 0),
+		Text = caption,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = f.ZIndex + 2,
+	})
+	f.Parent = parent
+	local _ = fill
+	return f, keyLabel, captionLabel
 end
 
 return Theme

@@ -76,3 +76,5 @@ The Roblox type definitions file comes from `https://raw.githubusercontent.com/J
 - [docs/RELEASE_PLAN.md](docs/RELEASE_PLAN.md): the 3-stage plan to release.
 
 All balance values live in [src/shared/Config.luau](src/shared/Config.luau). Every number is a starting value to tune from playtests.
+
+UI follows the Toybox Island design system: <https://claude.ai/artifact/TLBxDxpwHmPBUoqdTAZ8Kq#readme>. Read its project/README.md before any UI work.

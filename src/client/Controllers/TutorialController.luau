@@ -66,23 +66,29 @@ function TutorialController.init()
 	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
 	gui.DisplayOrder = 7
 	gui.Parent = player:WaitForChild("PlayerGui")
-	-- gold sticker card that gently bobs
-	local holder = Theme.new("Frame", {
+	-- a plain surface card with a "Tip" sticker (system messages stay plain: no character chatter)
+	local holder = Theme.panel(gui, {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -122),
-		Size = UDim2.fromOffset(440, 56),
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		Position = UDim2.new(0.5, 0, 1, -130),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 56),
 		Visible = false,
-	}, gui)
-	Theme.corner(holder, Theme.Radius.L)
+	}, 28)
+	Theme.new("UIPadding", { PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 22) }, holder)
+	Theme.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, Theme.Space.M),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, holder)
 	Theme.autoScale(holder)
-	Theme.gradient(holder, Theme.lighten(Theme.Colors.Gold, 0.3), Theme.Colors.GoldDark)
-	Theme.stroke(holder, Theme.Colors.Ink, 3.5)
-	card = Theme.label(holder, {
-		Size = UDim2.new(1, -28, 1, -14),
-		Position = UDim2.fromOffset(14, 7),
+	Theme.sticker(holder, "Tip", Theme.Colors.Sun, { LayoutOrder = 1, Size = UDim2.fromOffset(0, 24) })
+	card = Theme.text(holder, 20, {
+		LayoutOrder = 2,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 40),
 		Text = "",
-	}, 3)
+	})
 	cardHolder = holder
 end
 
@@ -102,17 +108,18 @@ function TutorialController.start()
 		if t then
 			card.Text = t
 			if t ~= shownText then
-				Theme.pop(cardHolder, 0.7, 0.3)
+				Theme.pop(cardHolder, 0.6, Theme.Motion.Slow)
 			end
-			cardHolder.Position = UDim2.new(0.5, 0, 1, -122 + 4 * math.sin(os.clock() * 3))
 		end
 		shownText = t or ""
+		-- point at the exact touch button with a breathing select-colored outline
 		for name, b in InputController.buttons do
-			local stroke = b:FindFirstChildOfClass("UIStroke")
+			local face = b:FindFirstChild("Face") or b
+			local stroke = face:FindFirstChild("Outline") :: UIStroke?
 			if stroke then
 				local pulsing = pointer == name
-				stroke.Color = if pulsing then Color3.fromRGB(255, 215, 60) else Theme.Colors.Ink
-				stroke.Thickness = if pulsing then 5 + 2 * math.sin(os.clock() * 8) else 3.5
+				stroke.Color = if pulsing then Theme.Colors.Select else Theme.Colors.Outline
+				stroke.Thickness = if pulsing then 5 + 2 * math.sin(os.clock() * 8) else Theme.StrokeToy
 				stroke.Transparency = 0
 			end
 		end

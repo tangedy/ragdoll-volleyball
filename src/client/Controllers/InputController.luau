@@ -105,51 +105,72 @@ local function bindDesktopAndGamepad()
 	end, false, Enum.KeyCode.E, Enum.KeyCode.ButtonL1)
 end
 
--- Big round action button: gradient face, ink outline, label, cooldown shade, squash on press.
-local function makeButton(parent: Instance, name: string, text: string, size: number, pos: UDim2, color: Color3): TextButton
+-- Big round toy button (Toybox): a pastel disc in the toy outline on a hard ledge, an on-fill label,
+-- a cooldown shade that drains downward, and the press: the disc sinks into its ledge.
+local function makeButton(
+	parent: Instance,
+	name: string,
+	text: string,
+	size: number,
+	pos: UDim2,
+	color: Color3
+): TextButton
 	local b = Theme.new("TextButton", {
 		Name = name,
-		Size = UDim2.fromOffset(size, size),
+		Size = UDim2.fromOffset(size, size + Theme.Ledge),
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = pos,
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		BackgroundTransparency = 0.05,
+		BackgroundTransparency = 1,
 		Text = "",
 		AutoButtonColor = false,
 		Active = true,
 	}, parent)
-	Theme.round(b)
-	Theme.gradient(b, Theme.lighten(color, 0.3), Theme.darken(color, 0.15), 90)
-	local stroke = Theme.stroke(b, Theme.Colors.Ink, 3.5)
+	local ledge = Theme.new("Frame", {
+		Name = "Ledge",
+		Position = UDim2.fromOffset(0, Theme.Ledge),
+		Size = UDim2.fromOffset(size, size),
+		BackgroundColor3 = Theme.Colors.Outline,
+	}, b)
+	Theme.round(ledge)
+	local face = Theme.new("Frame", {
+		Name = "Face",
+		Size = UDim2.fromOffset(size, size),
+		BackgroundColor3 = color,
+		ClipsDescendants = true,
+		ZIndex = 2,
+	}, b)
+	Theme.round(face)
+	local stroke = Theme.stroke(face, Theme.Colors.Outline, Theme.StrokeToy)
 	stroke.Name = "Outline"
-	Theme.label(b, {
+	Theme.body(face, {
 		Name = "Label",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(0.72, 0.4),
+		Size = UDim2.fromScale(0.72, 0.3),
+		FontFace = Theme.LabelFace,
 		Text = text,
-		ZIndex = 3,
-	}, 2.5)
+		TextColor3 = Theme.textOn(color),
+		ZIndex = 4,
+	})
 	local cd = Theme.new("Frame", {
 		Name = "Cooldown",
-		BackgroundColor3 = Theme.Colors.Ink,
-		BackgroundTransparency = 0.4,
+		BackgroundColor3 = Theme.Colors.Outline,
+		BackgroundTransparency = 0.45,
 		Size = UDim2.fromScale(1, 0),
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.fromScale(0, 1),
 		BorderSizePixel = 0,
-		ZIndex = 2,
-	}, b)
-	Theme.round(cd)
-	local scale = Theme.new("UIScale", nil, b)
+		ZIndex = 3,
+	}, face)
+	local _ = cd
 	b.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.Touch then
-			scale.Scale = 0.9
+			face.Position = UDim2.fromOffset(0, Theme.Ledge - 1)
 		end
 	end)
 	b.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.Touch then
-			scale.Scale = 1
+			Theme.tween(face, Theme.Motion.Slow, { Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Back)
 		end
 	end)
 	return b
@@ -162,9 +183,9 @@ local function buildMobile()
 	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets -- respect notches and home bars
 	gui.DisplayOrder = 5
 	gui.Parent = player:WaitForChild("PlayerGui")
-	local throw = makeButton(gui, "Throw", "THROW", 112, UDim2.new(1, -205, 1, -90), Color3.fromRGB(230, 70, 60))
-	local catch = makeButton(gui, "Catch", "CATCH", 76, UDim2.new(1, -310, 1, -70), Color3.fromRGB(60, 170, 90))
-	local dodge = makeButton(gui, "Dodge", "DODGE", 76, UDim2.new(1, -235, 1, -200), Color3.fromRGB(60, 120, 230))
+	local throw = makeButton(gui, "Throw", "Throw", 112, UDim2.new(1, -205, 1, -90), Theme.Colors.Sun)
+	local catch = makeButton(gui, "Catch", "Catch", 76, UDim2.new(1, -310, 1, -70), Theme.Colors.Leaf)
+	local dodge = makeButton(gui, "Dodge", "Dodge", 76, UDim2.new(1, -235, 1, -200), Theme.Colors.Sky)
 	InputController.buttons = { Throw = throw, Catch = catch, Dodge = dodge }
 
 	local activeTouch: InputObject? = nil
@@ -258,13 +279,15 @@ function InputController.start()
 		local t = Workspace:GetServerTimeNow()
 		local function fill(btn: TextButton, readyAt: any, duration: number)
 			local frac = if type(readyAt) == "number" then math.clamp((readyAt - t) / duration, 0, 1) else 0
-			(btn:FindFirstChild("Cooldown") :: Frame).Size = UDim2.fromScale(1, frac)
+			(btn:FindFirstChild("Cooldown", true) :: Frame).Size = UDim2.fromScale(1, frac)
 		end
 		fill(b.Dodge, player:GetAttribute("DodgeReadyAt"), Config.Player.DodgeCooldown)
 		fill(b.Catch, player:GetAttribute("CatchReadyAt"), Config.Player.CatchCooldown)
 		local holding = AimController.holding()
-		b.Throw.BackgroundTransparency = if holding then 0.05 else 0.6
-		b.Catch.BackgroundTransparency = if holding then 0.6 else 0.15
+		local throwFace = b.Throw:FindFirstChild("Face") :: Frame
+		local catchFace = b.Catch:FindFirstChild("Face") :: Frame
+		throwFace.BackgroundTransparency = if holding then 0 else 0.25
+		catchFace.BackgroundTransparency = if holding then 0.4 else 0
 	end)
 end
 

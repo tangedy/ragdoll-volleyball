@@ -1,7 +1,8 @@
 --!strict
 -- Game feel: hit impacts (white flash on the target, spark burst, shockwave ring, comic pop text,
--- layered hit sound, camera kick), eliminations (screen flash + "ELIMINATION!" for the eliminator,
--- arena rim pulse and void splash for everyone) and the ambient match sounds. Respects the
+-- layered hit sound, camera kick), eliminations (screen flash + "ELIMINATED <name>" for the
+-- eliminator; white rim flash, KO light beam and void splash for everyone) and the ambient match
+-- sounds. Respects the
 -- reduced-motion and camera-shake settings. All visuals are original placeholder geometry.
 
 local CollectionService = game:GetService("CollectionService")
@@ -14,6 +15,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local BallDefinitions = require(Shared.BallDefinitions)
+local ArenaLayout = require(Shared.ArenaLayout)
 local Net = require(script.Parent.Net)
 local HUDController = require(script.Parent.HUDController)
 local SoundController = require(script.Parent.SoundController)
@@ -187,27 +189,173 @@ EffectsController.burst = burst
 EffectsController.shockwave = shockwave
 EffectsController.flashSphere = flashSphere
 
--- Arena rims: pulse brighter for a second (team = nil pulses every rim).
+-- Arena rims: flash white and brighter, then settle back to their team color over `duration`
+-- (team = nil flashes every rim). The rim bar, its light curtain and its glow all go white.
 local rimBase: { [SurfaceGui]: number } = {}
 function EffectsController.pulseRims(team: string?, strength: number, duration: number)
+	local white = Color3.new(1, 1, 1)
 	for _, rim in CollectionService:GetTagged("CourtRim") do
 		if rim:IsA("BasePart") and (team == nil or rim:GetAttribute("Team") == team) and rim.Transparency < 1 then
-			for _, sg in rim:GetDescendants() do
-				if sg:IsA("SurfaceGui") and sg.Enabled then
-					local base = rimBase[sg] or sg.Brightness
-					rimBase[sg] = base
-					sg.Brightness = base * strength
-					tween(sg, duration, { Brightness = base }, Enum.EasingStyle.Sine)
+			local baseColor = rim:GetAttribute("RimColor")
+			local hasColor = typeof(baseColor) == "Color3"
+			for _, d in rim:GetDescendants() do
+				if d:IsA("SurfaceGui") and d.Enabled then
+					local base = rimBase[d] or d.Brightness
+					rimBase[d] = base
+					d.Brightness = base * strength
+					tween(d, duration, { Brightness = base }, Enum.EasingStyle.Sine)
+				elseif hasColor and d:IsA("Frame") then
+					d.BackgroundColor3 = white
+					tween(d, duration, { BackgroundColor3 = baseColor }, Enum.EasingStyle.Sine)
+				elseif hasColor and d:IsA("SurfaceLight") then
+					d.Color = white
+					tween(d, duration, { Color = baseColor }, Enum.EasingStyle.Sine)
 				end
 			end
-			local baseColor = rim:GetAttribute("RimColor")
-			if typeof(baseColor) == "Color3" then
-				rim.Color = Color3.new(1, 1, 1)
-				tween(rim, duration, { Color = baseColor })
+			if hasColor then
+				rim.Color = white
+				tween(rim, duration, { Color = baseColor }, Enum.EasingStyle.Sine)
 			end
 		end
 	end
 end
+
+-- Where a KO beam rises: off the court, just past the side the player went over. `edge` is the last
+-- spot they stood on; the nearest boundary of their half (a side line, or the back line) picks the
+-- side, and the beam starts `push` studs out from it, square to that side.
+local function koBeamBase(edge: Vector3, push: number): Vector3
+	local o = Config.Arena.Origin
+	local rel = edge - o
+	local steps = tonumber(Net.MatchState:GetAttribute("OvertimeSteps")) or 0
+	local hw = ArenaLayout.safeHalfWidth(steps)
+	local hl = ArenaLayout.HalfLength
+	local toSide = hw - math.abs(rel.X)
+	local toBack = hl - math.abs(rel.Z)
+	local x, z
+	if toSide <= toBack then
+		local s = if rel.X >= 0 then 1 else -1
+		x, z = s * (hw + push), math.clamp(rel.Z, -hl, hl)
+	else
+		local s = if rel.Z >= 0 then 1 else -1
+		x, z = math.clamp(rel.X, -hw, hw), s * (hl + push)
+	end
+	return Vector3.new(o.X + x, o.Y - 14, o.Z + z)
+end
+
+-- Super Smash Bros-style KO beam: a near-white column of light that shoots up from below the
+-- court edge, flares, and breaks into frayed streaks at the top before fading. Built from Beams
+-- (camera-facing ribbons that taper and fade along their length), so it reads as light, not a tube.
+local WHITE = Color3.new(1, 1, 1)
+local function koBeam(base: Vector3, color: Color3)
+	local soft = reduced()
+	local height = if soft then 90 else 150
+	local life = if soft then 0.55 else 0.85
+	local tint = color:Lerp(WHITE, 0.78) -- only a hint of the team color
+	local holder = Instance.new("Part")
+	holder.Anchored = true
+	holder.CanCollide = false
+	holder.CanQuery = false
+	holder.CanTouch = false
+	holder.Transparency = 1
+	holder.Size = Vector3.one * 0.2
+	holder.CFrame = CFrame.new(base)
+	holder.Parent = fxFolder
+	local rng = Random.new()
+	-- each streak: a start height and end height (fractions of the full beam), a sideways drift at
+	-- its tip (the fray), base/tip widths, and how opaque it is
+	type Streak = {
+		beam: Beam,
+		a0: Attachment,
+		a1: Attachment,
+		from: number,
+		to: number,
+		drift: Vector3,
+		w0: number,
+		w1: number,
+		alpha: number,
+	}
+	local streaks: { Streak } = {}
+	local function streak(from: number, to: number, drift: Vector3, w0: number, w1: number, col: Color3, alpha: number)
+		local a0 = Instance.new("Attachment")
+		a0.Parent = holder
+		local a1 = Instance.new("Attachment")
+		a1.Parent = holder
+		local b = Instance.new("Beam")
+		b.Attachment0 = a0
+		b.Attachment1 = a1
+		b.FaceCamera = true
+		b.LightEmission = 1
+		b.LightInfluence = 0
+		b.Brightness = 4
+		b.Color = ColorSequence.new(col)
+		b.Segments = 2
+		b.Parent = holder
+		table.insert(
+			streaks,
+			{ beam = b, a0 = a0, a1 = a1, from = from, to = to, drift = drift, w0 = w0, w1 = w1, alpha = alpha }
+		)
+	end
+	local scale = if soft then 0.65 else 1
+	-- soft tinted glow, the white body and a hot core
+	streak(0, 0.9, Vector3.zero, 16 * scale, 7 * scale, tint, 0.55)
+	streak(0, 0.95, Vector3.zero, 7 * scale, 3 * scale, WHITE, 0.05)
+	streak(0, 0.7, Vector3.zero, 3 * scale, 1.2 * scale, WHITE, 0)
+	-- the fray: thin streaks peeling off the top at different heights, spreading out
+	for _ = 1, (if soft then 6 else 13) do
+		local ang = rng:NextNumber(0, math.pi * 2)
+		local spread = rng:NextNumber(4, 14) * scale
+		local drift = Vector3.new(math.cos(ang) * spread, 0, math.sin(ang) * spread)
+		streak(
+			rng:NextNumber(0.35, 0.65),
+			rng:NextNumber(0.85, 1.25),
+			drift,
+			rng:NextNumber(0.8, 2.6) * scale,
+			0,
+			if rng:NextNumber() < 0.3 then tint else WHITE,
+			rng:NextNumber(0, 0.3)
+		)
+	end
+	local light = Instance.new("PointLight")
+	light.Color = tint
+	light.Range = 50
+	light.Brightness = 8
+	light.Parent = holder
+	-- shoot up fast and flare, then thin out and fade (streak tips always fade to nothing)
+	local start = os.clock()
+	local conn
+	conn = RunService.RenderStepped:Connect(function()
+		local t = (os.clock() - start) / life
+		if t >= 1 then
+			conn:Disconnect()
+			holder:Destroy()
+			return
+		end
+		local rise = 1 - (1 - math.min(1, t / 0.16)) ^ 3 -- full height in the first ~16%
+		local flare = if t < 0.12 then t / 0.12 else 1 - ((t - 0.12) / 0.88) ^ 1.5
+		local fade = t ^ 1.6
+		for _, s in streaks do
+			local y0 = height * s.from * rise
+			local y1 = height * s.to * rise
+			s.a0.Position = Vector3.new(0, y0, 0)
+			s.a1.Position = Vector3.new(0, y1, 0) + s.drift * rise
+			s.beam.Width0 = math.max(0.05, s.w0 * flare)
+			s.beam.Width1 = math.max(0, s.w1 * flare)
+			local a = s.alpha + (1 - s.alpha) * fade
+			s.beam.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, a),
+				NumberSequenceKeypoint.new(0.6, a + (1 - a) * 0.25),
+				NumberSequenceKeypoint.new(1, 1),
+			})
+		end
+		light.Brightness = 8 * (1 - t)
+	end)
+	-- a bright pop at the base
+	flashSphere(base + Vector3.new(0, 8, 0), WHITE, if soft then 6 else 11)
+	if not soft then
+		burst(base + Vector3.new(0, 8, 0), tint, 34, 70, 1.4)
+	end
+end
+EffectsController.koBeam = koBeam
 
 local function onImpact(d: any)
 	if typeof(d.position) ~= "Vector3" then
@@ -256,9 +404,13 @@ end
 local function onElimination(d: any)
 	local pos = if typeof(d.position) == "Vector3" then d.position :: Vector3 else nil
 	local edge = if typeof(d.edge) == "Vector3" then d.edge :: Vector3 else pos
-	-- everyone: the victim's side of the arena glows hot for a second, a splash where they went down
-	EffectsController.pulseRims(d.victimTeam, 3, 1)
+	-- everyone: every rim flashes white, a KO beam shoots up where they went out, plus a splash
+	EffectsController.pulseRims(nil, 4, 0.9)
 	if edge then
+		local victimColor = if d.victimTeam and Config.Teams[d.victimTeam]
+			then Config.Teams[d.victimTeam].Color
+			else Color3.new(1, 1, 1)
+		koBeam(koBeamBase(edge, 6), victimColor)
 		local splash = Vector3.new(edge.X, Config.Arena.Origin.Y - 6, edge.Z)
 		burst(splash, Color3.fromRGB(190, 120, 255), if reduced() then 12 else 40, 35, 1.2)
 		if not reduced() then
@@ -289,7 +441,6 @@ local function onElimination(d: any)
 				HUDController.coinPop(d.coins)
 			end)
 		end
-		EffectsController.pulseRims(nil, 5, 1)
 		EffectsController.addShake(0.35)
 		fovKick = 8
 	end
