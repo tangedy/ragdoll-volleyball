@@ -3,6 +3,7 @@
 -- sounds. Each play builds its layers and destroys them when done.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local Workspace = game:GetService("Workspace")
 
@@ -73,6 +74,24 @@ function SoundController.play(cue: string, at: Vector3?, volumeScale: number?)
 		longest = math.max(longest, life)
 		task.delay(delay, function()
 			s:Play()
+			local curve = layer.gamma
+			if curve and layer.stopAfter then
+				-- drive the volume along the gamma curve until the layer stops
+				local full, length = s.Volume, layer.stopAfter
+				local peak = math.max((curve.shape - 1) * curve.scale, 1e-3)
+				local started = os.clock()
+				s.Volume = 0
+				local conn: RBXScriptConnection
+				conn = RunService.Heartbeat:Connect(function()
+					local t = os.clock() - started
+					if t >= length or not s.Parent then
+						conn:Disconnect()
+						return
+					end
+					local g = (math.max(t, 1e-6) / peak) ^ (curve.shape - 1) * math.exp(-(t - peak) / curve.scale)
+					s.Volume = full * math.min(g, 1) * math.clamp((length - t) / curve.tail, 0, 1)
+				end)
+			end
 			if layer.stopAfter then
 				task.delay(layer.stopAfter, function()
 					s:Stop()

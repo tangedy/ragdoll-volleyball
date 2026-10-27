@@ -15,6 +15,9 @@ export type Layer = {
 	reverb: boolean?,
 	startAt: number?, -- TimePosition to start from (trim long samples)
 	stopAfter: number?, -- seconds; cut long samples short
+	-- volume follows a gamma curve over stopAfter seconds: rises to full at (shape - 1) * scale,
+	-- then tails off, with a short linear fade (tail, seconds) so it ends on silence
+	gamma: { shape: number, scale: number, tail: number }?,
 }
 
 local S = "rbxasset://sounds/"
@@ -578,6 +581,17 @@ local Cues: { [string]: { Layer } } = {
 }
 
 local Sounds = {}
+
+-- Crowd cheers for an enemy going out: 5 s cut from each track's loudest moment (startAt), with
+-- a gamma-shaped volume curve that peaks 0.3 s in and fades to silence.
+local CHEER_CURVE = { shape = 1.3, scale = 1.0, tail = 0.35 }
+Cues.CrowdCheer1 = {
+	{ id = "rbxassetid://7174628595", volume = 0.8, pitch = 1, startAt = 2.15, stopAfter = 5, gamma = CHEER_CURVE },
+}
+Cues.CrowdCheer2 = {
+	{ id = "rbxassetid://7755719721", volume = 0.8, pitch = 1, startAt = 0.35, stopAfter = 5, gamma = CHEER_CURVE },
+}
+Sounds.Cheers = { "CrowdCheer1", "CrowdCheer2" }
 
 Sounds.Cues = Cues
 

@@ -16,6 +16,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local BallDefinitions = require(Shared.BallDefinitions)
 local ArenaLayout = require(Shared.ArenaLayout)
+local Sounds = require(Shared.Sounds)
 local Net = require(script.Parent.Net)
 local HUDController = require(script.Parent.HUDController)
 local SoundController = require(script.Parent.SoundController)
@@ -418,6 +419,13 @@ local function onElimination(d: any)
 			shockwave(splash, Vector3.yAxis, Color3.fromRGB(200, 140, 255), 22, 0.5)
 		end
 		SoundController.play("VoidFall", splash)
+	end
+	-- an enemy went out: the crowd cheers for your team (one of the cheers at random)
+	local myTeam = player:GetAttribute("Team")
+	if type(myTeam) == "string" and myTeam ~= "" and d.victimTeam and d.victimTeam ~= myTeam then
+		if #Sounds.Cheers > 0 then
+			SoundController.play(Sounds.Cheers[math.random(1, #Sounds.Cheers)])
+		end
 	end
 	-- the eliminator: ELIMINATION! + screen flash + every rim flares
 	if d.killer == player then
