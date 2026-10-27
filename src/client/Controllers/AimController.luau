@@ -36,7 +36,6 @@ local throwId = 0
 local previewFolder: Folder
 local dots: { Part } = {}
 local DOTS = 8
-local ASSIST_DEG = 6
 
 local function attr(name: string): any
 	return player:GetAttribute(name)
@@ -80,15 +79,33 @@ local function excludeList(): { Instance }
 end
 
 -- Mild aim assist: only inside a narrow cone, only with line of sight, only for valid enemies.
+-- The enemy picked during this charge. Keeping it (rather than re-picking every frame) means the
+-- arc, the crosshair and the release all aim at the same player even when two stand close together.
+local locked: Model? = nil
+
 local function assistTarget(ray: Ray): (Vector3?, Model?)
 	local myTeam = attr("Team")
 	if type(myTeam) ~= "string" or myTeam == "" then
 		return nil, nil
 	end
-	local best, bestModel, bestAngle = nil, nil, math.rad(ASSIST_DEG)
+	local A = Config.AimAssist
+	local cone = math.rad(A.ConeDeg[AimController.lastInput] or A.ConeDeg.Mouse)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = excludeList()
+	if locked then
+		local keep: Vector3? = nil
+		AimController._consider(locked, myTeam, ray, params, function(pos, angle)
+			if angle < cone * A.KeepFactor then
+				keep = pos
+			end
+		end)
+		if keep then
+			return keep, locked
+		end
+		locked = nil
+	end
+	local best, bestModel, bestAngle = nil, nil, cone
 	local function consider(model: Instance)
 		AimController._consider(model, myTeam, ray, params, function(pos, angle)
 			if angle < bestAngle then
@@ -104,6 +121,9 @@ local function assistTarget(ray: Ray): (Vector3?, Model?)
 		for _, model in bots:GetChildren() do
 			consider(model)
 		end
+	end
+	if AimController.charging then
+		locked = bestModel
 	end
 	return best, bestModel
 end
@@ -127,7 +147,7 @@ function AimController._consider(
 		return
 	end
 	local to = r.Position - ray.Origin
-	if to.Magnitude > 140 then
+	if to.Magnitude > Config.AimAssist.Range then
 		return
 	end
 	local angle = math.acos(math.clamp(to.Unit:Dot(ray.Direction.Unit), -1, 1))
@@ -199,6 +219,7 @@ local function stopCharging()
 	AimController.charging = false
 	AimController.aimPoint = nil
 	AimController.assistModel = nil
+	locked = nil
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then

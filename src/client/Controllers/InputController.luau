@@ -1,6 +1,6 @@
 --!strict
--- Input for PC, mobile and controller (spec §9). Mobile gets dedicated large buttons: holding Throw
--- never blocks camera drags with another finger, and dragging off Throw cancels the aim.
+-- Input for PC, mobile and controller (spec §9). Mobile gets dedicated large buttons: the finger holding
+-- Throw can drag to turn the camera while aiming, and a second finger can turn it too.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -18,7 +18,7 @@ local player = Players.LocalPlayer
 
 local InputController = {}
 
-InputController.buttons = {} :: { [string]: TextButton }
+InputController.buttons = {} :: { [string]: GuiObject }
 InputController.changed = Instance.new("BindableEvent")
 
 local function moveDirection(): Vector3
@@ -230,7 +230,7 @@ end
 
 -- Grey a whole glyph out (0 = white, 1 = the disc colour). It blends colour rather than fading,
 -- so overlapping strokes stay solid instead of showing their joins.
-local function setDim(btn: TextButton, dim: number)
+local function setDim(btn: GuiObject, dim: number)
 	if btn:GetAttribute("Dim") == dim then
 		return
 	end
@@ -247,17 +247,21 @@ local function setDim(btn: TextButton, dim: number)
 	end
 end
 
-local function makeButton(parent: Instance, name: string, size: number, pos: UDim2): TextButton
-	local b = Theme.new("TextButton", {
+-- `passThrough` builds a plain, inactive frame instead of a button: touches on it still reach the
+-- game (and Roblox's touch camera), and the caller detects presses itself.
+local function makeButton(parent: Instance, name: string, size: number, pos: UDim2, passThrough: boolean?): GuiObject
+	local b = Theme.new(if passThrough then "Frame" else "TextButton", {
 		Name = name,
 		Size = UDim2.fromOffset(size, size),
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = pos,
 		BackgroundTransparency = 1,
-		Text = "",
-		AutoButtonColor = false,
-		Active = true,
+		Active = not passThrough,
 	}, parent)
+	if not passThrough then
+		b.Text = ""
+		b.AutoButtonColor = false
+	end
 	local scale = Theme.new("UIScale", { Scale = 1 }, b)
 	local face = Theme.new("Frame", {
 		Name = "Face",
@@ -302,6 +306,9 @@ local function makeButton(parent: Instance, name: string, size: number, pos: UDi
 		ZIndex = 3,
 	}, b)
 	Glyphs[name](box)
+	if passThrough then
+		return b
+	end
 	b.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.Touch then
 			scale.Scale = 0.9
@@ -319,7 +326,7 @@ end
 -- clockwise from the top as the throw charges, in step with the charge bar under the crosshair.
 local RING_STEPS = 40
 local chargeRing: { Frame } = {}
-local function makeChargeRing(btn: TextButton): { Frame }
+local function makeChargeRing(btn: GuiObject): { Frame }
 	local holder = Theme.new("Frame", {
 		Name = "ChargeRing",
 		Size = UDim2.fromScale(1, 1),
@@ -353,14 +360,17 @@ local function buildMobile()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "MobileControls"
 	gui.ResetOnSpawn = false
-	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets -- respect notches and home bars
+	-- laid out from the real screen edge: in landscape a notch only cuts into the middle of the side,
+	-- and these sit clear of it, so the safe-area margin would just push them away from the thumb
+	gui.ScreenInsets = Enum.ScreenInsets.None
 	gui.DisplayOrder = 5
 	gui.Parent = player:WaitForChild("PlayerGui")
 	-- big Throw in the middle, Dodge above it, Catch down-left and Jump underneath, tucked to the right
-	local throw = makeButton(gui, "Throw", 100, UDim2.new(1, -100, 1, -148))
-	local dodge = makeButton(gui, "Dodge", 62, UDim2.new(1, -100, 1, -239))
-	local catch = makeButton(gui, "Catch", 80, UDim2.new(1, -184, 1, -60))
-	local jump = makeButton(gui, "Jump", 70, UDim2.new(1, -99, 1, -55))
+	-- Throw lets its touch through, so dragging the finger holding it turns the camera while you aim
+	local throw = makeButton(gui, "Throw", 100, UDim2.new(1, -92, 1, -156), true)
+	local dodge = makeButton(gui, "Dodge", 62, UDim2.new(1, -92, 1, -247))
+	local catch = makeButton(gui, "Catch", 80, UDim2.new(1, -176, 1, -68))
+	local jump = makeButton(gui, "Jump", 70, UDim2.new(1, -91, 1, -63))
 	InputController.buttons = { Throw = throw, Catch = catch, Dodge = dodge, Jump = jump }
 	chargeRing = makeChargeRing(throw)
 	jump.InputBegan:Connect(function(input)
@@ -394,40 +404,35 @@ local function buildMobile()
 		end
 	end)
 
+	-- Throw: a touch that starts inside its circle charges, and its release throws. The touch isn't
+	-- held by a button, so Roblox's camera turns with it while you hold (a second finger still works
+	-- too). Touches that land on another button first (gameProcessed) are ignored.
 	local activeTouch: InputObject? = nil
-	local cancelled = false
-	throw.InputBegan:Connect(function(input)
-		if input.UserInputType ~= Enum.UserInputType.Touch or activeTouch then
+	local throwScale = throw:FindFirstChildOfClass("UIScale") :: UIScale
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if input.UserInputType ~= Enum.UserInputType.Touch or gameProcessed or activeTouch then
+			return
+		end
+		if not gui.Enabled or not throw.Visible then
+			return
+		end
+		local centre = throw.AbsolutePosition + throw.AbsoluteSize / 2
+		local p = Vector2.new(input.Position.X, input.Position.Y)
+		if (p - centre).Magnitude > throw.AbsoluteSize.X / 2 then
 			return
 		end
 		setInput("Touch")
 		activeTouch = input
-		cancelled = false
+		throwScale.Scale = 0.9
 		throwBegin()
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if input ~= activeTouch or cancelled then
-			return
-		end
-		-- drag off the button (with margin) cancels the aim
-		local p = Vector2.new(input.Position.X, input.Position.Y)
-		local tl = throw.AbsolutePosition
-		local br = tl + throw.AbsoluteSize
-		local margin = 30
-		if p.X < tl.X - margin or p.Y < tl.Y - margin or p.X > br.X + margin or p.Y > br.Y + margin then
-			cancelled = true
-			bindCancel(false)
-			AimController.cancel()
-		end
 	end)
 	UserInputService.InputEnded:Connect(function(input)
 		if input ~= activeTouch then
 			return
 		end
 		activeTouch = nil
-		if not cancelled then
-			throwEnd()
-		end
+		Theme.tween(throwScale, Theme.Motion.Slow, { Scale = 1 }, Enum.EasingStyle.Back)
+		throwEnd()
 	end)
 	catch.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.Touch then
@@ -491,7 +496,7 @@ function InputController.start()
 			return
 		end
 		local t = Workspace:GetServerTimeNow()
-		local function fill(btn: TextButton, readyAt: any, duration: number)
+		local function fill(btn: GuiObject, readyAt: any, duration: number)
 			local frac = if type(readyAt) == "number" then math.clamp((readyAt - t) / duration, 0, 1) else 0
 			(btn:FindFirstChild("Cooldown", true) :: Frame).Size = UDim2.fromScale(frac, frac)
 		end

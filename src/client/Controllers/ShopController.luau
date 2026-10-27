@@ -622,8 +622,8 @@ local function layoutActions(gui: ScreenGui)
 		return
 	end
 	local pg = player:FindFirstChildOfClass("PlayerGui")
-	local hud = pg and pg:FindFirstChild("HUD")
-	local chip = hud and hud:FindFirstChild("Chip") :: GuiObject?
+	local profile = pg and pg:FindFirstChild("Profile")
+	local chip = profile and profile:FindFirstChild("Chip") :: GuiObject?
 	local controls = pg and pg:FindFirstChild("MobileControls") :: ScreenGui?
 	local catch = controls and controls.Enabled and controls:FindFirstChild("Catch") :: GuiObject?
 	local left = if chip then chip.AbsolutePosition.X + chip.AbsoluteSize.X else gui.AbsolutePosition.X

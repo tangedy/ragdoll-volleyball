@@ -341,11 +341,20 @@ local function build()
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
 	}, feedFrame)
 
-	-- Profile card (bottom left): coin balance, level sticker + XP track
-	local chip = Theme.panel(gui, {
+	-- Profile card (bottom left): coin balance, level sticker + XP track. It has its own gui that
+	-- ignores the device safe area, so it sits right in the corner: notches only cut into the middle
+	-- of a phone's side edges in landscape, never the bottom corners.
+	local profileGui = Theme.new("ScreenGui", {
+		Name = "Profile",
+		ResetOnSpawn = false,
+		ScreenInsets = Enum.ScreenInsets.None,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder = 4,
+	}, player:WaitForChild("PlayerGui"))
+	local chip = Theme.panel(profileGui, {
 		Name = "Chip",
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, Theme.Space.L, 1, -Theme.Space.L - 10),
+		Position = UDim2.new(0, Theme.Space.L, 1, -Theme.Space.M),
 		Size = UDim2.fromOffset(260, 84),
 	}, Theme.Radius.L)
 	refs.chip = chip
@@ -800,7 +809,7 @@ function HUDController.hitmarker()
 end
 
 -- Finisher cutscenes hide all gameplay UI, banner included (finishers play without text).
-local CINEMATIC_HIDE = { "MobileControls", "Tutorial", "Reticle", "Spectator" }
+local CINEMATIC_HIDE = { "MobileControls", "Tutorial", "Reticle", "Spectator", "Profile" }
 function HUDController.setCinematic(on: boolean)
 	local pg = player:FindFirstChild("PlayerGui")
 	for _, name in CINEMATIC_HIDE do
@@ -1042,7 +1051,10 @@ local function update()
 	ret.Visible = aiming or refs.hitmarker.Visible
 	if aiming then
 		local sp = AimController.screenPoint()
-		local aim = AimController.aimPoint
+		-- the locked enemy's live position (no frame of lag behind the arc), else the plain aim point
+		local model = AimController.assistModel
+		local root = model and model:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local aim = if root then root.Position else AimController.aimPoint
 		if charging and aim then
 			local v, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(aim)
 			if onScreen then

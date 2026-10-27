@@ -167,6 +167,13 @@ Config.Ball = {
 	SpawnUp = 1.5,
 }
 
+-- Client aim assist: pulls the throw onto an enemy near the aim, only with line of sight.
+Config.AimAssist = {
+	ConeDeg = { Mouse = 6, Gamepad = 10, Touch = 14 }, -- how far off the aim an enemy can be picked
+	KeepFactor = 1.5, -- a picked enemy stays locked for the charge while inside cone × this
+	Range = 160, -- studs
+}
+
 -- Hub practice (client-side): each player has their own dummy and practice balls.
 Config.Practice = {
 	TemplateName = "PracticeDummyTemplate", -- the dummy rig the server parks in ReplicatedStorage
