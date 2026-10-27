@@ -39,7 +39,7 @@ local function applyTo(d: Instance)
 	if want == nil then
 		return
 	end
-	writing = true;
+	writing = true
 	(d :: any).Enabled = want and not GraphicsController.low
 	writing = false
 end

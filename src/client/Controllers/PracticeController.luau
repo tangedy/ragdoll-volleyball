@@ -64,7 +64,10 @@ end
 
 local function setState(b: PBall, state: string)
 	b.state = state
-	b.part:SetAttribute("BallState", if state == "Loose" then "Spent" elseif state == "Gone" then "Resetting" else state)
+	b.part:SetAttribute(
+		"BallState",
+		if state == "Loose" then "Spent" elseif state == "Gone" then "Resetting" else state
+	)
 end
 
 -- Balls -------------------------------------------------------------------------------------------
@@ -251,7 +254,12 @@ local function setLimp(m: Model, limp: boolean)
 		-- new rigs: AnimationConstraints hand over to their built-in ball sockets; a Motor6D only
 		-- goes limp if the rig has a socket for it
 		local joint = (d:IsA("AnimationConstraint") and d.Name ~= "Root")
-			or (d:IsA("Motor6D") and d.Name ~= "Root" and d.Parent ~= nil and d.Parent:FindFirstChild(d.Name .. "BallSocket") ~= nil)
+			or (
+				d:IsA("Motor6D")
+				and d.Name ~= "Root"
+				and d.Parent ~= nil
+				and d.Parent:FindFirstChild(d.Name .. "BallSocket") ~= nil
+			)
 		if joint then
 			(d :: any).Enabled = not limp
 		end
@@ -280,7 +288,8 @@ local function launchDummy(ball: PBall, at: Vector3)
 	axis = if axis.Magnitude > 0.1 then axis.Unit else Vector3.xAxis
 	for _, d in m:GetDescendants() do
 		if d:IsA("BasePart") then
-			local flail = Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-0.3, 1), rng:NextNumber(-1, 1)) * K.LimbFlail
+			local flail = Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-0.3, 1), rng:NextNumber(-1, 1))
+				* K.LimbFlail
 			local v = kb + flail
 			if v.Magnitude > K.MaxSpeed then
 				v = v.Unit * K.MaxSpeed

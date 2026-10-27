@@ -48,11 +48,67 @@ local function gallery(item: string)
 	end
 	local stats = { hits = 6, catches = 2, knockouts = 3, revenges = 1 }
 	local results: { [string]: any } = {
-		ResultsFinalKnockout = { won = true, winner = "Red", coins = 600, tier = "Final Knockout", xp = 112, level = 4, leveledUp = true, streak = 3, stats = stats, persistent = true },
-		ResultsFlawless = { won = true, winner = "Red", coins = 500, tier = "Flawless Win", xp = 96, level = 4, leveledUp = false, streak = 1, stats = stats, persistent = true },
-		ResultsWin = { won = true, winner = "Red", coins = 200, tier = "Win", xp = 80, level = 3, leveledUp = false, streak = 0, casual = true, stats = stats, persistent = true },
-		ResultsLoss = { won = false, winner = "Blue", coins = 50, tier = "Good Game", xp = 52, level = 3, leveledUp = false, streak = 0, stats = { hits = 2, catches = 0, knockouts = 1, revenges = 0 }, persistent = true },
-		ResultsAborted = { won = false, aborted = true, coins = 0, tier = "Match Aborted", xp = 0, level = 3, leveledUp = false, streak = 0, stats = { hits = 0, catches = 0, knockouts = 0, revenges = 0 }, persistent = false },
+		ResultsFinalKnockout = {
+			won = true,
+			winner = "Red",
+			coins = 600,
+			tier = "Final Knockout",
+			xp = 112,
+			level = 4,
+			leveledUp = true,
+			streak = 3,
+			stats = stats,
+			persistent = true,
+		},
+		ResultsFlawless = {
+			won = true,
+			winner = "Red",
+			coins = 500,
+			tier = "Flawless Win",
+			xp = 96,
+			level = 4,
+			leveledUp = false,
+			streak = 1,
+			stats = stats,
+			persistent = true,
+		},
+		ResultsWin = {
+			won = true,
+			winner = "Red",
+			coins = 200,
+			tier = "Win",
+			xp = 80,
+			level = 3,
+			leveledUp = false,
+			streak = 0,
+			casual = true,
+			stats = stats,
+			persistent = true,
+		},
+		ResultsLoss = {
+			won = false,
+			winner = "Blue",
+			coins = 50,
+			tier = "Good Game",
+			xp = 52,
+			level = 3,
+			leveledUp = false,
+			streak = 0,
+			stats = { hits = 2, catches = 0, knockouts = 1, revenges = 0 },
+			persistent = true,
+		},
+		ResultsAborted = {
+			won = false,
+			aborted = true,
+			coins = 0,
+			tier = "Match Aborted",
+			xp = 0,
+			level = 3,
+			leveledUp = false,
+			streak = 0,
+			stats = { hits = 0, catches = 0, knockouts = 0, revenges = 0 },
+			persistent = false,
+		},
 	}
 	local r = results[item]
 	if r then
@@ -76,10 +132,16 @@ local function gallery(item: string)
 	elseif item == "Hint" then
 		HUD.hint("Throw it!", 999)
 	elseif item == "Feed" then
-		HUD.feed('<b><font color="#E8463C">Tangedy</font></b> 💥 launched <b><font color="#3C78EB">Bot Zoom</font></b> off the court!')
-		HUD.feed('<b><font color="#3C78EB">Bot Pop</font></b> 🧤 caught <b><font color="#E8463C">Bot Bonk</font></b>\'s throw!')
+		HUD.feed(
+			'<b><font color="#E8463C">Tangedy</font></b> 💥 launched <b><font color="#3C78EB">Bot Zoom</font></b> off the court!'
+		)
+		HUD.feed(
+			'<b><font color="#3C78EB">Bot Pop</font></b> 🧤 caught <b><font color="#E8463C">Bot Bonk</font></b>\'s throw!'
+		)
 		HUD.feed("ROCKET balls dropped!")
-		HUD.feed('<b><font color="#E8463C">Tangedy</font></b> got REVENGE on <b><font color="#3C78EB">Bot Wobble</font></b>!')
+		HUD.feed(
+			'<b><font color="#E8463C">Tangedy</font></b> got REVENGE on <b><font color="#3C78EB">Bot Wobble</font></b>!'
+		)
 	elseif item == "HitPop" then
 		-- replay for a few seconds so a screenshot can catch it
 		task.spawn(function()

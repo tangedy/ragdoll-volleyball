@@ -26,7 +26,7 @@ local rng = Random.new()
 local paused = true
 local nameIndex = 0
 -- fetched once at startup from Config.Bots.Avatars: { name, desc } per user, in list order
-local profiles: { { name: string, desc: HumanoidDescription } } = {}
+local profiles: { { id: number, name: string, desc: HumanoidDescription } } = {}
 
 -- Roblox's default R15 animation pack, for avatars without their own
 local DEFAULT_ANIMS: { [string]: string } = {
@@ -75,7 +75,7 @@ local function loadProfiles()
 			name = if okName then username else nil
 		end
 		if okDesc and desc and name then
-			table.insert(loaded, { name = name, desc = desc })
+			table.insert(loaded, { id = id, name = name, desc = desc })
 		else
 			warn(("[Bots] couldn't load avatar for user %d"):format(id))
 		end
@@ -188,6 +188,7 @@ function BotService.create(team: string, roster: { any }, difficulty: string?): 
 		difficulty = level,
 		profile = B.Profiles[level] or B.Profiles.Easy,
 	}
+	c.avatarUserId = if profile then profile.id else nil -- for the scoreboard headshot
 	S.PlayerStateService.setTeam(c, team)
 	local spawn = ArenaLayout.spawnPoints(team, 1)[1]
 	local desc: HumanoidDescription
@@ -456,7 +457,9 @@ local function thinkHolding(c: any, t: number)
 	local target = plan.target or (if stalled then BotService.pickTarget(c, false, true) else nil)
 	if not target then
 		-- nobody in sight: drift toward the middle of our half for a better angle
-		humanoid:MoveTo(if c.status == "Jailed" then wanderPoint(c) else ArenaLayout.halfCenter(c.team) + Vector3.new(0, 3, 0))
+		humanoid:MoveTo(
+			if c.status == "Jailed" then wanderPoint(c) else ArenaLayout.halfCenter(c.team) + Vector3.new(0, 3, 0)
+		)
 		return
 	end
 	face(c, target.root.Position)
@@ -587,7 +590,11 @@ function BotService.react()
 						local tc = rel:Dot(v) / vv -- seconds until closest approach
 						local miss = (rel - v * tc).Magnitude
 						if tc > 0 and tc < 1 and miss < 4.5 then
-							local key = ("%d:%s:%d"):format(ball.id, tostring(ball.lastThrower and ball.lastThrower.id), math.floor(ball.stateAt * 10))
+							local key = ("%d:%s:%d"):format(
+								ball.id,
+								tostring(ball.lastThrower and ball.lastThrower.id),
+								math.floor(ball.stateAt * 10)
+							)
 							local r = brain.reacted[key]
 							if r == nil then
 								-- first sight of this throw: decide now, act after the reaction time

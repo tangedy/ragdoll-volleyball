@@ -97,6 +97,8 @@ function MatchService.init(services: any)
 	end
 	MatchService.setAttr("Overtime", false)
 	MatchService.setAttr("MatchId", 0)
+	MatchService.setAttr("RedRoster", "")
+	MatchService.setAttr("BlueRoster", "")
 end
 
 function MatchService.start()
@@ -190,6 +192,19 @@ local function activeCounts(): (number, number)
 	return red, blue
 end
 
+-- "userId|status;userId|status;..." for one team, in roster order (the scoreboard headshots). Bots
+-- use the user id of the avatar they wear; 0 means no face to show.
+local function rosterString(team: string): string
+	local parts = {}
+	for _, c in roster do
+		if c.team == team then
+			local id = if c.player then c.player.UserId else (c.avatarUserId or 0)
+			table.insert(parts, ("%d|%s"):format(id, c.status or ""))
+		end
+	end
+	return table.concat(parts, ";")
+end
+
 local function publishCounts()
 	local red, blue = activeCounts()
 	local jail = MatchService.jailedCounts()
@@ -197,6 +212,8 @@ local function publishCounts()
 	MatchService.setAttr("BlueActive", blue)
 	MatchService.setAttr("RedJail", jail.Red)
 	MatchService.setAttr("BlueJail", jail.Blue)
+	MatchService.setAttr("RedRoster", rosterString("Red"))
+	MatchService.setAttr("BlueRoster", rosterString("Blue"))
 end
 
 local function realInRoster(): number

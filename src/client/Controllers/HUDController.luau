@@ -80,6 +80,9 @@ end
 
 -- Building ------------------------------------------------------------------------------------------
 
+local PLATE = Vector2.new(164, 92) -- width follows the team size (see update)
+local FACE = 40 -- headshot size
+
 local function teamPlate(team: string, parent: Instance, x: number, anchorX: number)
 	local col = Config.Teams[team].Color
 	local onCol = Theme.textOn(col)
@@ -87,53 +90,63 @@ local function teamPlate(team: string, parent: Instance, x: number, anchorX: num
 	local plate = Theme.new("Frame", {
 		Name = team .. "Plate",
 		AnchorPoint = Vector2.new(anchorX, 0),
-		Position = UDim2.new(0.5, x, 0, 8),
-		Size = UDim2.fromOffset(196, 56),
+		Position = UDim2.new(0.5, x, 0, 6),
+		Size = UDim2.fromOffset(PLATE.X, PLATE.Y),
 		BackgroundColor3 = col,
 	}, parent)
-	Theme.corner(plate, 20)
+	Theme.corner(plate, 26)
 	Theme.stroke(plate, T.outline, Theme.StrokeToy)
 	Theme.label(plate, {
 		Name = "Name",
-		Size = UDim2.fromOffset(80, 24),
-		Position = if isRed then UDim2.fromOffset(14, 5) else UDim2.new(1, -94, 0, 5),
+		Size = UDim2.fromOffset(110, 30),
+		Position = if isRed then UDim2.fromOffset(16, 6) else UDim2.new(1, -126, 0, 6),
 		Text = Config.Teams[team].Name,
 		TextColor3 = onCol,
 		TextXAlignment = if isRed then Enum.TextXAlignment.Left else Enum.TextXAlignment.Right,
 	}, 0)
-	refs[team .. "Jail"] = Theme.text(plate, 13, {
-		Size = UDim2.fromOffset(90, 22),
-		Position = if isRed then UDim2.new(1, -100, 0, 6) else UDim2.fromOffset(10, 6),
-		Text = "",
-		TextColor3 = onCol,
-		TextXAlignment = if isRed then Enum.TextXAlignment.Right else Enum.TextXAlignment.Left,
-	})
-	-- player pips: filled = on court, sun = in jail, hollow = out
+	-- player headshots: sun ring = on court, greyed = in jail, gone = out of the round
 	local row = Theme.new("Frame", {
-		Size = UDim2.new(1, -28, 0, 16),
-		Position = UDim2.fromOffset(14, 32),
+		Size = UDim2.new(1, -32, 0, FACE),
+		Position = UDim2.fromOffset(16, 42),
 		BackgroundTransparency = 1,
 	}, plate)
 	Theme.new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
 		Padding = UDim.new(0, 6),
 		HorizontalAlignment = if isRed then Enum.HorizontalAlignment.Left else Enum.HorizontalAlignment.Right,
+		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, row)
 	for i = 1, 6 do
 		local p = Theme.new("Frame", {
+			Name = "Player" .. i,
 			LayoutOrder = i,
-			Size = UDim2.fromOffset(16, 16),
-			BackgroundColor3 = T.ink,
+			Size = UDim2.fromOffset(FACE, FACE),
+			BackgroundColor3 = T.paper,
 		}, row)
 		Theme.round(p)
-		Theme.stroke(p, T.outline, 2)
+		Theme.stroke(p, T.outline, 2.5).Name = "Ring"
+		Theme.round(Theme.new("ImageLabel", {
+			Name = "Face",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Image = "",
+		}, p))
+		-- the grey wash over a player who's out
+		Theme.round(Theme.new("Frame", {
+			Name = "Dim",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.fromRGB(128, 128, 128),
+			BackgroundTransparency = 0.25,
+			Visible = false,
+			ZIndex = 2,
+		}, p))
 		table.insert(pips[team], p)
 	end
 	-- round-win stars under the plate
 	local starRow = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(anchorX, 0),
-		Position = UDim2.new(0.5, x + (if isRed then -10 else 10), 0, 70),
-		Size = UDim2.fromOffset(70, 22),
+		Position = UDim2.new(0.5, x + (if isRed then -12 else 12), 0, PLATE.Y + 14),
+		Size = UDim2.fromOffset(80, 26),
 		BackgroundTransparency = 1,
 	}, parent)
 	Theme.new("UIListLayout", {
@@ -144,7 +157,7 @@ local function teamPlate(team: string, parent: Instance, x: number, anchorX: num
 	for i = 1, Config.Match.RoundsToWin do
 		local s = Theme.new("Frame", {
 			LayoutOrder = i,
-			Size = UDim2.fromOffset(22, 22),
+			Size = UDim2.fromOffset(26, 26),
 			BackgroundColor3 = T.surfaceSunk,
 		}, starRow)
 		Theme.round(s)
@@ -159,6 +172,24 @@ local function teamPlate(team: string, parent: Instance, x: number, anchorX: num
 	end
 	refs[team .. "Plate"] = plate
 	refs[team .. "Stars"] = starRow
+end
+
+-- One team's players for the scoreboard: from the server's roster string ("id|status;..."), or,
+-- before that arrives, faceless entries built from the counts.
+local function rosterOf(team: string, size: number, active: number, jailed: number): { { id: number, status: string } }
+	local list: { { id: number, status: string } } = {}
+	local raw = MS:GetAttribute(team .. "Roster")
+	if type(raw) == "string" and raw ~= "" then
+		for id, status in string.gmatch(raw, "(-?%d+)|([^;]*)") do
+			table.insert(list, { id = tonumber(id) or 0, status = status or "" })
+		end
+		return list
+	end
+	for i = 1, size do
+		local status = if i <= active then "Active" elseif i <= active + jailed then "Jailed" else "Out"
+		table.insert(list, { id = 0, status = status })
+	end
+	return list
 end
 
 local function build()
@@ -203,31 +234,31 @@ local function build()
 		Name = "Board",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.fromScale(0.5, 0),
-		Size = UDim2.fromOffset(580, 96),
+		Size = UDim2.fromOffset(2 * PLATE.X + 2 * 64, PLATE.Y + 46),
 		BackgroundTransparency = 1,
 	}, gui)
 	refs.board = board
 	Theme.autoScale(board)
-	teamPlate("Red", board, -52, 1)
-	teamPlate("Blue", board, 52, 0)
+	teamPlate("Red", board, -64, 1)
+	teamPlate("Blue", board, 64, 0)
 	local timer = Theme.new("Frame", {
 		Name = "Timer",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 4),
-		Size = UDim2.fromOffset(92, 64),
+		Size = UDim2.fromOffset(116, PLATE.Y),
 		BackgroundColor3 = T.surface,
 	}, board)
-	Theme.corner(timer, 22)
+	Theme.corner(timer, 26)
 	refs.timerStroke = Theme.stroke(timer, T.outline, Theme.StrokeToy)
 	refs.timerFace = timer
 	refs.timer = Theme.label(timer, {
-		Size = UDim2.new(1, -14, 0, 32),
-		Position = UDim2.fromOffset(7, 7),
+		Size = UDim2.new(1, -16, 0, 44),
+		Position = UDim2.fromOffset(8, 10),
 		Text = "1:15",
 	}, 0)
-	refs.round = Theme.text(timer, 13, {
-		Size = UDim2.new(1, -10, 0, 16),
-		Position = UDim2.fromOffset(5, 41),
+	refs.round = Theme.text(timer, 15, {
+		Size = UDim2.new(1, -10, 0, 18),
+		Position = UDim2.fromOffset(5, 60),
 		FontFace = Theme.TextFace,
 		Text = "Round 1",
 		TextColor3 = T.inkMuted,
@@ -377,7 +408,7 @@ local function build()
 	refs.reticle = ret
 	local ring = Theme.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1 }, ret)
 	Theme.round(ring)
-	Theme.stroke(ring, T.ink, 2.5)
+	Theme.stroke(ring, T.paper, 2.5)
 	Theme.new(
 		"UIStroke",
 		{ Color = T.outline, Thickness = 5, Transparency = 0.5 },
@@ -392,7 +423,7 @@ local function build()
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5 + 0.62 * math.sin(i * math.pi / 2), 0.5 - 0.62 * math.cos(i * math.pi / 2)),
 			Size = if i % 2 == 0 then UDim2.fromOffset(3, 9) else UDim2.fromOffset(9, 3),
-			BackgroundColor3 = T.ink,
+			BackgroundColor3 = T.paper,
 			BorderSizePixel = 0,
 		}, ret)
 		Theme.stroke(tick, T.outline, 1, 0.3)
@@ -429,16 +460,16 @@ local function build()
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
 			Size = sz,
-			BackgroundColor3 = T.ink,
+			BackgroundColor3 = T.paper,
 			BorderSizePixel = 0,
 		}, hm)
 		Theme.stroke(bar, T.outline, 1.5, 0.2)
 	end
 
-	-- Held ball: a pill with the ball's swatch, bottom centre
+	-- Held ball: a pill with the ball's swatch, bottom centre (just above the legends)
 	local held = Theme.pill(gui, {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L),
+		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L - 46 - Theme.Space.M),
 		Size = UDim2.fromOffset(180, 42),
 		Visible = false,
 	})
@@ -459,41 +490,36 @@ local function build()
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
 
-	-- Bottom right: controller legends (with cooldowns) and, in the hub, the Play again toggle
-	local corner = Theme.new("Frame", {
-		Name = "Corner",
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L - 10),
-		Size = UDim2.fromOffset(300, 110),
+	-- Bottom centre: controller legends (with cooldowns)
+	local legends = Theme.new("Frame", {
+		Name = "Legends",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L),
+		Size = UDim2.fromOffset(2 * 144 + Theme.Space.S, 46),
 		BackgroundTransparency = 1,
 	}, gui)
 	Theme.new("UIListLayout", {
-		Padding = UDim.new(0, Theme.Space.S),
-		HorizontalAlignment = Enum.HorizontalAlignment.Right,
-		VerticalAlignment = Enum.VerticalAlignment.Bottom,
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	}, corner)
-	refs.corner = corner
-	Theme.autoScale(corner, 0.95)
-	local legends = Theme.new("Frame", {
-		Name = "Legends",
-		LayoutOrder = 1,
-		Size = UDim2.new(1, 0, 0, 46),
-		BackgroundTransparency = 1,
-	}, corner)
-	Theme.new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
 		Padding = UDim.new(0, Theme.Space.S),
-		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, legends)
+	Theme.autoScale(legends, 0.95)
 	refs.chips = legends
-	refs.dodgeChip, refs.dodgeKey = Theme.legend(legends, "Q", "Dodge", { LayoutOrder = 1 })
-	refs.catchChip, refs.catchKey = Theme.legend(legends, "E", "Catch", { LayoutOrder = 2 })
-	-- Play again: a pill with a toggle
+	refs.dodgeChip, refs.dodgeKey = Theme.legend(legends, "Q", "Dodge", { LayoutOrder = 1 }, T.joyRed)
+	refs.catchChip, refs.catchKey = Theme.legend(legends, "E", "Catch", { LayoutOrder = 2 }, T.joyBlue)
+	-- Bottom right, in the hub: the Play again toggle
+	local corner = Theme.new("Frame", {
+		Name = "Corner",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L),
+		Size = UDim2.fromOffset(200, 48),
+		BackgroundTransparency = 1,
+	}, gui)
+	refs.corner = corner
+	Theme.autoScale(corner, 0.95)
 	local playAgain = Theme.pill(corner, {
 		Name = "PlayAgain",
-		LayoutOrder = 2,
 		Size = UDim2.fromOffset(200, 48),
 	})
 	Theme.text(playAgain, 17, {
@@ -606,7 +632,7 @@ function HUDController.banner(
 	bannerToken += 1
 	local token = bannerToken
 	local b = refs.banner :: TextLabel
-	local col = color or T.ink
+	local col = color or T.paper
 	local size = opts and opts.scale or 1
 	local rich = opts ~= nil and opts.rich == true
 	b.RichText = rich
@@ -832,7 +858,7 @@ local function showResults(data: any, persist: boolean?)
 	refs.resultLevel.Text = if data.leveledUp
 		then ("Level up! You're level %d"):format(data.level or 1)
 		else ("Level %d"):format(data.level or 1)
-	refs.resultLevel.TextColor3 = if data.leveledUp then T.sun else T.ink
+	refs.resultLevel.TextColor3 = if data.leveledUp then T.success else T.ink
 	refs.resultXP.Text = ("+%d XP"):format(data.xp or 0)
 	for _, s in refs.resultStreak:GetChildren() do
 		if s:IsA("Frame") then
@@ -910,20 +936,27 @@ local function update()
 		for _, team in { "Red", "Blue" } do
 			local active = num(team .. "Active", 0)
 			local jailed = num(team .. "Jail", 0)
+			local entries = rosterOf(team, teamSize, active, jailed)
 			for i, p in pips[team] do
-				p.Visible = i <= teamSize
-				if i <= active then
-					p.BackgroundColor3 = T.ink
-					p.BackgroundTransparency = 0
-				elseif i <= active + jailed then
-					p.BackgroundColor3 = T.sun
-					p.BackgroundTransparency = 0
-				else
-					p.BackgroundColor3 = T.outline
-					p.BackgroundTransparency = 0.5
+				local e = entries[i]
+				local jail = e ~= nil and (e.status == "Jailed" or e.status == "Returning")
+				local onCourt = e ~= nil and e.status == "Active"
+				p.Visible = jail or onCourt -- out of the round: the headshot leaves the banner
+				if e and p.Visible then
+					local face = p:FindFirstChild("Face") :: ImageLabel
+					local ring = p:FindFirstChild("Ring") :: UIStroke
+					face.Image = if e.id > 0
+						then ("rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150"):format(e.id)
+						else ""
+					face.ImageColor3 = if jail then Color3.fromRGB(150, 150, 150) else Color3.new(1, 1, 1)
+					p.BackgroundColor3 = if jail then Color3.fromRGB(170, 170, 170) else T.paper;
+					(p:FindFirstChild("Dim") :: Frame).Visible = jail
+					ring.Color = if onCourt then T.sun else T.outline
+					ring.Thickness = if onCourt then 3.5 else 2.5
 				end
 			end
-			refs[team .. "Jail"].Text = if jailed > 0 then ("%d in jail"):format(jailed) else ""
+			-- just wide enough for the team's headshots
+			refs[team .. "Plate"].Size = UDim2.fromOffset(math.max(132, 32 + teamSize * (FACE + 6) - 6), PLATE.Y)
 			local wins = num(team .. "Wins", 0)
 			for i, s in stars[team] do
 				local won = i <= wins
@@ -986,7 +1019,7 @@ local function update()
 	refs.phasePill.Visible = phase ~= ""
 	-- stack under the scoreboard, which shrinks on small screens
 	local s = Theme.uiScale()
-	local below = if live then 100 * s else Theme.Space.M
+	local below = if live then 140 * s else Theme.Space.M
 	refs.phasePill.Position = UDim2.new(0.5, 0, 0, below)
 	refs.results.Position = UDim2.new(0.5, 0, 0, below + (if refs.phasePill.Visible then 40 * s else 0) + 16 * s)
 	local hub = not live or not inMatch
@@ -994,7 +1027,7 @@ local function update()
 	-- on touch screens the action buttons own the bottom-right corner: sit above them
 	refs.corner.Position = if AimController.lastInput == "Touch"
 		then UDim2.new(1, -12, 1, -250)
-		else UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L - 10)
+		else UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L)
 
 	-- reticle + charge
 	local holding = AimController.holding()

@@ -216,7 +216,10 @@ function BallVisualController.applyLook(part: Part, look: any)
 		local keys = {}
 		for i, col in look.trail do
 			if typeof(col) == "Color3" then
-				table.insert(keys, ColorSequenceKeypoint.new(if #look.trail == 1 then 0 else (i - 1) / (#look.trail - 1), col))
+				table.insert(
+					keys,
+					ColorSequenceKeypoint.new(if #look.trail == 1 then 0 else (i - 1) / (#look.trail - 1), col)
+				)
 			end
 		end
 		if #keys == 1 then
@@ -314,7 +317,8 @@ function BallVisualController.start()
 			local last = v.part.Position
 			local delta = pos - last
 			if delta.Magnitude > 1e-3 and (os.clock() - v.createdAt) > 0.05 then
-				local hit = Workspace:Spherecast(last, v.part.Size.X / 2, delta, if v.lobby then lobbyParams else params)
+				local hit =
+					Workspace:Spherecast(last, v.part.Size.X / 2, delta, if v.lobby then lobbyParams else params)
 				if hit then
 					pos = hit.Position + hit.Normal * (v.part.Size.X / 2)
 					v.stoppedAt = pos

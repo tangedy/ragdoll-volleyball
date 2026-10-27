@@ -28,7 +28,7 @@ local new = Theme.new
 
 local SpinController = {}
 
-local SHEET_SIZE = Vector2.new(820, 500)
+local SHEET_SIZE = Vector2.new(820, 536)
 
 local sheet: any
 local panel: CanvasGroup
@@ -439,7 +439,13 @@ function SpinController.spin()
 end
 
 function SpinController.init()
-	sheet = ShopController.sheet("Spin", "Daily spin", SHEET_SIZE, "One free spin a day. Every slot is equally likely.")
+	sheet = ShopController.sheet(
+		"Spin",
+		"Daily spin",
+		SHEET_SIZE,
+		"One free spin a day. Every slot is equally likely.",
+		{ tone = T.candy, glyph = "star" }
+	)
 	panel = sheet.frame
 	sheet.close.Activated:Connect(function()
 		SpinController.open(false)

@@ -8,7 +8,8 @@
 -- one horizontal shelf of item tiles (exactly one selected: it grows, wears the selection ring and
 -- shows its name in a bubble) and a detail strip with the item's stickers and its actions. Hovering
 -- or moving the gamepad selection along the shelf selects; the primary button acts. The daily reward
--- is a sheet with a row of day tiles and one primary button.
+-- is louder on purpose: a sheet with a sky header band, a row of toy day cards (today's grows, glows
+-- and spins a sunburst behind its coin) and one shining primary button.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -31,9 +32,10 @@ local new = Theme.new
 
 local ShopController = {}
 
-local SHOP_SIZE = Vector2.new(880, 520)
-local DAILY_SIZE = Vector2.new(720, 400)
-local SETTINGS_SIZE = Vector2.new(520, 456)
+local SHOP_SIZE = Vector2.new(880, 556)
+local DAILY_SIZE = Vector2.new(760, 438)
+local CARD = Vector2.new(92, 164) -- one day card
+local SETTINGS_SIZE = Vector2.new(520, 492)
 
 local gui: ScreenGui
 local backdrop: TextButton
@@ -50,6 +52,7 @@ local selectedId: string? = nil
 local dailyTiles: { any } = {}
 local dailyDot: Frame
 local claimButton: TextButton
+local claimShine: Frame
 local currentTab = "BallSkin"
 local profile: any = { coins = 0, owned = {}, equipped = {}, daily = nil }
 local dailyAutoShown = false
@@ -388,33 +391,41 @@ local function renderDaily()
 	daily.subtitle.Text = if d.claimed
 		then "Collected today. Come back tomorrow for the next one."
 		else ("Day %d of %d. Log in every day for bigger rewards."):format(d.day, #Config.DailyRewards.Ladder)
-	for i, tile in dailyTiles do
+	for i, card in dailyTiles do
 		local done = i < d.day or (d.claimed and i == d.day)
 		local today = i == d.day and not d.claimed
-		local isLast = i == #dailyTiles
-		tile.art.BackgroundColor3 = if done
-			then T.leaf
-			elseif today then T.sun
-			elseif isLast then T.candy
-			else T.surfaceSunk
-		local amount = tile.art:FindFirstChild("Amount") :: TextLabel
-		local check = tile.art:FindFirstChild("Done") :: GuiObject
-		amount.Visible = not done
-		amount.TextColor3 = if today or isLast then T.onFill else T.inkMuted
-		check.Visible = done
-		tile.setSelected(today)
+		local fill = if done then T.leaf elseif today then T.sun elseif card.last then T.candy else T.sky
+		card.face.BackgroundColor3 = fill
+		card.top.BackgroundColor3 = Theme.darken(fill, 0.22)
+		card.topFill.BackgroundColor3 = card.top.BackgroundColor3
+		card.stamp.Visible = done
+		card.coins.Visible = not done
+		card.rays.Visible = today or (card.last and not done)
+		card.glow.Visible = today
+		card.today = today
+		card.status.Text = if done
+			then "Claimed"
+			elseif today then "Today!"
+			elseif i == d.day + 1 then "Tomorrow"
+			elseif card.last then "Big prize"
+			else "Soon"
+		card.status.TextColor3 = if done then T.success else T.ink
+		card.scale:SetAttribute("Base", if today then 1.08 else 1) -- pops settle here
+		card.scale.Scale = if today then 1.08 else 1
 	end
 	Theme.setText(claimButton, if d.claimed then "Come back tomorrow!" else ("Claim %s coins"):format(commas(d.amount)))
 	Theme.recolor(claimButton, if d.claimed then "secondary" else "primary")
 	Theme.setEnabled(claimButton, not d.claimed)
+	claimShine.Visible = not d.claimed
 end
 
--- Claimed: today's tile pops and turns leaf, the button says come back tomorrow, the sheet closes
--- itself, and the coins fly into the counter.
+-- Claimed: today's card pops and turns leaf with a check stamped on it, the button says come back
+-- tomorrow, the sheet closes itself, and the coins fly into the counter.
 local function celebrateClaim(day: number, amount: number)
-	local tile = dailyTiles[day]
-	if tile then
-		Theme.pop(tile.art, 1.3, Theme.Motion.Slow)
+	local card = dailyTiles[day]
+	if card then
+		Theme.pop(card.root, 1.25, Theme.Motion.Slow)
+		Theme.pop(card.stamp, 2.2, Theme.Motion.Slow)
 	end
 	task.defer(function()
 		Theme.pop(claimButton, 0.85, Theme.Motion.Slow)
@@ -500,6 +511,11 @@ function ShopController.openDaily(on: boolean)
 		ShopController.openSettings(false)
 		Theme.show(f, backdrop)
 		renderDaily()
+		local roots = {}
+		for _, card in dailyTiles do
+			table.insert(roots, card.root)
+		end
+		Theme.popIn(roots)
 		-- focus the likely answer: Claim
 		Theme.focus(claimButton)
 	else
@@ -511,15 +527,27 @@ function ShopController.openDaily(on: boolean)
 end
 
 -- A sheet in the hub GUI, fixed size and scaled to the screen (so nothing ever spills off it).
-function ShopController.sheet(name: string, title: string, size: Vector2, subtitle: string?): any
-	local s = Theme.sheet(gui, name, title, { subtitle = subtitle })
+function ShopController.sheet(
+	name: string,
+	title: string,
+	size: Vector2,
+	subtitle: string?,
+	opts: { [string]: any }?
+): any
+	local o: { [string]: any } = { subtitle = subtitle }
+	if opts then
+		for k, v in opts do
+			o[k] = v
+		end
+	end
+	local s = Theme.sheet(gui, name, title, o)
 	s.frame.Size = UDim2.fromOffset(size.X, size.Y)
 	s.frame.Position = UDim2.fromScale(0.5, 0.48)
 	Theme.autoScale(s.frame)
 	return s
 end
 
--- A destination in the action row (Shop, Spin, Daily, Settings). Returns its button and dot.
+-- A destination in the action column (Shop, Spin, Daily, Settings). Returns its button and dot.
 function ShopController.addAction(
 	label: string,
 	tone: Color3,
@@ -555,15 +583,18 @@ function ShopController.layout() end
 -- Build ----------------------------------------------------------------------------------------------
 
 local function buildShop()
-	shop = ShopController.sheet("Shop", "Shop", SHOP_SIZE, "Pick something to see it up close.")
+	shop = ShopController.sheet("Shop", "Shop", SHOP_SIZE, "Pick something to see it up close.", {
+		tone = T.sun,
+		glyph = "bag",
+	})
 	shop.close.Activated:Connect(function()
 		ShopController.openShop(false)
 	end)
 	-- wallet: a coin and your balance, next to the close button
 	local wallet = Theme.well(shop.header, {
 		Name = "Wallet",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -56, 0, 2),
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -62, 0.5, -Theme.Ledge / 2),
 		Size = UDim2.fromOffset(150, 40),
 		ZIndex = 4,
 	}, 20)
@@ -689,73 +720,284 @@ local function buildShop()
 	detail.primary.Activated:Connect(primaryAction)
 end
 
+-- One day card: a toy card in its fill with a darker "Day N" strip, the coin art over a sunburst,
+-- the amount, and a paper status strip along the bottom. renderDaily colors it.
+local function dayCard(parent: Instance, i: number, amount: number): { [string]: any }
+	local last = i == #Config.DailyRewards.Ladder
+	local root = new("Frame", {
+		Name = "Day" .. i,
+		LayoutOrder = i,
+		Size = UDim2.fromOffset(CARD.X, CARD.Y + Theme.Ledge),
+		BackgroundTransparency = 1,
+		ZIndex = 4,
+	}, parent)
+	local scale = new("UIScale", {}, root)
+	-- today's breathing select-colored glow, just outside the card
+	local glow = new("Frame", {
+		Name = "Glow",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, 12, 1, 12),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 4,
+	}, root)
+	Theme.corner(glow, Theme.Radius.M + 6)
+	local glowStroke = Theme.stroke(glow, T.select, Theme.StrokeSelect)
+	local ledge = new("Frame", {
+		Name = "Ledge",
+		Position = UDim2.fromOffset(0, Theme.Ledge),
+		Size = UDim2.fromOffset(CARD.X, CARD.Y),
+		BackgroundColor3 = T.shadowToy,
+		ZIndex = 4,
+	}, root)
+	Theme.corner(ledge, Theme.Radius.M)
+	local face = new("Frame", {
+		Name = "Face",
+		Size = UDim2.fromOffset(CARD.X, CARD.Y),
+		BackgroundColor3 = T.sky,
+		ZIndex = 5,
+	}, root)
+	Theme.corner(face, Theme.Radius.M)
+	Theme.stroke(face, T.outline, Theme.StrokeToy)
+	-- top strip (rounded on top only: a square filler covers its lower corners)
+	local top = new("Frame", {
+		Name = "Top",
+		Size = UDim2.new(1, 0, 0, 32),
+		BorderSizePixel = 0,
+		ZIndex = 6,
+	}, face)
+	Theme.corner(top, Theme.Radius.M)
+	local topFill = new("Frame", {
+		Position = UDim2.new(0, 0, 1, -Theme.Radius.M),
+		Size = UDim2.new(1, 0, 0, Theme.Radius.M),
+		BorderSizePixel = 0,
+		ZIndex = 6,
+	}, top)
+	local dayLabel = Theme.text(top, 19, {
+		Size = UDim2.fromScale(1, 1),
+		FontFace = Theme.DisplayFace,
+		Text = ("Day %d"):format(i),
+		TextColor3 = T.paper,
+		ZIndex = 7,
+	})
+	Theme.textStroke(dayLabel, 2)
+	-- the art: a sunburst behind one coin (three on the last day) and the amount
+	local art = new("Frame", {
+		Name = "Art",
+		Position = UDim2.fromOffset(0, 32),
+		Size = UDim2.new(1, 0, 1, -32 - 34),
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		ZIndex = 6,
+	}, face)
+	local rays = new("Frame", {
+		Name = "Rays",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.42),
+		Size = UDim2.fromOffset(110, 110),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 6,
+	}, art)
+	for r = 0, 5 do
+		new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.new(0, 14, 1, 0),
+			Rotation = r * 30,
+			BackgroundColor3 = T.paper,
+			BackgroundTransparency = 0.55,
+			BorderSizePixel = 0,
+			ZIndex = 6,
+		}, rays)
+	end
+	local coins = new("Frame", {
+		Name = "Coins",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.42),
+		Size = UDim2.fromOffset(60, 52),
+		BackgroundTransparency = 1,
+		ZIndex = 7,
+	}, art)
+	local spots: { { number } } = if last then { { 0.28, 0.62 }, { 0.72, 0.62 }, { 0.5, 0.38 } } else { { 0.5, 0.5 } }
+	for n, spot in spots do
+		Theme.coin(coins, if last then 34 else 44, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(spot[1], spot[2]),
+			ZIndex = 7 + n,
+		})
+	end
+	local amountLabel = Theme.text(art, 22, {
+		Name = "Amount",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -4),
+		Size = UDim2.new(1, 0, 0, 24),
+		FontFace = Theme.DisplayFace,
+		Text = "+" .. commas(amount),
+		TextColor3 = T.paper,
+		ZIndex = 10,
+	})
+	Theme.textStroke(amountLabel, 2.5)
+	-- claimed: a paper check stamp, tilted like it was pressed on by hand
+	local stamp = new("Frame", {
+		Name = "Stamp",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.4),
+		Size = UDim2.fromOffset(52, 52),
+		BackgroundColor3 = T.paper,
+		Rotation = -12,
+		Visible = false,
+		ZIndex = 11,
+	}, art)
+	Theme.round(stamp)
+	Theme.stroke(stamp, T.outline, Theme.StrokeToy)
+	Theme.glyph(stamp, "check", T.success, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.7, 0.7),
+		ZIndex = 12,
+	})
+	-- status strip
+	local bottom = new("Frame", {
+		Name = "Bottom",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.fromScale(0, 1),
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundColor3 = T.paper,
+		BorderSizePixel = 0,
+		ZIndex = 6,
+	}, face)
+	Theme.corner(bottom, Theme.Radius.M)
+	new("Frame", {
+		Size = UDim2.new(1, 0, 0, Theme.Radius.M),
+		BackgroundColor3 = T.paper,
+		BorderSizePixel = 0,
+		ZIndex = 6,
+	}, bottom)
+	new("Frame", {
+		Size = UDim2.new(1, 0, 0, 2),
+		BackgroundColor3 = T.outline,
+		BorderSizePixel = 0,
+		ZIndex = 7,
+	}, bottom)
+	local status = Theme.text(bottom, 15, {
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		ZIndex = 8,
+	})
+	if last then
+		Theme.sticker(root, "Bonus", T.sun, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(1, -8, 0, 2),
+			Rotation = 12,
+			ZIndex = 14,
+		})
+	end
+	return {
+		root = root,
+		scale = scale,
+		glow = glow,
+		glowStroke = glowStroke,
+		face = face,
+		top = top,
+		topFill = topFill,
+		rays = rays,
+		coins = coins,
+		stamp = stamp,
+		status = status,
+		last = last,
+		today = false,
+	}
+end
+
+-- While the daily sheet is open: today's coin bobs and its glow breathes, sunbursts turn, the Claim button
+-- shines. Still under reduced motion.
+local function animateDaily()
+	if not daily.frame.Visible or Theme.settings.reducedMotion then
+		return
+	end
+	local t = os.clock()
+	for _, card in dailyTiles do
+		if card.rays.Visible then
+			card.rays.Rotation = (t * (if card.today then 45 else 20)) % 360
+		end
+		if card.today then
+			card.coins.Position = UDim2.new(0.5, 0, 0.42, math.sin(t * 3.2) * 4)
+			card.glowStroke.Transparency = 0.15 + 0.35 * (0.5 + 0.5 * math.sin(t * math.pi * 2 / Theme.Motion.Pulse))
+		end
+	end
+	if claimShine.Visible then
+		local phase = (t % 2.6) / 1.1
+		local grad = claimShine:FindFirstChildOfClass("UIGradient") :: UIGradient
+		grad.Offset = Vector2.new(if phase < 1 then -1 + 2 * phase else 1, 0)
+	end
+end
+
 local function buildDaily()
-	daily = ShopController.sheet("Daily", "Daily reward", DAILY_SIZE, "")
+	daily = ShopController.sheet("Daily", "Daily rewards!", DAILY_SIZE, "Log in every day for bigger rewards.", {
+		tone = T.joyBlue,
+		glyph = "gift",
+	})
 	daily.close.Activated:Connect(function()
 		ShopController.openDaily(false)
 	end)
 	local body = daily.body :: Frame
 	local row = new("Frame", {
 		Name = "Days",
-		Size = UDim2.new(1, 0, 0, 56 + 84 + 26),
+		Size = UDim2.new(1, 0, 0, CARD.Y + Theme.Ledge + 20),
 		BackgroundTransparency = 1,
 		ZIndex = 4,
 	}, body)
-	new("UIPadding", { PaddingTop = UDim.new(0, 58) }, row)
+	new("UIPadding", { PaddingTop = UDim.new(0, 10) }, row)
 	new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		Padding = UDim.new(0, Theme.Space.M),
+		Padding = UDim.new(0, 10),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, row)
 	for i, amount in Config.DailyRewards.Ladder do
-		local tile = Theme.tile(row, 76, T.surfaceSunk, ("Today · +%s"):format(commas(amount)), {
-			LayoutOrder = i,
-			Selectable = false,
-		})
-		tile.button.Selectable = false
-		Theme.text(tile.art, 22, {
-			Name = "Amount",
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.46),
-			Size = UDim2.fromScale(1, 0.4),
-			FontFace = Theme.DisplayFace,
-			Text = commas(amount),
-			ZIndex = tile.art.ZIndex + 1,
-		})
-		Theme.glyph(tile.art, "check", T.onFill, {
-			Name = "Done",
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromScale(0.5, 0.5),
-			Visible = false,
-			ZIndex = tile.art.ZIndex + 1,
-		})
-		Theme.body(tile.button, {
-			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.new(0.5, 0, 1, 8),
-			Size = UDim2.new(1, 0, 0, 16),
-			FontFace = Theme.TextFace,
-			Text = ("Day %d"):format(i),
-			ZIndex = tile.art.ZIndex,
-		})
-		table.insert(dailyTiles, tile)
+		table.insert(dailyTiles, dayCard(row, i, amount))
 	end
 	claimButton = Theme.button(body, "Claim", "primary", {
 		Name = "Claim",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.fromScale(0.5, 1),
-		Size = UDim2.fromOffset(300, 60),
+		Size = UDim2.fromOffset(340, 64),
 		ZIndex = 5,
 	})
+	-- a paper glint that sweeps across the button every few seconds
+	local face = claimButton:FindFirstChild("Face") :: Frame
+	claimShine = new("Frame", {
+		Name = "Shine",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = T.paper,
+		ZIndex = claimButton.ZIndex + 1,
+	}, face)
+	Theme.round(claimShine)
+	new("UIGradient", {
+		Rotation = 20,
+		Offset = Vector2.new(1, 0),
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.4, 1),
+			NumberSequenceKeypoint.new(0.5, 0.4),
+			NumberSequenceKeypoint.new(0.6, 1),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+	}, claimShine)
 	claimButton.Activated:Connect(function()
 		ShopController.claimDaily()
 	end)
+	RunService.Heartbeat:Connect(animateDaily)
 end
 
 -- Settings: one row per switch (label, a plain explanation, the toggle).
 local function buildSettings()
-	settings = ShopController.sheet("Settings", "Settings", SETTINGS_SIZE, "These stay with you between visits.")
+	settings = ShopController.sheet("Settings", "Settings", SETTINGS_SIZE, "These stay with you between visits.", {
+		tone = T.sky,
+		glyph = "gear",
+	})
 	settings.close.Activated:Connect(function()
 		ShopController.openSettings(false)
 	end)
@@ -849,19 +1091,20 @@ function ShopController.init()
 		ShopController.closeAll()
 	end)
 
-	-- the action row: round destinations centred near the bottom of the hub
+	-- the action column: round destinations stacked down the right edge of the hub
 	actionRow = new("Frame", {
 		Name = "Actions",
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L),
-		Size = UDim2.fromOffset(4 * 84 + 3 * Theme.Space.XL, 56 + Theme.Ledge + 26),
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -Theme.Space.L, 0.5, 0),
+		Size = UDim2.fromOffset(84, 4 * (56 + Theme.Ledge + 26) + 3 * Theme.Space.L),
 		BackgroundTransparency = 1,
 		ZIndex = 1,
 	}, gui)
 	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
+		FillDirection = Enum.FillDirection.Vertical,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		Padding = UDim.new(0, Theme.Space.XL),
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, Theme.Space.L),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, actionRow)
 	Theme.autoScale(actionRow, 0.95)

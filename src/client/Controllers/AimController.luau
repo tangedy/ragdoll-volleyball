@@ -105,7 +105,13 @@ local function assistTarget(ray: Ray): Vector3?
 	return best
 end
 
-function AimController._consider(model: Instance, myTeam: string, ray: Ray, params: RaycastParams, cb: (Vector3, number) -> ())
+function AimController._consider(
+	model: Instance,
+	myTeam: string,
+	ray: Ray,
+	params: RaycastParams,
+	cb: (Vector3, number) -> ()
+)
 	if not model:IsA("Model") or model == player.Character then
 		return
 	end

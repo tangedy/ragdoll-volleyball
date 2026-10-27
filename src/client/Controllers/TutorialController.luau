@@ -67,9 +67,10 @@ function TutorialController.init()
 	gui.DisplayOrder = 7
 	gui.Parent = player:WaitForChild("PlayerGui")
 	-- a plain surface card with a "Tip" sticker (system messages stay plain: no character chatter)
+	-- bottom right, just above the Play again pill (and above the touch buttons on phones)
 	local holder = Theme.panel(gui, {
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -130),
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -Theme.Space.L, 1, -76),
 		AutomaticSize = Enum.AutomaticSize.X,
 		Size = UDim2.fromOffset(0, 56),
 		Visible = false,
@@ -106,6 +107,9 @@ function TutorialController.start()
 		BallGuideController.enabled = step == 1
 		local t, pointer = text()
 		cardHolder.Visible = t ~= nil
+		cardHolder.Position = if AimController.lastInput == "Touch"
+			then UDim2.new(1, -12, 1, -320)
+			else UDim2.new(1, -Theme.Space.L, 1, -76)
 		if t then
 			card.Text = t
 			if t ~= shownText then

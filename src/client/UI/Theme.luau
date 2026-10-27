@@ -1,8 +1,9 @@
 --!strict
 -- The game's UI kit, built on the Toybox Island design system (a cozy, toy-like interface language:
 -- calm grid-first layouts, a pulsing selection ring, warm rounded type, thick toy outlines, pastel
--- fills, and a little bounce on every press). Chrome uses the system's Night roles (the arena is an
--- island after dark); fills are the same in both of its themes.
+-- fills, and a little bounce on every press). Chrome uses the system's Day roles (warm white
+-- surfaces, cocoa ink); fills are the same in both of its themes. Text drawn straight over the game
+-- world (banners, the reticle, team pips) uses paper white with the toy outline so it reads anywhere.
 --
 -- Components (one per Toybox component, plus the pieces screens need):
 --   button     pill Button: "primary" (leaf, once per screen), "secondary" (surface), "quiet", or a
@@ -40,15 +41,15 @@ end
 
 -- Tokens -------------------------------------------------------------------------------------------
 
--- Toybox Island color tokens (names as in its tokens.json; chrome values from the Night theme).
+-- Toybox Island color tokens (names as in its tokens.json; chrome values from the Day theme).
 local T = {
-	ground = Color3.fromHex("#1c1f2b"), -- page background
-	surface = Color3.fromHex("#282c3b"), -- cards, sheets, panels
-	surfaceSunk = Color3.fromHex("#161923"), -- wells and tracks inside a surface
-	ink = Color3.fromHex("#f7f0de"), -- primary text
-	inkMuted = Color3.fromHex("#bdb5a2"), -- secondary text, captions
-	line = Color3.fromHex("#3a3f55"), -- hairline dividers
-	outline = Color3.fromHex("#0e1018"), -- the toy outline around fills, text strokes
+	ground = Color3.fromHex("#f6f1e3"), -- page background
+	surface = Color3.fromHex("#fffcf2"), -- cards, sheets, panels
+	surfaceSunk = Color3.fromHex("#ece3cc"), -- wells and tracks inside a surface
+	ink = Color3.fromHex("#4a3423"), -- primary text
+	inkMuted = Color3.fromHex("#7a5a3f"), -- secondary text, captions
+	line = Color3.fromHex("#e2d6bb"), -- hairline dividers
+	outline = Color3.fromHex("#4a3423"), -- the toy outline around fills, text strokes
 	onFill = Color3.fromHex("#4a3423"), -- text and glyphs on any pastel fill
 	leaf = Color3.fromHex("#7cc47f"), -- primary fill: the one main action
 	sun = Color3.fromHex("#f7cd46"), -- highlight fill: coins, rewards, "new"
@@ -57,10 +58,12 @@ local T = {
 	peach = Color3.fromHex("#ffb38a"), -- warm tertiary fill
 	joyBlue = Color3.fromHex("#0ab9e6"),
 	joyRed = Color3.fromHex("#ff4b3a"), -- notification dots, big numerals only
-	select = Color3.fromHex("#22d3f0"), -- the selection ring (never a fill)
-	success = Color3.fromHex("#8fd694"),
-	danger = Color3.fromHex("#ff7a68"), -- error text
-	shadowToy = Color3.fromHex("#0e1018"), -- the hard ledge under pressable things
+	select = Color3.fromHex("#0789b0"), -- the selection ring (never a fill)
+	success = Color3.fromHex("#2f7d3b"),
+	danger = Color3.fromHex("#c2392a"), -- error text
+	shadowToy = Color3.fromHex("#cbbd9c"), -- the hard ledge under pressable things
+	paper = Color3.fromHex("#fffcf2"), -- outlined text over the game world and on dark fills
+	dim = Color3.fromHex("#0e1018"), -- the backdrop behind modal sheets
 }
 Theme.Toybox = T
 
@@ -81,6 +84,7 @@ Theme.Colors = {
 	JoyRed = T.joyRed,
 	Select = T.select,
 	Success = T.success,
+	Paper = T.paper,
 	-- older names, mapped onto those roles
 	Ink = T.outline,
 	Panel = T.surface,
@@ -125,11 +129,10 @@ Theme.Motion = { Tap = 0.08, Fast = 0.15, Base = 0.24, Slow = 0.42, Pulse = 1.4 
 -- Rarity tones come from Config so the hub wheel, the shop and the spin panel always agree.
 Theme.Rarity = Config.Spin.RarityColors :: { [string]: Color3 }
 
--- Text color for a fill: on-fill brown on light (pastel) fills, ink on dark ones. Never white on a
--- fill.
+-- Text color for a fill: on-fill brown on light (pastel) fills, paper on dark ones (team colors).
 function Theme.textOn(fill: Color3): Color3
 	local lum = 0.2126 * fill.R + 0.7152 * fill.G + 0.0722 * fill.B
-	return if lum > 0.5 then T.onFill else T.ink
+	return if lum > 0.5 then T.onFill else T.paper
 end
 
 -- Basics -------------------------------------------------------------------------------------------
@@ -237,14 +240,14 @@ Theme.sound = sound
 
 -- Text ---------------------------------------------------------------------------------------------
 
--- Display text: Fredoka, scaled, ink with the toy outline (the "sticker" look). Pass a stroke of 0
--- for plain display text (titles on a surface).
+-- Display text: Fredoka, scaled, paper white with the toy outline (the "sticker" look). Pass a
+-- stroke of 0 for plain ink display text (titles on a surface).
 function Theme.label(parent: Instance?, props: { [string]: any }?, strokeThickness: number?): TextLabel
 	local l = new("TextLabel", {
 		BackgroundTransparency = 1,
 		FontFace = Theme.DisplayFace,
 		TextScaled = true,
-		TextColor3 = T.ink,
+		TextColor3 = if strokeThickness == 0 then T.ink else T.paper,
 		Text = "",
 	}, nil)
 	if props then
@@ -982,7 +985,9 @@ end
 -- Sheet: the floating surface every hub screen lives on. A CanvasGroup (so it can fade as one),
 -- radius-lg, shadow-lift, a display-font title (sentence case) with an optional caption under it,
 -- and a round secondary close button. Content goes in the returned `body`, which already has the
--- sheet's padding. opts: maxSize (Vector2), subtitle, closeLabel.
+-- sheet's padding. opts: maxSize (Vector2), subtitle, tone (Color3: a loud header band in that fill
+-- with an outlined paper title, a joy-red close button and a toy outline round the whole sheet, for
+-- screens that should grab attention, like rewards), glyph (with tone: a glyph disc by the title).
 export type Sheet = {
 	frame: CanvasGroup,
 	body: Frame,
@@ -991,9 +996,11 @@ export type Sheet = {
 	subtitle: TextLabel,
 	close: TextButton,
 }
+local BAND = 76
 function Theme.sheet(parent: Instance, name: string, title: string, opts: { [string]: any }?): Sheet
 	local o: { [string]: any } = opts or {}
 	local pad = Theme.Space.XL
+	local tone: Color3? = o.tone
 	local f = new("CanvasGroup", {
 		Name = name,
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1017,33 +1024,130 @@ function Theme.sheet(parent: Instance, name: string, title: string, opts: { [str
 		BackgroundTransparency = 1,
 		ZIndex = 3,
 	}, f)
-	local titleLabel = Theme.label(header, {
-		Name = "Title",
-		Size = UDim2.new(1, -64, 0, 34),
-		Text = title,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 3,
-	}, 0)
-	local subtitle = Theme.body(header, {
-		Name = "Subtitle",
-		Position = UDim2.fromOffset(0, 34),
-		Size = UDim2.new(1, -64, 0, 18),
-		Text = o.subtitle or "",
-		FontFace = Theme.TextFace,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 3,
-	})
-	local close = Theme.iconButton(header, "close", "secondary", 44, {
-		Name = "Close",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromScale(1, 0),
-		ZIndex = 4,
-		back = true,
-	})
+	local titleLabel, subtitle, close, top
+	if tone then
+		-- the band, its outline edge, a few paper polka dots, and the outline round the sheet (inset,
+		-- since a CanvasGroup clips anything drawn outside it)
+		local band = new("Frame", {
+			Name = "Band",
+			Size = UDim2.new(1, 0, 0, BAND),
+			BackgroundColor3 = tone,
+			BorderSizePixel = 0,
+			ZIndex = 2,
+		}, f)
+		new("Frame", {
+			Name = "Edge",
+			Position = UDim2.new(0, 0, 1, -Theme.StrokeToy),
+			Size = UDim2.new(1, 0, 0, Theme.StrokeToy),
+			BackgroundColor3 = T.outline,
+			BorderSizePixel = 0,
+			ZIndex = 3,
+		}, band)
+		for i, d in { { 0.62, 14, 0.2 }, { 0.71, 30, 0.75 }, { 0.8, 18, 0.35 }, { 0.88, 40, 0.15 } } do
+			local dot = new("Frame", {
+				Name = "Polka" .. i,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(d[1], d[3] + 0.3),
+				Size = UDim2.fromOffset(d[2], d[2]),
+				BackgroundColor3 = T.paper,
+				BackgroundTransparency = 0.78,
+				ZIndex = 2,
+			}, band)
+			Theme.round(dot)
+		end
+		local border = new("Frame", {
+			Name = "Border",
+			Position = UDim2.fromOffset(Theme.StrokeToy, Theme.StrokeToy),
+			Size = UDim2.new(1, -Theme.StrokeToy * 2, 1, -Theme.StrokeToy * 2),
+			BackgroundTransparency = 1,
+			ZIndex = 50,
+		}, f)
+		Theme.corner(border, Theme.Radius.L - Theme.StrokeToy)
+		Theme.stroke(border, T.outline, Theme.StrokeToy)
+		header.Position = UDim2.fromOffset(pad - 6, (BAND - 52) / 2)
+		header.Size = UDim2.new(1, -(pad - 6) * 2, 0, 52)
+		local left = 0
+		if o.glyph then
+			local disc = new("Frame", {
+				Name = "Glyph",
+				AnchorPoint = Vector2.new(0, 0.5),
+				Position = UDim2.fromScale(0, 0.5),
+				Size = UDim2.fromOffset(48, 48),
+				BackgroundColor3 = if tone == T.sun then T.paper else T.sun,
+				Rotation = -8,
+				ZIndex = 4,
+			}, header)
+			Theme.corner(disc, Theme.Radius.M)
+			Theme.stroke(disc, T.outline, Theme.StrokeToy)
+			Theme.glyph(disc, o.glyph, T.onFill, {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromScale(0.6, 0.6),
+				ZIndex = 5,
+			})
+			left = 62
+		end
+		titleLabel = Theme.label(header, {
+			Name = "Title",
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, left, 0.5, 0),
+			Size = UDim2.new(1, -left - 64, 0, 40),
+			Text = title,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 4,
+		}, Theme.StrokeToy)
+		close = Theme.iconButton(header, "close", T.joyRed, 48, {
+			Name = "Close",
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, 0, 0.5, -Theme.Ledge / 2),
+			ZIndex = 4,
+			back = true,
+		})
+		local hasSub = (o.subtitle or "") ~= ""
+		subtitle = Theme.body(f, {
+			Name = "Subtitle",
+			Position = UDim2.fromOffset(pad, BAND + 12),
+			Size = UDim2.new(1, -pad * 2, 0, 20),
+			Text = o.subtitle or "",
+			FontFace = Theme.TextFace,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 3,
+		})
+		top = BAND + 12 + (if hasSub then 32 else 0)
+		subtitle:GetPropertyChangedSignal("Text"):Connect(function()
+			subtitle.Visible = subtitle.Text ~= ""
+		end)
+		subtitle.Visible = hasSub
+	else
+		titleLabel = Theme.label(header, {
+			Name = "Title",
+			Size = UDim2.new(1, -64, 0, 34),
+			Text = title,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 3,
+		}, 0)
+		subtitle = Theme.body(header, {
+			Name = "Subtitle",
+			Position = UDim2.fromOffset(0, 34),
+			Size = UDim2.new(1, -64, 0, 18),
+			Text = o.subtitle or "",
+			FontFace = Theme.TextFace,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 3,
+		})
+		close = Theme.iconButton(header, "close", "secondary", 44, {
+			Name = "Close",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.fromScale(1, 0),
+			ZIndex = 4,
+			back = true,
+		})
+		top = pad + 60
+	end
 	local body = new("Frame", {
 		Name = "Body",
-		Position = UDim2.fromOffset(pad, pad + 60),
-		Size = UDim2.new(1, -pad * 2, 1, -(pad * 2 + 60)),
+		Position = UDim2.fromOffset(pad, top),
+		Size = UDim2.new(1, -pad * 2, 1, -(top + pad)),
 		BackgroundTransparency = 1,
 		ZIndex = 3,
 	}, f)
@@ -1159,7 +1263,7 @@ function Theme.backdrop(parent: Instance, onClose: (() -> ())?): TextButton
 		Selectable = false,
 		Size = UDim2.new(1, 0, 1, 80),
 		Position = UDim2.fromOffset(0, -60),
-		BackgroundColor3 = T.outline,
+		BackgroundColor3 = T.dim,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Visible = false,
@@ -1305,7 +1409,7 @@ function Theme.toggle(
 	local thumb = new("Frame", {
 		AnchorPoint = Vector2.new(0, 0.5),
 		Size = UDim2.fromOffset(24, 24),
-		BackgroundColor3 = T.ink,
+		BackgroundColor3 = T.surface,
 		ZIndex = b.ZIndex + 1,
 	}, b)
 	Theme.round(thumb)
@@ -1510,8 +1614,8 @@ function Theme.tile(parent: Instance?, size: number, tone: Color3, title: string
 	}
 end
 
--- RoundAction: a round outlined disc (56px) on a toy ledge with a muted caption under it that turns
--- ink and heavy when selected. Destinations, not actions. Returns the hit button and its dot.
+-- RoundAction: a round outlined disc (56px) on a toy ledge with an outlined paper caption under it
+-- (it sits over the game world) that turns sun and heavy when selected. Destinations, not actions. Returns the hit button and its dot.
 function Theme.roundAction(
 	parent: Instance?,
 	label: string,
@@ -1537,7 +1641,7 @@ function Theme.roundAction(
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, Theme.Ledge),
 		Size = UDim2.fromOffset(disc, disc),
-		BackgroundColor3 = T.shadowToy,
+		BackgroundColor3 = T.outline, -- a dark ledge: it sits over the night scene, not a sheet
 		ZIndex = b.ZIndex,
 	}, b)
 	Theme.round(ledge)
@@ -1564,14 +1668,14 @@ function Theme.roundAction(
 		Size = UDim2.new(1, 0, 0, 20),
 		FontFace = Theme.TextFace,
 		Text = label,
-		TextColor3 = T.inkMuted,
+		TextColor3 = T.paper,
 		ZIndex = b.ZIndex + 1,
 	})
 	Theme.textStroke(caption, 2, T.outline)
 	pressable(b, face, ledge, 0)
 	Theme.selectable(b, face)
 	local function emphasize(on: boolean)
-		caption.TextColor3 = if on then T.ink else T.inkMuted
+		caption.TextColor3 = if on then T.sun else T.paper
 		caption.FontFace = if on then Theme.LabelFace else Theme.TextFace
 	end
 	b.MouseEnter:Connect(function()
@@ -1595,14 +1699,15 @@ function Theme.roundAction(
 	return b, dot
 end
 
--- Controller-hint legend: a filled ink disc with the key in micro type, then a caption. Returns the
+-- Controller-hint legend: a filled disc (ink, or `tone` with the toy outline) with the key, then a caption. Returns the
 -- frame plus its key and caption labels; set `Cooldown` (0..1) on the frame's "Fill" to show a
 -- cooldown draining across the pill.
 function Theme.legend(
 	parent: Instance?,
 	key: string,
 	caption: string,
-	props: { [string]: any }?
+	props: { [string]: any }?,
+	tone: Color3?
 ): (Frame, TextLabel, TextLabel)
 	local f = Theme.pill(nil, {
 		Name = caption,
@@ -1626,15 +1731,18 @@ function Theme.legend(
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 7, 0.5, 0),
 		Size = UDim2.fromOffset(32, 32),
-		BackgroundColor3 = T.ink,
+		BackgroundColor3 = tone or T.ink,
 		ZIndex = f.ZIndex + 2,
 	}, f)
 	Theme.round(disc)
+	if tone then
+		Theme.stroke(disc, T.outline, 2)
+	end
 	local keyLabel = Theme.text(disc, 15, {
 		Name = "Letter",
 		Size = UDim2.fromScale(1, 1),
 		Text = key,
-		TextColor3 = T.outline,
+		TextColor3 = if tone then Theme.textOn(tone) else T.paper,
 		ZIndex = f.ZIndex + 3,
 	})
 	local captionLabel = Theme.text(f, 18, {
