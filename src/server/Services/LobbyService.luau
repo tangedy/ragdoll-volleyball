@@ -60,13 +60,27 @@ end
 local function onPlayerAdded(player: Player)
 	local c = S.PlayerStateService.create(player.DisplayName, player, false, false)
 	c.joinedAt = os.clock()
+	-- load the save while the avatar downloads, so coins, the daily reward and the spin are ready
+	-- the moment the player spawns (the loading screen waits for both)
+	local loading = true
+	task.spawn(function()
+		S.DataService.load(c)
+		loading = false
+	end)
 	local spawn = ArenaLayout.lobbySpawn(rng)
-	S.CharacterService.spawnPlayer(c, CFrame.lookAt(spawn, Vector3.new(ArenaLayout.CourtFocus.X, spawn.Y, ArenaLayout.CourtFocus.Z)))
+	S.CharacterService.spawnPlayer(
+		c,
+		CFrame.lookAt(spawn, Vector3.new(ArenaLayout.CourtFocus.X, spawn.Y, ArenaLayout.CourtFocus.Z))
+	)
 	S.CharacterService.faceCamera(c, ArenaLayout.CourtFocus)
-	S.DataService.load(c)
+	while loading and player.Parent == Players do
+		task.wait()
+	end
 	if player.Parent ~= Players then
 		return
 	end
+	-- the save may have landed before the character existed: push again so its name tag gets the badge
+	S.DataService.push(c)
 	c.funnelEligible = c.profile.Matches == 0
 	S.AnalyticsService.funnel(c, "Joined")
 	S.TutorialService.sync(c)

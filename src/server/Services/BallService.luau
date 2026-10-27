@@ -103,7 +103,10 @@ local function applyOwnerLook(ball: Ball, c: any)
 	if trail and look.trail and #look.trail > 0 then
 		local keys = {}
 		for i, col in look.trail do
-			table.insert(keys, ColorSequenceKeypoint.new(if #look.trail == 1 then 0 else (i - 1) / (#look.trail - 1), col))
+			table.insert(
+				keys,
+				ColorSequenceKeypoint.new(if #look.trail == 1 then 0 else (i - 1) / (#look.trail - 1), col)
+			)
 		end
 		if #keys == 1 then
 			table.insert(keys, ColorSequenceKeypoint.new(1, look.trail[1]))
@@ -394,7 +397,9 @@ local function simulate(ball: Ball, dt: number)
 
 	if catcher then
 		local catchT = (catchPos - from):Dot(delta) / math.max(delta:Dot(delta), 1e-6)
-		local hitT = if result then (result.Position - from):Dot(delta) / math.max(delta:Dot(delta), 1e-6) else math.huge
+		local hitT = if result
+			then (result.Position - from):Dot(delta) / math.max(delta:Dot(delta), 1e-6)
+			else math.huge
 		if catchT <= hitT + 1e-3 then
 			S.CombatService.resolveCatch(ball, catcher)
 			return

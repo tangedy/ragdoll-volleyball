@@ -104,8 +104,10 @@ end)
 if not game:IsLoaded() then
 	game.Loaded:Wait()
 end
-local deadline = os.clock() + 15
-while not player.Character and os.clock() - deadline < 0 do
+-- stay up until the character exists and the save has loaded (coins, daily reward, spin), so the
+-- hub is complete the moment it shows; give up after 20s rather than hang
+local deadline = os.clock() + 20
+while not (player.Character and player:GetAttribute("ProfileReady")) and os.clock() < deadline do
 	task.wait(0.1)
 end
 task.wait(0.3)

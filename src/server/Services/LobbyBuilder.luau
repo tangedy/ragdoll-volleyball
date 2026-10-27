@@ -71,7 +71,16 @@ end
 LobbyBuilder.neon = neon
 
 -- A vertical cylinder standing on the deck (Roblox cylinders run along X, so tip it up).
-local function column(props: { [string]: any }, x: number, y: number, f: number, height: number, diameter: number, parent: Instance, isSolid: boolean): Part
+local function column(
+	props: { [string]: any },
+	x: number,
+	y: number,
+	f: number,
+	height: number,
+	diameter: number,
+	parent: Instance,
+	isSolid: boolean
+): Part
 	props.Shape = Enum.PartType.Cylinder
 	props.Size = Vector3.new(height, diameter, diameter)
 	props.CFrame = at(x, y, f) * CFrame.Angles(0, 0, math.rad(90))
@@ -80,7 +89,13 @@ end
 LobbyBuilder.column = column
 
 -- Text painted on a face of a part (SurfaceGui), for signs and floor markings.
-function LobbyBuilder.paint(part: BasePart, face: Enum.NormalId, text: string, color: Color3, opts: { [string]: any }?): TextLabel
+function LobbyBuilder.paint(
+	part: BasePart,
+	face: Enum.NormalId,
+	text: string,
+	color: Color3,
+	opts: { [string]: any }?
+): TextLabel
 	local sg = make("SurfaceGui", {
 		Name = "Paint",
 		Face = face,
@@ -159,7 +174,9 @@ local function parapet(x0: number, f0: number, x1: number, f1: number, collidabl
 	}, decorF)
 	-- the strip sits on the deck side of the wall
 	local inward = Vector3.new(-mid.X, 0, -mid.Z)
-	local nudge = if alongX then Vector3.new(0, 0, math.sign(inward.Z) * 0.55) else Vector3.new(math.sign(inward.X) * 0.55, 0, 0)
+	local nudge = if alongX
+		then Vector3.new(0, 0, math.sign(inward.Z) * 0.55)
+		else Vector3.new(math.sign(inward.X) * 0.55, 0, 0)
 	neon(
 		"ParapetGlow",
 		at(mid.X + nudge.X, h - 0.25, mid.Z + nudge.Z),
@@ -202,7 +219,11 @@ local function courtRailing(collidable: Folder, decorF: Folder)
 		Material = Enum.Material.Metal,
 	}, decorF)
 	local glow = neon("HandrailGlow", at(0, h - 0.3, f - 0.35), Vector3.new(W * 2, 0.12, 0.12), PAL.Cyan, decorF)
-	make("SurfaceLight", { Face = Enum.NormalId.Bottom, Color = PAL.Cyan, Range = 8, Angle = 70, Brightness = 1.2 }, glow)
+	make(
+		"SurfaceLight",
+		{ Face = Enum.NormalId.Bottom, Color = PAL.Cyan, Range = 8, Angle = 70, Brightness = 1.2 },
+		glow
+	)
 end
 
 -- Invisible walls: keep walkers on the deck, and keep practice balls out of the court.
@@ -226,7 +247,12 @@ local function edgeBarriers(barriers: Folder)
 	wall("HubWallFront", at(0, wallH / 2, D + 0.5), Vector3.new(W * 2 + 2, wallH, 1), "PlayerWall")
 	wall("HubWallLeft", at(-W - 0.5, wallH / 2, 0), Vector3.new(1, wallH, D * 2 + 2), "PlayerWall")
 	-- practice wall: walkers stop before the dummy, which stands near the open drop
-	wall("PracticeWall", at(L.Practice.WallX, A.BarrierHeight / 2, 0), Vector3.new(0.6, A.BarrierHeight, D * 2), "PlayerWall")
+	wall(
+		"PracticeWall",
+		at(L.Practice.WallX, A.BarrierHeight / 2, 0),
+		Vector3.new(0.6, A.BarrierHeight, D * 2),
+		"PlayerWall"
+	)
 	-- ball net on the court side: tall enough that no practice throw can arc over it
 	wall("BallNet", at(0, 30, D + 1), Vector3.new(W * 2 + 2, 60, 1), "LobbyNet")
 end
@@ -250,7 +276,13 @@ local function buildTower(decorF: Folder, rng: Random)
 		Color = PAL.Metal,
 		Material = Enum.Material.Metal,
 	}, decorF)
-	local under = neon("CorniceGlow", at(0, -A.LobbySize.Y - 1.3, 0), Vector3.new(W * 2 + 1.2, 0.2, D * 2 + 1.2), PAL.Trim, decorF)
+	local under = neon(
+		"CorniceGlow",
+		at(0, -A.LobbySize.Y - 1.3, 0),
+		Vector3.new(W * 2 + 1.2, 0.2, D * 2 + 1.2),
+		PAL.Trim,
+		decorF
+	)
 	under.Transparency = 0.2
 	-- lit windows on all four faces, one band of dark glass per storey
 	-- each face: its length, and where a point `u` along it sits `out` studs off the tower wall
@@ -345,13 +377,58 @@ local function waterTower(x: number, f: number, collidable: Folder, decorF: Fold
 		Material = Enum.Material.Metal,
 		Transparency = 0.2,
 	}, decorF)
-	column({ Name = "Tank", Color = PAL.Wood, Material = Enum.Material.WoodPlanks }, x, legH + 4, f, 8, 9, collidable, true)
+	column(
+		{ Name = "Tank", Color = PAL.Wood, Material = Enum.Material.WoodPlanks },
+		x,
+		legH + 4,
+		f,
+		8,
+		9,
+		collidable,
+		true
+	)
 	for _, y in { legH + 1.5, legH + 6.5 } do
-		column({ Name = "TankBand", Color = PAL.Metal, Material = Enum.Material.Metal }, x, y, f, 0.5, 9.3, decorF, false)
+		column(
+			{ Name = "TankBand", Color = PAL.Metal, Material = Enum.Material.Metal },
+			x,
+			y,
+			f,
+			0.5,
+			9.3,
+			decorF,
+			false
+		)
 	end
-	column({ Name = "TankRoof", Color = PAL.Wall, Material = Enum.Material.Metal }, x, legH + 8.6, f, 1.2, 9.8, decorF, false)
-	column({ Name = "TankRoofTop", Color = PAL.Wall, Material = Enum.Material.Metal }, x, legH + 9.6, f, 1, 5, decorF, false)
-	local ring = column({ Name = "TankGlow", Color = PAL.Pink, Material = Enum.Material.Neon }, x, legH + 8, f, 0.2, 9.4, decorF, false)
+	column(
+		{ Name = "TankRoof", Color = PAL.Wall, Material = Enum.Material.Metal },
+		x,
+		legH + 8.6,
+		f,
+		1.2,
+		9.8,
+		decorF,
+		false
+	)
+	column(
+		{ Name = "TankRoofTop", Color = PAL.Wall, Material = Enum.Material.Metal },
+		x,
+		legH + 9.6,
+		f,
+		1,
+		5,
+		decorF,
+		false
+	)
+	local ring = column(
+		{ Name = "TankGlow", Color = PAL.Pink, Material = Enum.Material.Neon },
+		x,
+		legH + 8,
+		f,
+		0.2,
+		9.4,
+		decorF,
+		false
+	)
 	ring.CastShadow = false
 end
 
@@ -372,10 +449,20 @@ local function accessShed(x: number, f: number, collidable: Folder, decorF: Fold
 		Color = Color3.fromRGB(80, 80, 96),
 		Material = Enum.Material.DiamondPlate,
 	}, decorF)
-	local exit = neon("ExitSign", at(x - 2, 6.8, f + 4.12), Vector3.new(2.4, 0.9, 0.1), Color3.fromRGB(80, 255, 120), decorF)
+	local exit =
+		neon("ExitSign", at(x - 2, 6.8, f + 4.12), Vector3.new(2.4, 0.9, 0.1), Color3.fromRGB(80, 255, 120), decorF)
 	LobbyBuilder.paint(exit, Enum.NormalId.Back, "EXIT", Color3.fromRGB(20, 60, 30))
 	local mastH = 22
-	column({ Name = "Mast", Color = PAL.Metal, Material = Enum.Material.Metal }, x + 2.5, h + mastH / 2, f - 1, mastH, 0.5, decorF, false)
+	column(
+		{ Name = "Mast", Color = PAL.Metal, Material = Enum.Material.Metal },
+		x + 2.5,
+		h + mastH / 2,
+		f - 1,
+		mastH,
+		0.5,
+		decorF,
+		false
+	)
 	for i = 1, 3 do
 		decor({
 			Name = "MastBar",
@@ -405,7 +492,16 @@ local function acUnit(x: number, f: number, collidable: Folder, decorF: Folder)
 		Color = Color3.fromRGB(150, 152, 165),
 		Material = Enum.Material.Metal,
 	}, collidable)
-	local fan = column({ Name = "ACFan", Color = Color3.fromRGB(40, 40, 50), Material = Enum.Material.Metal }, x, 3.25, f, 0.15, 3, decorF, false)
+	local fan = column(
+		{ Name = "ACFan", Color = Color3.fromRGB(40, 40, 50), Material = Enum.Material.Metal },
+		x,
+		3.25,
+		f,
+		0.15,
+		3,
+		decorF,
+		false
+	)
 	fan:AddTag("HubFan")
 	decor({
 		Name = "ACGrille",
@@ -451,7 +547,8 @@ local function bench(x: number, f: number, yaw: number, collidable: Folder, deco
 		CFrame = base * CFrame.new(0, 2.4, 0.85) * CFrame.Angles(math.rad(-12), 0, 0),
 		Color = PAL.Wood,
 		Material = Enum.Material.WoodPlanks,
-	}, decorF).CanCollide = false
+	}, decorF).CanCollide =
+		false
 	for _, sx in { -2.6, 2.6 } do
 		make("Part", {
 			Name = "BenchLeg",
@@ -459,7 +556,8 @@ local function bench(x: number, f: number, yaw: number, collidable: Folder, deco
 			CFrame = base * CFrame.new(sx, 0.6, 0),
 			Color = PAL.Metal,
 			Material = Enum.Material.Metal,
-		}, decorF).CanCollide = false
+		}, decorF).CanCollide =
+			false
 	end
 end
 
@@ -468,7 +566,15 @@ local function darken(c: Color3): Color3
 end
 
 -- A glowing vending machine facing `yaw` (0 = facing the court).
-local function vending(x: number, f: number, yaw: number, color: Color3, label: string, collidable: Folder, decorF: Folder)
+local function vending(
+	x: number,
+	f: number,
+	yaw: number,
+	color: Color3,
+	label: string,
+	collidable: Folder,
+	decorF: Folder
+)
 	local base = at(x, 0, f) * CFrame.Angles(0, math.rad(yaw), 0)
 	make("Part", {
 		Name = "Vending",
@@ -491,7 +597,16 @@ end
 
 local function lampPost(x: number, f: number, color: Color3, decorF: Folder, collidable: Folder): Vector3
 	local h = 9
-	column({ Name = "LampPole", Color = PAL.Metal, Material = Enum.Material.Metal }, x, h / 2, f, h, 0.45, collidable, true)
+	column(
+		{ Name = "LampPole", Color = PAL.Metal, Material = Enum.Material.Metal },
+		x,
+		h / 2,
+		f,
+		h,
+		0.45,
+		collidable,
+		true
+	)
 	local head = decor({
 		Name = "LampHead",
 		Shape = Enum.PartType.Ball,
@@ -523,7 +638,8 @@ local function stringLights(a: Vector3, b: Vector3, bulbs: number, decorF: Folde
 			Size = Vector3.new(0.06, 0.06, (p - prev).Magnitude),
 			CFrame = CFrame.lookAt(mid, p),
 			Color = Color3.fromRGB(30, 30, 30),
-		}, decorF).CastShadow = false
+		}, decorF).CastShadow =
+			false
 		local bulb = decor({
 			Name = "Bulb",
 			Shape = Enum.PartType.Ball,
@@ -541,7 +657,8 @@ local function stringLights(a: Vector3, b: Vector3, bulbs: number, decorF: Folde
 		Size = Vector3.new(0.06, 0.06, (last - prev).Magnitude),
 		CFrame = CFrame.lookAt((prev + last) / 2, last),
 		Color = Color3.fromRGB(30, 30, 30),
-	}, decorF).CastShadow = false
+	}, decorF).CastShadow =
+		false
 end
 
 -- Zones: stations, leaderboard, watch zone, helipad and signs -----------------------------------
@@ -683,7 +800,11 @@ local function station(def: any, parent: Folder)
 		}, model)
 		screenText(screen, Enum.NormalId.Front, {
 			{ text = def.Icon, size = 0.6, color = Color3.new(1, 1, 1) },
-			{ text = if def.Id == "Shop" then "SKINS · TRAILS · POSES" else "COME BACK DAILY", size = 0.25, color = col },
+			{
+				text = if def.Id == "Shop" then "SKINS · TRAILS · POSES" else "COME BACK DAILY",
+				size = 0.25,
+				color = col,
+			},
 		})
 		outline(base * CFrame.new(0, 6, 4.1), 8.8, 5.8, col, model)
 	end
@@ -839,7 +960,10 @@ local function leaderboard(parent: Folder, collidable: Folder)
 				Text = if c[1] == "Rank" then tostring(i) else "",
 				TextScaled = true,
 				Font = if c[1] == "PlayerName" then Enum.Font.GothamBold else Enum.Font.FredokaOne,
-				TextColor3 = if i == 1 then GOLD elseif c[1] == "Rank" then Color3.fromRGB(190, 182, 230) else Color3.new(1, 1, 1),
+				TextColor3 = if i == 1
+					then GOLD
+					elseif c[1] == "Rank" then Color3.fromRGB(190, 182, 230)
+					else Color3.new(1, 1, 1),
 				TextXAlignment = c[4],
 			}, row)
 		end
@@ -873,7 +997,16 @@ local function watchZone(collidable: Folder, decorF: Folder)
 end
 
 -- Flat floor marking: a SurfaceGui on an invisible tile. yaw turns which way the text reads.
-local function floorLabel(text: string, x: number, f: number, w: number, h: number, yaw: number, color: Color3, parent: Instance)
+local function floorLabel(
+	text: string,
+	x: number,
+	f: number,
+	w: number,
+	h: number,
+	yaw: number,
+	color: Color3,
+	parent: Instance
+)
 	local tileP = decor({
 		Name = "FloorLabel",
 		Size = Vector3.new(w, 0.05, h),
@@ -930,7 +1063,16 @@ local function practiceSigns(decorF: Folder, collidable: Folder)
 	local p = L.Practice
 	-- a banner over the practice wall, readable from the plaza
 	for _, f in { -14, 14 } do
-		column({ Name = "BannerPole", Color = PAL.Metal, Material = Enum.Material.Metal }, p.WallX + 2, 5.5, f, 11, 0.4, collidable, true)
+		column(
+			{ Name = "BannerPole", Color = PAL.Metal, Material = Enum.Material.Metal },
+			p.WallX + 2,
+			5.5,
+			f,
+			11,
+			0.4,
+			collidable,
+			true
+		)
 	end
 	local banner = decor({
 		Name = "PracticeBanner",

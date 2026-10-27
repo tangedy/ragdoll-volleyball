@@ -66,11 +66,27 @@ IntroPoses.Frames = {
 } :: { [string]: Frame }
 
 IntroPoses.Poses = {
-	Cheer = { Name = "Fist Pump", Blend = 0.16, Frames = { { frame = "CheerUp", hold = 0.36 }, { frame = "CheerPump", hold = 0.36 } } },
-	Wave = { Name = "Big Wave", Blend = 0.18, Frames = { { frame = "WaveA", hold = 0.3 }, { frame = "WaveB", hold = 0.3 } } },
+	Cheer = {
+		Name = "Fist Pump",
+		Blend = 0.16,
+		Frames = { { frame = "CheerUp", hold = 0.36 }, { frame = "CheerPump", hold = 0.36 } },
+	},
+	Wave = {
+		Name = "Big Wave",
+		Blend = 0.18,
+		Frames = { { frame = "WaveA", hold = 0.3 }, { frame = "WaveB", hold = 0.3 } },
+	},
 	Flex = { Name = "Flex", Blend = 0.3, Frames = { { frame = "FlexA", hold = 0.7 }, { frame = "FlexB", hold = 0.7 } } },
-	Point = { Name = "You're Next", Blend = 0.28, Frames = { { frame = "PointAt", hold = 0.9 }, { frame = "PointUp", hold = 0.7 } } },
-	Bow = { Name = "Take a Bow", Blend = 0.45, Frames = { { frame = "BowDown", hold = 1.3 }, { frame = "BowUp", hold = 0.9 } } },
+	Point = {
+		Name = "You're Next",
+		Blend = 0.28,
+		Frames = { { frame = "PointAt", hold = 0.9 }, { frame = "PointUp", hold = 0.7 } },
+	},
+	Bow = {
+		Name = "Take a Bow",
+		Blend = 0.45,
+		Frames = { { frame = "BowDown", hold = 1.3 }, { frame = "BowUp", hold = 0.9 } },
+	},
 	Dab = { Name = "Dab", Blend = 0.14, Frames = { { frame = "DabWind", hold = 0.45 }, { frame = "Dab", hold = 1.8 } } },
 } :: { [string]: Pose }
 

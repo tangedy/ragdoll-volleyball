@@ -161,6 +161,9 @@ function DataService.load(c: any)
 			end
 			if not ok then
 				warn(("[Data] load attempt %d failed for %s: %s"):format(attempt, player.Name, tostring(err)))
+				if string.find(tostring(err), "API access is not enabled", 1, true) then
+					break -- Studio without API access: retrying can't help, play unsaved straight away
+				end
 			end
 			if lockedByOther and attempt == D.MaxRetries then
 				warn(("[Data] %s is still locked by another server; playing unsaved"):format(player.Name))
@@ -177,6 +180,7 @@ function DataService.load(c: any)
 	end
 	c.profileLoaded = true
 	pushProfile(c)
+	player:SetAttribute("ProfileReady", true) -- the loading screen waits for this
 end
 
 function DataService.save(c: any, release: boolean)

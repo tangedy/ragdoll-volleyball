@@ -211,7 +211,15 @@ function ArenaBuilder.build(): Folder
 	-- Glowing team rims with light curtains rising from them (decor only: never collide, never
 	-- queried). Back rims are split per floor segment so they drop with retracting strips; side rims
 	-- exist for every shrink level and only the current outer edge is shown (RimLevel).
-	local function rimPiece(name: string, center: Vector3, length: number, alongZ: boolean, color: Color3, height: number, brightness: number): Part
+	local function rimPiece(
+		name: string,
+		center: Vector3,
+		length: number,
+		alongZ: boolean,
+		color: Color3,
+		height: number,
+		brightness: number
+	): Part
 		local yaw = if alongZ then CFrame.Angles(0, math.rad(90), 0) else CFrame.identity
 		local rim = decor({
 			Name = name,
@@ -235,7 +243,8 @@ function ArenaBuilder.build(): Folder
 		sparks.Color = ColorSequence.new(color:Lerp(Color3.new(1, 1, 1), 0.4))
 		sparks.LightEmission = 1
 		sparks.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 0) })
-		sparks.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+		sparks.Transparency =
+			NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
 		sparks.Lifetime = NumberRange.new(1.2, 2)
 		sparks.Speed = NumberRange.new(2.5, 5)
 		sparks.Rate = math.max(1, length / 6)
@@ -374,7 +383,15 @@ function ArenaBuilder.build(): Folder
 	end
 
 	-- glowing center line
-	local center = rimPiece("CenterLine", Vector3.new(o.X, o.Y + 0.02, o.Z), A.CourtWidth, false, Color3.fromRGB(255, 255, 255), 3, 0.8)
+	local center = rimPiece(
+		"CenterLine",
+		Vector3.new(o.X, o.Y + 0.02, o.Z),
+		A.CourtWidth,
+		false,
+		Color3.fromRGB(255, 255, 255),
+		3,
+		0.8
+	)
 	center.Size = Vector3.new(A.CourtWidth, 0.06, 0.9)
 	center:AddTag("CourtRim")
 
@@ -424,10 +441,26 @@ function ArenaBuilder.build(): Folder
 			}, collidable)
 		end
 		-- neon trim around the jail floor (lower, dimmer curtains than the court)
-		local jailRimFar = rimPiece("JailRim_" .. team, Vector3.new(c.X, o.Y - 0.05, c.Z + enemySign * (J.StripDepth / 2)), A.CourtWidth, false, col, 3, 1.4)
+		local jailRimFar = rimPiece(
+			"JailRim_" .. team,
+			Vector3.new(c.X, o.Y - 0.05, c.Z + enemySign * (J.StripDepth / 2)),
+			A.CourtWidth,
+			false,
+			col,
+			3,
+			1.4
+		)
 		jailRimFar:AddTag("JailRim")
 		for _, xs in { -1, 1 } do
-			local r = rimPiece("JailRim_" .. team, Vector3.new(c.X + xs * hw, o.Y - 0.05, c.Z), J.StripDepth, true, col, 3, 1.4)
+			local r = rimPiece(
+				"JailRim_" .. team,
+				Vector3.new(c.X + xs * hw, o.Y - 0.05, c.Z),
+				J.StripDepth,
+				true,
+				col,
+				3,
+				1.4
+			)
 			r:AddTag("JailRim")
 		end
 		-- near side: blocks walkers and ragdolls both ways (nobody crosses between court and jail),

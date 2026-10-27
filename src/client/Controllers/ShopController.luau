@@ -4,10 +4,8 @@
 -- the hub (auto-queue is paused and restored on close) so the short intermission never yanks them out
 -- mid-purchase.
 --
--- Layout follows the Toybox Island design system: the shop is a sheet with segmented category tabs,
--- one horizontal shelf of item tiles (exactly one selected: it grows, wears the selection ring and
--- shows its name in a bubble) and a detail strip with the item's stickers and its actions. Hovering
--- or moving the gamepad selection along the shelf selects; the primary button acts. The daily reward
+-- Layout follows the Toybox Island design system: the shop is a sheet with segmented category tabs
+-- over a grid of item cards (name, tier color and sticker, preview, and an action on every card). The daily reward
 -- is louder on purpose: a sheet with a sky header band, a row of toy day cards (today's grows, glows
 -- and spins a sunburst behind its coin) and one shining primary button.
 
@@ -32,7 +30,7 @@ local new = Theme.new
 
 local ShopController = {}
 
-local SHOP_SIZE = Vector2.new(880, 556)
+local SHOP_SIZE = Vector2.new(880, 600)
 local DAILY_SIZE = Vector2.new(760, 438)
 local CARD = Vector2.new(92, 164) -- one day card
 local SETTINGS_SIZE = Vector2.new(520, 492)
@@ -46,8 +44,7 @@ local settings: any -- Theme.Sheet
 local shelf: ScrollingFrame
 local walletLabel: TextLabel
 local setTab: (string) -> ()
-local detail: { [string]: any } = {}
-local tiles: { { item: any, tile: any } } = {}
+local tiles: { { item: any, card: any } } = {}
 local selectedId: string? = nil
 local dailyTiles: { any } = {}
 local dailyDot: Frame
@@ -165,176 +162,22 @@ local function drawArt(item: Catalog.Item, art: Frame)
 end
 ShopController.drawArt = drawArt
 
--- Shop: detail strip ---------------------------------------------------------------------------------
+-- Shop: item cards -----------------------------------------------------------------------------------
+-- Every item is a card in a grid: art on a band tinted in its tier's fill (with the tier sticker),
+-- its name, a preview button where there's something to preview, and its own action button. Hover
+-- or gamepad selection picks a card for the keyboard (arrows move, Enter acts).
+
+local ITEM_CARD = Vector2.new(192, 196)
+local ART_H = 96
+local COLUMNS = 4
 
 local function selectedItem(): Catalog.Item?
 	return if selectedId then Catalog.get(selectedId) else nil
 end
 
-local function renderDetail()
-	local item = selectedItem()
-	if not item then
-		return
-	end
-	detail.name.Text = item.Name
-	for _, s in detail.stickers:GetChildren() do
-		if s:IsA("Frame") then
-			s:Destroy()
-		end
-	end
-	local owned, equipped = owns(item), isEquipped(item)
-	local coins = profile.coins or 0
-	local order = 0
-	local function sticker(text: string, tone: Color3)
-		order += 1
-		Theme.sticker(detail.stickers, text, tone, { LayoutOrder = order })
-	end
-	if item.Price > 0 then
-		sticker(Catalog.rarity(item), Theme.Rarity[Catalog.rarity(item)])
-	end
-	if equipped then
-		sticker("Equipped", T.leaf)
-	elseif owned then
-		sticker("Owned", T.sky)
-	end
-	detail.caption.Text = if equipped
-		then "You're using this one."
-		elseif owned then "It's yours. Equip it to use it in matches."
-		elseif coins >= item.Price then ("Costs %s coins. You have %s."):format(commas(item.Price), commas(coins))
-		else ("You need %s more coins."):format(commas(item.Price - coins))
-	local primary = detail.primary :: TextButton
-	if equipped then
-		Theme.setText(primary, "Equipped")
-		Theme.recolor(primary, "secondary")
-		Theme.setEnabled(primary, false)
-	elseif owned then
-		Theme.setText(primary, "Equip")
-		Theme.recolor(primary, "primary")
-		Theme.setEnabled(primary, true)
-	else
-		Theme.setText(primary, ("Buy for %s"):format(commas(item.Price)))
-		local afford = coins >= item.Price
-		Theme.recolor(primary, if afford then "primary" else "secondary")
-		Theme.setEnabled(primary, afford)
-	end
-	local secondary = detail.secondary :: TextButton
-	secondary.Visible = item.Category == "Pose" or item.Category == "Finisher"
-	Theme.setText(secondary, if item.Category == "Pose" then "Try it on" else "Preview")
-end
-
-local function scrollIntoView(button: GuiObject)
-	local left = button.AbsolutePosition.X - shelf.AbsolutePosition.X + shelf.CanvasPosition.X
-	local right = left + button.AbsoluteSize.X
-	local view = shelf.AbsoluteSize.X
-	local x = shelf.CanvasPosition.X
-	local margin = 24
-	if left - margin < x then
-		x = left - margin
-	elseif right + margin > x + view then
-		x = right + margin - view
-	end
-	x = math.max(0, x)
-	if math.abs(x - shelf.CanvasPosition.X) > 0.5 then
-		Theme.tween(shelf, Theme.Motion.Fast, { CanvasPosition = Vector2.new(x, 0) }, Enum.EasingStyle.Quint)
-	end
-end
-
-local function selectItem(id: string, quiet: boolean?)
-	if selectedId == id then
-		return
-	end
-	selectedId = id
-	for _, entry in tiles do
-		local on = entry.item.Id == id
-		entry.tile.setSelected(on)
-		if on then
-			scrollIntoView(entry.tile.button)
-		end
-	end
-	renderDetail()
-	local _ = quiet
-end
-
--- Shop: shelf --------------------------------------------------------------------------------------
-
-local function tileSize(): number
-	return if Theme.isCompact() then 112 else 144
-end
-
-local function renderShelf()
-	for _, child in shelf:GetChildren() do
-		if child:IsA("GuiButton") then
-			child:Destroy()
-		end
-	end
-	table.clear(tiles)
-	walletLabel.Text = commas(profile.coins or 0)
-	local items = Catalog.inCategory(currentTab)
-	local size = tileSize()
-	local keep = selectedId
-	selectedId = nil
-	local pick: string? = nil
-	for i, item in items do
-		local tile = Theme.tile(shelf, size, toneOf(item), item.Name, { LayoutOrder = i, Name = item.Id })
-		drawArt(item, tile.art)
-		if isEquipped(item) then
-			-- the equipped one carries a leaf check in its corner (the shelf otherwise shows art alone)
-			local check = new("Frame", {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.new(1, -8, 0, 8),
-				Size = UDim2.fromOffset(30, 30),
-				BackgroundColor3 = T.leaf,
-				ZIndex = tile.art.ZIndex + 3,
-			}, tile.art)
-			Theme.round(check)
-			Theme.stroke(check, T.outline, Theme.StrokeToy)
-			Theme.glyph(check, "check", T.onFill, {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.fromScale(0.6, 0.6),
-				ZIndex = check.ZIndex + 1,
-			})
-			pick = pick or item.Id
-		end
-		local id = item.Id
-		tile.button.MouseEnter:Connect(function()
-			selectItem(id)
-		end)
-		tile.button.SelectionGained:Connect(function()
-			selectItem(id)
-		end)
-		tile.button.Activated:Connect(function()
-			selectItem(id)
-			SoundController.play("UIClick")
-		end)
-		table.insert(tiles, { item = item, tile = tile })
-	end
-	-- keep the selection when re-rendering the same tab; otherwise start on the equipped item
-	local still = false
-	for _, e in tiles do
-		still = still or e.item.Id == keep
-	end
-	selectItem((if still then keep else pick) or (items[1] and items[1].Id) or "")
-	return items
-end
-
--- Move the shelf selection left/right (keyboard arrows).
-local function step(delta: number)
-	for i, e in tiles do
-		if e.item.Id == selectedId then
-			local nxt = tiles[math.clamp(i + delta, 1, #tiles)]
-			if nxt and nxt.item.Id ~= selectedId then
-				selectItem(nxt.item.Id)
-				Theme.setHome(nxt.tile.button)
-				SoundController.play("UIMove")
-			end
-			return
-		end
-	end
-end
-
-local function primaryAction()
-	local item = selectedItem()
+-- Buy, equip, or (short on coins) a nudge.
+local function primaryAction(item: Catalog.Item?)
+	item = item or selectedItem()
 	if not item or isEquipped(item) then
 		return
 	end
@@ -366,17 +209,204 @@ function ShopController.previewFinisher(item: any)
 	end)
 end
 
-local function secondaryAction()
-	local item = selectedItem()
-	if not item then
-		return
-	end
+local function previewAction(item: Catalog.Item)
 	if item.Category == "Pose" then
 		local IntroController = require(script.Parent.IntroController) :: any
 		IntroController.preview(item.Data.Pose)
 		ShopController.openShop(false)
 	elseif item.Category == "Finisher" then
 		ShopController.previewFinisher(item)
+	end
+end
+
+-- A card's action for the item's state: Equipped (leaf, inert), Equip (sky), Buy (sun), or the
+-- price, faded, while you can't afford it yet.
+local function renderAction(item: Catalog.Item, b: TextButton)
+	local coins = profile.coins or 0
+	if isEquipped(item) then
+		Theme.setText(b, "Equipped")
+		Theme.recolor(b, T.leaf)
+		Theme.setEnabled(b, true)
+		b.Interactable = false
+	elseif owns(item) then
+		Theme.setText(b, "Equip")
+		Theme.recolor(b, T.sky)
+		Theme.setEnabled(b, true)
+	elseif coins >= item.Price then
+		Theme.setText(b, ("Buy · %s"):format(commas(item.Price)))
+		Theme.recolor(b, T.sun)
+		Theme.setEnabled(b, true)
+	else
+		Theme.setText(b, ("%s coins"):format(commas(item.Price)))
+		Theme.recolor(b, "secondary")
+		Theme.setEnabled(b, false)
+	end
+end
+
+local function scrollIntoView(button: GuiObject)
+	local top = button.AbsolutePosition.Y - shelf.AbsolutePosition.Y + shelf.CanvasPosition.Y
+	local bottom = top + button.AbsoluteSize.Y
+	local view = shelf.AbsoluteSize.Y
+	local y = shelf.CanvasPosition.Y
+	local margin = 12
+	if top - margin < y then
+		y = top - margin
+	elseif bottom + margin > y + view then
+		y = bottom + margin - view
+	end
+	y = math.max(0, y)
+	if math.abs(y - shelf.CanvasPosition.Y) > 0.5 then
+		Theme.tween(shelf, Theme.Motion.Fast, { CanvasPosition = Vector2.new(0, y) }, Enum.EasingStyle.Quint)
+	end
+end
+
+local function selectItem(id: string)
+	if selectedId == id then
+		return
+	end
+	selectedId = id
+	for _, entry in tiles do
+		if entry.item.Id == id then
+			scrollIntoView(entry.card.button)
+		end
+	end
+end
+
+local function itemCard(item: Catalog.Item, order: number): { [string]: any }
+	local id = item.Id
+	local tone = toneOf(item)
+	local b = new("TextButton", {
+		Name = id,
+		LayoutOrder = order,
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		ZIndex = 5,
+	}, shelf)
+	local face = new("Frame", {
+		Name = "Face",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = T.surface,
+		ZIndex = 5,
+	}, b)
+	Theme.corner(face, Theme.Radius.M)
+	Theme.stroke(face, T.outline, Theme.StrokeToy)
+	-- the art band in the tier's fill (rounded on top only: a filler squares its bottom)
+	local band = tone
+	local art = new("Frame", {
+		Name = "Art",
+		Size = UDim2.new(1, 0, 0, ART_H),
+		BackgroundColor3 = band,
+		ZIndex = 6,
+	}, face)
+	Theme.corner(art, Theme.Radius.M)
+	new("Frame", {
+		Position = UDim2.new(0, 0, 1, -Theme.Radius.M),
+		Size = UDim2.new(1, 0, 0, Theme.Radius.M),
+		BackgroundColor3 = band,
+		BorderSizePixel = 0,
+		ZIndex = 6,
+	}, art)
+	new("Frame", {
+		Position = UDim2.fromScale(0, 1),
+		Size = UDim2.new(1, 0, 0, 2),
+		BackgroundColor3 = T.outline,
+		BorderSizePixel = 0,
+		ZIndex = 7,
+	}, art)
+	local canvas = new("Frame", {
+		Name = "Canvas",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = band,
+		BackgroundTransparency = 1,
+		ZIndex = 7,
+	}, art)
+	drawArt(item, canvas)
+	Theme.sticker(face, if item.Price > 0 then Catalog.rarity(item) else "Free", T.paper, {
+		Position = UDim2.fromOffset(8, 8),
+		ZIndex = 10,
+	})
+	if item.Category == "Finisher" or item.Category == "Pose" then
+		local preview = Theme.iconButton(face, "play", "secondary", 34, {
+			Name = "Preview",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -8, 0, 8),
+			ZIndex = 10,
+		})
+		preview.Activated:Connect(function()
+			selectItem(id)
+			previewAction(item)
+		end)
+	end
+	local name = Theme.label(face, {
+		Name = "Name",
+		Position = UDim2.fromOffset(10, ART_H + 8),
+		Size = UDim2.new(1, -20, 0, 26),
+		Text = item.Name,
+		ZIndex = 7,
+	}, 0)
+	new("UITextSizeConstraint", { MaxTextSize = 22 }, name)
+	local action = Theme.button(face, "", "primary", {
+		Name = "Action",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -10),
+		Size = UDim2.new(1, -20, 0, 44),
+		ZIndex = 8,
+	})
+	action.Activated:Connect(function()
+		selectItem(id)
+		primaryAction(item)
+	end)
+	renderAction(item, action)
+	Theme.selectable(b, face)
+	b.MouseEnter:Connect(function()
+		selectItem(id)
+	end)
+	b.SelectionGained:Connect(function()
+		selectItem(id)
+	end)
+	return { button = b, art = art, action = action }
+end
+
+local function renderShelf()
+	for _, child in shelf:GetChildren() do
+		if child:IsA("GuiButton") then
+			child:Destroy()
+		end
+	end
+	table.clear(tiles)
+	walletLabel.Text = commas(profile.coins or 0)
+	local items = Catalog.inCategory(currentTab)
+	local keep = selectedId
+	selectedId = nil
+	local pick: string? = nil
+	for i, item in items do
+		table.insert(tiles, { item = item, card = itemCard(item, i) })
+		if isEquipped(item) then
+			pick = pick or item.Id
+		end
+	end
+	-- keep the selection when re-rendering the same tab; otherwise start on the equipped item
+	local still = false
+	for _, e in tiles do
+		still = still or e.item.Id == keep
+	end
+	selectItem((if still then keep else pick) or (items[1] and items[1].Id) or "")
+	return items
+end
+
+-- Move the selection through the grid (arrows: left/right by one, up/down by a row).
+local function step(delta: number)
+	for i, e in tiles do
+		if e.item.Id == selectedId then
+			local nxt = tiles[math.clamp(i + delta, 1, #tiles)]
+			if nxt and nxt.item.Id ~= selectedId then
+				selectItem(nxt.item.Id)
+				Theme.setHome(nxt.card.button)
+				SoundController.play("UIMove")
+			end
+			return
+		end
 	end
 end
 
@@ -451,21 +481,36 @@ end
 local SHOP_KEYS = "RD_ShopKeys"
 local function bindShopKeys(on: boolean)
 	if on then
-		ContextActionService:BindActionAtPriority(SHOP_KEYS, function(_, state, input)
-			if state ~= Enum.UserInputState.Begin then
-				return Enum.ContextActionResult.Pass
-			end
-			if input.KeyCode == Enum.KeyCode.Left then
-				step(-1)
-			elseif input.KeyCode == Enum.KeyCode.Right then
-				step(1)
-			elseif input.KeyCode == Enum.KeyCode.Return then
-				primaryAction()
-			elseif input.KeyCode == Enum.KeyCode.ButtonB then
-				ShopController.openShop(false)
-			end
-			return Enum.ContextActionResult.Sink
-		end, false, 3000, Enum.KeyCode.Left, Enum.KeyCode.Right, Enum.KeyCode.Return, Enum.KeyCode.ButtonB)
+		ContextActionService:BindActionAtPriority(
+			SHOP_KEYS,
+			function(_, state, input)
+				if state ~= Enum.UserInputState.Begin then
+					return Enum.ContextActionResult.Pass
+				end
+				if input.KeyCode == Enum.KeyCode.Left then
+					step(-1)
+				elseif input.KeyCode == Enum.KeyCode.Right then
+					step(1)
+				elseif input.KeyCode == Enum.KeyCode.Up then
+					step(-COLUMNS)
+				elseif input.KeyCode == Enum.KeyCode.Down then
+					step(COLUMNS)
+				elseif input.KeyCode == Enum.KeyCode.Return then
+					primaryAction()
+				elseif input.KeyCode == Enum.KeyCode.ButtonB then
+					ShopController.openShop(false)
+				end
+				return Enum.ContextActionResult.Sink
+			end,
+			false,
+			3000,
+			Enum.KeyCode.Left,
+			Enum.KeyCode.Right,
+			Enum.KeyCode.Up,
+			Enum.KeyCode.Down,
+			Enum.KeyCode.Return,
+			Enum.KeyCode.ButtonB
+		)
 	else
 		ContextActionService:UnbindAction(SHOP_KEYS)
 	end
@@ -583,7 +628,7 @@ function ShopController.layout() end
 -- Build ----------------------------------------------------------------------------------------------
 
 local function buildShop()
-	shop = ShopController.sheet("Shop", "Shop", SHOP_SIZE, "Pick something to see it up close.", {
+	shop = ShopController.sheet("Shop", "Shop", SHOP_SIZE, nil, {
 		tone = T.sun,
 		glyph = "bag",
 	})
@@ -623,101 +668,41 @@ local function buildShop()
 		Theme.popIn((function()
 			local list = {}
 			for _, e in tiles do
-				table.insert(list, e.tile.art)
+				table.insert(list, e.card.button)
 			end
 			return list
 		end)())
 	end, { Size = UDim2.new(1, 0, 0, 48), ZIndex = 4 })
 	setTab = setter
-	-- the shelf: one row of tiles that scrolls sideways (room above for the title bubble)
+	-- the grid: four cards a row, scrolling down
 	shelf = new("ScrollingFrame", {
 		Name = "Shelf",
-		Position = UDim2.fromOffset(-8, 52),
-		Size = UDim2.new(1, 16, 0, 56 + 144 + 26),
+		Position = UDim2.fromOffset(-8, 56),
+		Size = UDim2.new(1, 16, 1, -56),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		ScrollBarThickness = 0,
-		ScrollingDirection = Enum.ScrollingDirection.X,
-		AutomaticCanvasSize = Enum.AutomaticSize.X,
+		ScrollBarThickness = 6,
+		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
+		ScrollBarImageColor3 = T.outline,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		CanvasSize = UDim2.new(),
 		ElasticBehavior = Enum.ElasticBehavior.Never,
 		ZIndex = 4,
 	}, body)
 	new("UIPadding", {
-		PaddingTop = UDim.new(0, 60),
-		PaddingLeft = UDim.new(0, 16),
-		PaddingRight = UDim.new(0, 16),
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 12),
+		PaddingLeft = UDim.new(0, 8),
+		PaddingRight = UDim.new(0, 8),
 	}, shelf)
-	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
-		Padding = UDim.new(0, Theme.Space.M),
+	new("UIGridLayout", {
+		CellSize = UDim2.fromOffset(ITEM_CARD.X, ITEM_CARD.Y),
+		CellPadding = UDim2.fromOffset(Theme.Space.L, Theme.Space.L),
+		FillDirectionMaxCells = COLUMNS,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		SortOrder = Enum.SortOrder.LayoutOrder,
-		VerticalAlignment = Enum.VerticalAlignment.Top,
 	}, shelf)
-	-- the detail strip: name, stickers and a caption on the left, the actions on the right
-	local strip = Theme.well(body, {
-		Name = "Detail",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.fromScale(0, 1),
-		Size = UDim2.new(1, 0, 0, 108),
-		ZIndex = 4,
-	}, Theme.Radius.L)
-	detail.name = Theme.label(strip, {
-		Position = UDim2.fromOffset(20, 14),
-		Size = UDim2.new(1, -400, 0, 32),
-		Text = "",
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 5,
-	}, 0)
-	detail.stickers = new("Frame", {
-		Name = "Stickers",
-		Position = UDim2.fromOffset(20, 50),
-		Size = UDim2.new(1, -400, 0, 20),
-		BackgroundTransparency = 1,
-		ZIndex = 5,
-	}, strip)
-	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
-		Padding = UDim.new(0, Theme.Space.S),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	}, detail.stickers)
-	detail.caption = Theme.body(strip, {
-		Position = UDim2.fromOffset(20, 76),
-		Size = UDim2.new(1, -400, 0, 18),
-		FontFace = Theme.TextFace,
-		Text = "",
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 5,
-	})
-	local actions = new("Frame", {
-		Name = "Actions",
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -20, 0.5, 0),
-		Size = UDim2.fromOffset(360, 56),
-		BackgroundTransparency = 1,
-		ZIndex = 5,
-	}, strip)
-	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Right,
-		VerticalAlignment = Enum.VerticalAlignment.Center,
-		Padding = UDim.new(0, Theme.Space.M),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	}, actions)
-	detail.secondary = Theme.button(actions, "Preview", "secondary", {
-		Name = "Secondary",
-		LayoutOrder = 1,
-		Size = UDim2.fromOffset(150, 56),
-		ZIndex = 6,
-	})
-	detail.secondary.Activated:Connect(secondaryAction)
-	detail.primary = Theme.button(actions, "Buy", "primary", {
-		Name = "Primary",
-		LayoutOrder = 2,
-		Size = UDim2.fromOffset(190, 56),
-		ZIndex = 6,
-	})
-	detail.primary.Activated:Connect(primaryAction)
 end
 
 -- One day card: a toy card in its fill with a darker "Day N" strip, the coin art over a sunburst,
@@ -1140,11 +1125,9 @@ function ShopController.start()
 		-- show the daily sheet once per session when there's something to claim (never auto-claims)
 		if not dailyAutoShown and d.daily and not d.daily.claimed and inHub() then
 			dailyAutoShown = true
-			task.delay(1.5, function()
-				if inHub() and not shop.frame.Visible then
-					ShopController.openDaily(true)
-				end
-			end)
+			if not shop.frame.Visible then
+				ShopController.openDaily(true)
+			end
 		end
 	end)
 	Net.on("ShopResult", function(d)
@@ -1152,16 +1135,14 @@ function ShopController.start()
 			HUDController.hint(tostring(d.message), 1.6)
 			SoundController.play("UIError")
 		elseif d.ok then
-			-- the bought/equipped tile pops in place; after a purchase the primary becomes "Equip"
+			-- the bought/equipped card pops in place; after a purchase its button becomes "Equip"
 			SoundController.play(if d.equip then "UIClick" else "Purchase")
 			task.defer(function()
 				for _, e in tiles do
 					if e.item.Id == d.id then
-						Theme.pop(e.tile.art, 1.25, Theme.Motion.Slow)
+						Theme.pop(e.card.art, 1.25, Theme.Motion.Slow)
+						Theme.pop(e.card.action, 0.85, Theme.Motion.Slow)
 					end
-				end
-				if not d.equip then
-					Theme.pop(detail.primary, 0.85, Theme.Motion.Slow)
 				end
 			end)
 		end

@@ -165,9 +165,12 @@ test("hit while charging cancels the throw and drops the ball", function()
 	assertTrue(target.action == "Charging", "target not charging")
 	giveBall(thrower)
 	S.CombatService.doThrow(thrower, aimAt(thrower, target, 0), 0)
-	assertTrue(waitUntil(function()
-		return target.action == "Ragdolled"
-	end, 1.5), "throw did not hit")
+	assertTrue(
+		waitUntil(function()
+			return target.action == "Ragdolled"
+		end, 1.5),
+		"throw did not hit"
+	)
 	assertTrue(target.heldBall == nil, "target still holds a ball")
 	assertTrue(held.holder == nil and held.state ~= "Held", "dropped ball still held")
 	assertTrue(target.chargeStart == nil, "charge not cleared")
@@ -199,9 +202,12 @@ test("catch window catches an incoming throw (catch before hit)", function()
 	-- open the catch just before arrival
 	S.PlayerStateService.setAction(catcher, "Catching")
 	catcher.catchUntil = now() + 1.0
-	assertTrue(waitUntil(function()
-		return catcher.heldBall ~= nil or catcher.action == "Ragdolled"
-	end, 1.5), "nothing happened")
+	assertTrue(
+		waitUntil(function()
+			return catcher.heldBall ~= nil or catcher.action == "Ragdolled"
+		end, 1.5),
+		"nothing happened"
+	)
 	assertTrue(catcher.heldBall ~= nil, "was hit instead of catching")
 	assertTrue(catcher.stats.catches + catcher.stats.botCatches == before + 1, "catch not counted")
 end)
@@ -263,9 +269,12 @@ test("possession timeout forces a drop at 12 s", function()
 	ready(bot, point("Blue", 0, 20))
 	local ball = giveBall(bot)
 	bot.heldSince = now() - (Config.Player.PossessionForceDrop + 0.1)
-	assertTrue(waitUntil(function()
-		return ball.holder ~= bot
-	end, 0.6), "ball not dropped")
+	assertTrue(
+		waitUntil(function()
+			return ball.holder ~= bot
+		end, 0.6),
+		"ball not dropped"
+	)
 	assertTrue(ball.holder == nil, "ball still has holder")
 	-- and no instant re-grab: the player can't pick anything up for a moment
 	task.wait(0.8)
@@ -308,13 +317,19 @@ test("void fall -> jail; jail hit -> return; revenge on own eliminator; cap -> s
 	capped.jailReturns = Config.Jail.MaxReturnsPerRound
 	jailee.character:PivotTo(CFrame.new(O + Vector3.new(-40, -40, -20)))
 	capped.character:PivotTo(CFrame.new(O + Vector3.new(40, -40, -20)))
-	assertTrue(waitUntil(function()
-		return jailee.status == "Jailed" and capped.status == "Spectating"
-	end, 1), ("statuses %s / %s"):format(jailee.status, capped.status))
+	assertTrue(
+		waitUntil(function()
+			return jailee.status == "Jailed" and capped.status == "Spectating"
+		end, 1),
+		("statuses %s / %s"):format(jailee.status, capped.status)
+	)
 	assertTrue(jailee.eliminatedBy == enemy, "knockout credit missing")
-	assertTrue(waitUntil(function()
-		return ArenaLayout.inJail("Red", jailee.root.Position)
-	end, Config.Jail.RespawnDelay + 1), "jailee not moved to jail")
+	assertTrue(
+		waitUntil(function()
+			return ArenaLayout.inJail("Red", jailee.root.Position)
+		end, Config.Jail.RespawnDelay + 1),
+		"jailee not moved to jail"
+	)
 	S.RagdollService.recover(jailee.character, jailee.root.Position)
 	S.PlayerStateService.setAction(jailee, "Idle")
 	enemy.immuneUntil = 0
@@ -322,13 +337,19 @@ test("void fall -> jail; jail hit -> return; revenge on own eliminator; cap -> s
 	local revengesBefore = jailee.stats.revenges
 	giveBall(jailee)
 	S.CombatService.doThrow(jailee, aimAt(jailee, enemy, 0.5), 0)
-	assertTrue(waitUntil(function()
-		return jailee.status == "Returning" or jailee.status == "Active"
-	end, 1.5), "jail hit did not register (status " .. jailee.status .. ")")
+	assertTrue(
+		waitUntil(function()
+			return jailee.status == "Returning" or jailee.status == "Active"
+		end, 1.5),
+		"jail hit did not register (status " .. jailee.status .. ")"
+	)
 	assertTrue(jailee.stats.revenges == revengesBefore + 1, "revenge not counted")
-	assertTrue(waitUntil(function()
-		return jailee.status == "Active"
-	end, Config.Jail.ReturnDelay + 0.8), "did not return to court")
+	assertTrue(
+		waitUntil(function()
+			return jailee.status == "Active"
+		end, Config.Jail.ReturnDelay + 0.8),
+		"did not return to court"
+	)
 	assertTrue(ArenaLayout.onHalf("Red", jailee.root.Position, 0, -2), "returned to wrong place")
 	assertTrue(jailee.immuneUntil > now(), "no return immunity")
 end)
@@ -343,7 +364,10 @@ test("jail wall: a prisoner cannot walk from the jail onto the court", function(
 	-- the red jail is behind the BLUE back line; try to walk onto the blue court
 	bot.humanoid:MoveTo(O + Vector3.new(0, 3, 30))
 	task.wait(2.5)
-	assertTrue(ArenaLayout.inJail("Red", bot.root.Position), ("prisoner left the jail (z=%.1f)"):format(bot.root.Position.Z - O.Z))
+	assertTrue(
+		ArenaLayout.inJail("Red", bot.root.Position),
+		("prisoner left the jail (z=%.1f)"):format(bot.root.Position.Z - O.Z)
+	)
 	S.PlayerStateService.setStatus(bot, "Active")
 	ready(bot, point("Red", 0, 20))
 end)
@@ -355,9 +379,12 @@ test("one-way edge: a flung body past the edge can't come back onto the court", 
 	bot.immuneUntil = 0
 	S.PlayerStateService.setAction(bot, "Ragdolled")
 	S.RagdollService.ragdoll(bot.character, Vector3.new(0, 28, 45)) -- out past the blue back line
-	assertTrue(waitUntil(function()
-		return bot.ejected == true or bot.status ~= "Active"
-	end, 1.5), "never marked ejected")
+	assertTrue(
+		waitUntil(function()
+			return bot.ejected == true or bot.status ~= "Active"
+		end, 1.5),
+		"never marked ejected"
+	)
 	-- shove it straight back at the court
 	for _, p in bot.character:GetDescendants() do
 		if p:IsA("BasePart") and not p.Anchored then
@@ -366,7 +393,9 @@ test("one-way edge: a flung body past the edge can't come back onto the court", 
 	end
 	task.wait(1.2)
 	local z = bot.root.Position.Z - O.Z
-	local backOnCourt = bot.status == "Active" and z < ArenaLayout.HalfLength and bot.root.Position.Y > ArenaLayout.SurfaceY - 2
+	local backOnCourt = bot.status == "Active"
+		and z < ArenaLayout.HalfLength
+		and bot.root.Position.Y > ArenaLayout.SurfaceY - 2
 	assertTrue(not backOnCourt, ("body bounced back onto the court (z=%.1f)"):format(z))
 	-- tidy up whatever state it ended in
 	S.PlayerStateService.setStatus(bot, "Active")
@@ -402,10 +431,16 @@ test("an elimination pays the eliminator 25 coins instantly", function()
 	victim.lastHitBy = me
 	victim.lastHitAt = now()
 	victim.character:PivotTo(CFrame.new(victim.root.Position - Vector3.new(0, 60, 0)))
-	assertTrue(waitUntil(function()
-		return victim.status ~= "Active"
-	end, 1), "victim not eliminated")
-	assertTrue(me.profile.Coins == before + Config.Coins.Elimination, ("coins %d -> %d"):format(before, me.profile.Coins))
+	assertTrue(
+		waitUntil(function()
+			return victim.status ~= "Active"
+		end, 1),
+		"victim not eliminated"
+	)
+	assertTrue(
+		me.profile.Coins == before + Config.Coins.Elimination,
+		("coins %d -> %d"):format(before, me.profile.Coins)
+	)
 	S.PlayerStateService.setStatus(victim, "Active")
 	ready(victim, point(enemyTeam, 0, 20))
 end)
@@ -430,7 +465,12 @@ test("intro poses: a free default, 3+ to unlock, every pose and frame defined", 
 	end
 	assertTrue(defaults == 1 and paid >= 3, ("%d default and %d paid poses"):format(defaults, paid))
 	-- equipping is server-checked like any cosmetic: owned or default only
-	local c: any = { profileLoaded = true, inMatch = false, status = "Lobby", profile = { Coins = 0, OwnedCosmetics = {}, Equipped = {}, Level = 1, CurrentWinStreak = 0 } }
+	local c: any = {
+		profileLoaded = true,
+		inMatch = false,
+		status = "Lobby",
+		profile = { Coins = 0, OwnedCosmetics = {}, Equipped = {}, Level = 1, CurrentWinStreak = 0 },
+	}
 	assertTrue(S.ShopService.introPose(c) == IntroPoses.Default, "default pose not used")
 	-- the intro pans Blue then Red for 2 s each, before the 3 s countdown
 	local I = Config.Intro
@@ -545,7 +585,10 @@ test("spawning into the hub faces the court", function()
 	local want = Vector3.new(ArenaLayout.CourtFocus.X - spot.X, 0, ArenaLayout.CourtFocus.Z - spot.Z).Unit
 	local dot = look:Dot(want)
 	ready(bot, point("Red", 0, 20))
-	assertTrue(dot > 0.98, ("hub spawn faces %.0f° away from the court"):format(math.deg(math.acos(math.clamp(dot, -1, 1)))))
+	assertTrue(
+		dot > 0.98,
+		("hub spawn faces %.0f° away from the court"):format(math.deg(math.acos(math.clamp(dot, -1, 1))))
+	)
 end)
 
 test("hub sits level with the court, beside it, across the void gap", function()
@@ -559,12 +602,18 @@ test("hub sits level with the court, beside it, across the void gap", function()
 		local rel = p - A.Origin
 		local dx = math.max(0, math.abs(rel.X) - ArenaLayout.HalfWidth)
 		local dz = math.max(0, math.abs(rel.Z) - courtHalfZ)
-		assertTrue(math.max(dx, dz) >= A.LobbyGap - 0.5, ("deck corner only %.1f from the court"):format(math.max(dx, dz)))
+		assertTrue(
+			math.max(dx, dz) >= A.LobbyGap - 0.5,
+			("deck corner only %.1f from the court"):format(math.max(dx, dz))
+		)
 	end
 	-- and it's next to the court: the court-side edge faces the middle of the court within the gap
 	local front = ArenaLayout.lobbyPoint(0, 0, hz)
 	local toCourt = (Vector3.new(A.Origin.X, front.Y, A.Origin.Z) - front).Magnitude
-	assertTrue(toCourt <= ArenaLayout.HalfWidth + A.LobbyGap + 1, ("hub is %.0f studs from the court centre"):format(toCourt))
+	assertTrue(
+		toCourt <= ArenaLayout.HalfWidth + A.LobbyGap + 1,
+		("hub is %.0f studs from the court centre"):format(toCourt)
+	)
 	-- a match ball over the hub is out; the ball net only stops practice balls
 	assertTrue(ArenaLayout.inLobby(ArenaLayout.CourtFocus) == false, "court centre counts as hub")
 end)
@@ -582,7 +631,10 @@ test("no constraint, ball or bot build-up", function()
 	local bots = #(Workspace:FindFirstChild("Bots") :: Folder):GetChildren()
 	assertTrue(bots <= Config.Bots.MaxPerServer + 1, ("%d bot models"):format(bots))
 	local balls = #(Workspace:FindFirstChild("Balls") :: Folder):GetChildren()
-	assertTrue(balls <= Config.Ball.BallsPerCourt + 2 * Config.PowerUps.MaxPowerBallsPerSide + 6, ("%d balls"):format(balls))
+	assertTrue(
+		balls <= Config.Ball.BallsPerCourt + 2 * Config.PowerUps.MaxPowerBallsPerSide + 6,
+		("%d balls"):format(balls)
+	)
 end)
 
 test("simultaneous final eliminations -> draw (ends the round)", function()
@@ -601,10 +653,16 @@ test("simultaneous final eliminations -> draw (ends the round)", function()
 	task.wait(0.2)
 	lastRed.character:PivotTo(CFrame.new(O + Vector3.new(0, -60, -20)))
 	lastBlue.character:PivotTo(CFrame.new(O + Vector3.new(0, -60, 20)))
-	assertTrue(waitUntil(function()
-		return ms:GetAttribute("State") == "RoundResolution"
-	end, 2), "round did not end")
-	assertTrue(ms:GetAttribute("RedWins") == redWins and ms:GetAttribute("BlueWins") == blueWins, "a team was awarded the round")
+	assertTrue(
+		waitUntil(function()
+			return ms:GetAttribute("State") == "RoundResolution"
+		end, 2),
+		"round did not end"
+	)
+	assertTrue(
+		ms:GetAttribute("RedWins") == redWins and ms:GetAttribute("BlueWins") == blueWins,
+		"a team was awarded the round"
+	)
 end)
 
 test("coins: highest win tier only; 50 for playing on the losing team", function()
@@ -666,20 +724,31 @@ test("daily spin: one free spin a day, paid spins cost coins and are capped, dup
 		profileLoaded = true,
 		inMatch = false,
 		status = "Lobby",
-		profile = { Coins = 0, OwnedCosmetics = {}, Equipped = {}, Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} } },
+		profile = {
+			Coins = 0,
+			OwnedCosmetics = {},
+			Equipped = {},
+			Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} },
+		},
 	}
 	local preview = S.SpinService.wheel(c)
 	assertTrue(#preview == SP.Slots, "wheel has the wrong number of slots")
 	local r1 = S.SpinService.spin(c, "Free")
 	assertTrue(r1 and r1.ok, "free spin refused")
-	assertTrue(r1.slots[r1.index] == r1.id and r1.id == preview[r1.index], "prize isn't the wheel slot the client was shown")
+	assertTrue(
+		r1.slots[r1.index] == r1.id and r1.id == preview[r1.index],
+		"prize isn't the wheel slot the client was shown"
+	)
 	assertTrue(c.profile.OwnedCosmetics[r1.id] == true, "prize not granted")
 	assertTrue(S.SpinService.spin(c, "Free") == nil, "second free spin the same day")
 	assertTrue(S.SpinService.spin(c, "Coins") == nil, "paid spin with no coins")
 	c.profile.Coins = SP.ExtraSpinCost * (SP.MaxPaidPerDay + 1)
 	local before = c.profile.Coins
 	assertTrue(S.SpinService.spin(c, "Coins") ~= nil, "paid spin refused")
-	assertTrue(c.profile.Coins <= before - SP.ExtraSpinCost + SP.DuplicateCoins.Legendary, "paid spin didn't cost coins")
+	assertTrue(
+		c.profile.Coins <= before - SP.ExtraSpinCost + SP.DuplicateCoins.Legendary,
+		"paid spin didn't cost coins"
+	)
 	for _ = 2, SP.MaxPaidPerDay do
 		S.SpinService.spin(c, "Coins")
 	end
@@ -703,7 +772,10 @@ test("daily spin: wheels follow the rarity weights", function()
 	local counts: { [string]: number } = { Common = 0, Rare = 0, Epic = 0, Legendary = 0 }
 	local total = 0
 	for i = 1, 400 do
-		local c: any = { id = 800000 + i, profile = { Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} } } }
+		local c: any = {
+			id = 800000 + i,
+			profile = { Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} } },
+		}
 		for _, id in S.SpinService.wheel(c) do
 			counts[Catalog.rarity(Catalog.get(id) :: any)] += 1
 			total += 1
@@ -714,7 +786,10 @@ test("daily spin: wheels follow the rarity weights", function()
 	for r, n in counts do
 		local want = W[r] / sum
 		local got = n / total
-		assertTrue(math.abs(got - want) < 0.04, ("%s is %.1f%% of slots, expected %.1f%%"):format(r, got * 100, want * 100))
+		assertTrue(
+			math.abs(got - want) < 0.04,
+			("%s is %.1f%% of slots, expected %.1f%%"):format(r, got * 100, want * 100)
+		)
 	end
 end)
 
@@ -726,9 +801,15 @@ test("save schema v5 migration keeps v4 data and adds the daily spin", function(
 		Equipped = { BallSkin = "Skin_Lime" },
 		Level = 7,
 	})
-	assertTrue(migrated.SchemaVersion == Config.Data.SchemaVersion and Config.Data.SchemaVersion >= 5, "schema not bumped")
+	assertTrue(
+		migrated.SchemaVersion == Config.Data.SchemaVersion and Config.Data.SchemaVersion >= 5,
+		"schema not bumped"
+	)
 	assertTrue(migrated.Coins == 1234 and migrated.Level == 7, "v4 data lost")
-	assertTrue(migrated.OwnedCosmetics.Skin_Lime == true and migrated.Equipped.BallSkin == "Skin_Lime", "cosmetics lost")
+	assertTrue(
+		migrated.OwnedCosmetics.Skin_Lime == true and migrated.Equipped.BallSkin == "Skin_Lime",
+		"cosmetics lost"
+	)
 	assertTrue(type(migrated.Spin) == "table" and migrated.Spin.freeUsed == false, "no spin state")
 	local v1 = S.DataService.migrate({ SchemaVersion = 1, Coins = 5 })
 	assertTrue(v1.Spin ~= nil and v1.LoginStreak ~= nil, "v1 profile not fully migrated")
@@ -737,18 +818,24 @@ end)
 test("sudden death: jail closes (no returns, no new prisoners)", function()
 	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
 	S.MatchService.debugForceSuddenDeath()
-	assertTrue(waitUntil(function()
-		return ms:GetAttribute("Overtime") == true
-	end, 1), "sudden death did not start")
+	assertTrue(
+		waitUntil(function()
+			return ms:GetAttribute("Overtime") == true
+		end, 1),
+		"sudden death did not start"
+	)
 	local red, blue = bots("Red"), bots("Blue")
 	local faller, enemy = red[1], blue[1]
 	ready(faller, point("Red", -10, 20))
 	ready(enemy, point("Blue", 0, 20))
 	task.wait(0.2)
 	faller.character:PivotTo(CFrame.new(O + Vector3.new(-40, -40, -20)))
-	assertTrue(waitUntil(function()
-		return faller.status ~= "Active"
-	end, 1), "faller not eliminated")
+	assertTrue(
+		waitUntil(function()
+			return faller.status ~= "Active"
+		end, 1),
+		"faller not eliminated"
+	)
 	assertTrue(faller.status == "Spectating", "eliminated in sudden death but went to " .. faller.status)
 	-- an existing prisoner landing a hit stays in jail
 	local prisoner = red[2] or red[1]
@@ -774,12 +861,18 @@ test("finisher plays on the match-ending knockout, then the match ends", functio
 			c.character:PivotTo(CFrame.new(c.root.Position - Vector3.new(0, 60, 0)))
 		end
 	end
-	assertTrue(waitUntil(function()
-		return ms:GetAttribute("State") == "Finisher"
-	end, 2), "no finisher phase")
-	assertTrue(waitUntil(function()
-		return ms:GetAttribute("State") == "Intermission" or ms:GetAttribute("MatchId") ~= matchId
-	end, 15), "match did not end after the finisher")
+	assertTrue(
+		waitUntil(function()
+			return ms:GetAttribute("State") == "Finisher"
+		end, 2),
+		"no finisher phase"
+	)
+	assertTrue(
+		waitUntil(function()
+			return ms:GetAttribute("State") == "Intermission" or ms:GetAttribute("MatchId") ~= matchId
+		end, 15),
+		"match did not end after the finisher"
+	)
 end)
 
 -- Knockback probe (tuning): real throws at a bot standing at several spots on its half, at min and
@@ -839,7 +932,8 @@ function TestService.knockbackProbe()
 					while os.clock() - t0 < 4 do
 						if target.root and target.root.Parent then
 							local p = target.root.Position
-							maxD = math.max(maxD, (Vector3.new(p.X, 0, p.Z) - Vector3.new(start.X, 0, start.Z)).Magnitude)
+							maxD =
+								math.max(maxD, (Vector3.new(p.X, 0, p.Z) - Vector3.new(start.X, 0, start.Z)).Magnitude)
 						end
 						if target.status ~= "Active" then
 							break
@@ -855,7 +949,16 @@ function TestService.knockbackProbe()
 				S.PlayerStateService.setStatus(target, "Active")
 				task.wait(0.2)
 			end
-			table.insert(lines, ("%-38s charge %3.0f%%: hits %d/3, void %d, avg travel %.1f studs"):format(spot.name, charge * 100, hits, ko, if hits > 0 then travel / hits else 0))
+			table.insert(
+				lines,
+				("%-38s charge %3.0f%%: hits %d/3, void %d, avg travel %.1f studs"):format(
+					spot.name,
+					charge * 100,
+					hits,
+					ko,
+					if hits > 0 then travel / hits else 0
+				)
+			)
 		end
 	end
 	S.BotService.setPaused(false)

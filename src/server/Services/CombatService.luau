@@ -212,9 +212,16 @@ function CombatService.resolveCatch(ball: any, catcher: any)
 	else
 		catcher.stats.catches += 1
 	end
-	send(catcher, "Banner", { text = "YOU CAUGHT IT!", color = Color3.fromRGB(120, 255, 140), duration = 1.2, sound = "Catch" })
+	send(
+		catcher,
+		"Banner",
+		{ text = "YOU CAUGHT IT!", color = Color3.fromRGB(120, 255, 140), duration = 1.2, sound = "Catch" }
+	)
 	S.NetService.broadcast("Feed", {
-		text = ("%s 🧤 caught %s's throw!"):format(S.MatchService.tag(catcher), if thrower then S.MatchService.tag(thrower) else "a"),
+		text = ("%s 🧤 caught %s's throw!"):format(
+			S.MatchService.tag(catcher),
+			if thrower then S.MatchService.tag(thrower) else "a"
+		),
 	})
 	S.NetService.broadcast("Impact", { kind = "Catch", position = catcher.root and catcher.root.Position })
 	S.AnalyticsService.event(catcher, "CatchSuccess")
@@ -245,7 +252,12 @@ local function uprightPoint(c: any): Vector3?
 		return pos
 	end
 	-- Recover on the court if the body is over this team's half and not clearly falling.
-	local over = ArenaLayout.onHalf(c.team, Vector3.new(pos.X, Config.Arena.Origin.Y, pos.Z), S.ArenaService.getOvertimeSteps(), -0.5)
+	local over = ArenaLayout.onHalf(
+		c.team,
+		Vector3.new(pos.X, Config.Arena.Origin.Y, pos.Z),
+		S.ArenaService.getOvertimeSteps(),
+		-0.5
+	)
 	if over and pos.Y > ArenaLayout.SurfaceY - 4 then
 		local hw = ArenaLayout.safeHalfWidth(S.ArenaService.getOvertimeSteps()) - 1.5
 		local sign = ArenaLayout.teamSign(c.team)
@@ -361,7 +373,17 @@ function CombatService.debugLaunch(c: any, charge: number)
 	S.PlayerStateService.setAction(c, "Ragdolled")
 	c.immuneUntil = now() + P.RagdollDuration + P.PostHitImmunity
 	S.RagdollService.ragdoll(c.character, kb)
-	S.NetService.broadcast("Impact", { kind = "Hit", ballType = "Standard", position = c.root.Position, direction = look, targetModel = c.character, target = c.player })
+	S.NetService.broadcast(
+		"Impact",
+		{
+			kind = "Hit",
+			ballType = "Standard",
+			position = c.root.Position,
+			direction = look,
+			targetModel = c.character,
+			target = c.player,
+		}
+	)
 	scheduleRecovery(c)
 end
 

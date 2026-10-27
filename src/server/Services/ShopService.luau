@@ -151,7 +151,9 @@ function ShopService.introPose(c: any): string
 end
 
 function ShopService.finisherModule(c: any): string
-	local item = if c and c.profile then Catalog.equipped(c.profile.Equipped, "Finisher") else Catalog.default("Finisher")
+	local item = if c and c.profile
+		then Catalog.equipped(c.profile.Equipped, "Finisher")
+		else Catalog.default("Finisher")
 	return item.Data.Module or Config.Finisher.DefaultId
 end
 

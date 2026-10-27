@@ -67,13 +67,9 @@ function RewardService.xp(c: any, ctx: MatchContext): number
 			xp += X.Win
 		end
 	end
-	xp += s.hits * X.Hit
-		+ math.floor(s.botHits * X.Hit * botRate)
-		+ s.catches * X.Catch
-		+ math.floor(s.botCatches * X.Catch * botRate)
-		+ s.knockouts * X.Knockout
-		+ math.floor(s.botKnockouts * X.Knockout * botRate)
-		+ s.revenges * X.Revenge
+	xp += s.hits * X.Hit + math.floor(s.botHits * X.Hit * botRate) + s.catches * X.Catch + math.floor(
+		s.botCatches * X.Catch * botRate
+	) + s.knockouts * X.Knockout + math.floor(s.botKnockouts * X.Knockout * botRate) + s.revenges * X.Revenge
 	return math.min(xp, Config.Progression.MaxXPPerMatch)
 end
 
@@ -81,9 +77,17 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 	-- "STREAK ENDED!": a losing real player on a 5+ streak in a non-casual match.
 	if ctx.winner and not ctx.casual then
 		for _, c in roster do
-			if c.player and c.profile and c.team ~= ctx.winner and c.profile.CurrentWinStreak >= Config.Rewards.StreakEndMin then
+			if
+				c.player
+				and c.profile
+				and c.team ~= ctx.winner
+				and c.profile.CurrentWinStreak >= Config.Rewards.StreakEndMin
+			then
 				S.NetService.broadcast("Feed", {
-					text = ("🔥 STREAK ENDED! %s's %d-win streak is over!"):format(S.MatchService.tag(c), c.profile.CurrentWinStreak),
+					text = ("🔥 STREAK ENDED! %s's %d-win streak is over!"):format(
+						S.MatchService.tag(c),
+						c.profile.CurrentWinStreak
+					),
 				})
 			end
 		end

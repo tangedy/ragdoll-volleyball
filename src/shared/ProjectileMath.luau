@@ -35,7 +35,12 @@ function ProjectileMath.velocityAt(velocity: Vector3, gravity: number, t: number
 end
 
 function ProjectileMath.isFiniteVector(v: Vector3): boolean
-	return v.X == v.X and v.Y == v.Y and v.Z == v.Z and math.abs(v.X) < 1e6 and math.abs(v.Y) < 1e6 and math.abs(v.Z) < 1e6
+	return v.X == v.X
+		and v.Y == v.Y
+		and v.Z == v.Z
+		and math.abs(v.X) < 1e6
+		and math.abs(v.Y) < 1e6
+		and math.abs(v.Z) < 1e6
 end
 
 -- Clamp an aim direction's pitch to the allowed bounds; returns a unit vector or nil if invalid.
@@ -74,7 +79,8 @@ function ProjectileMath.knockback(ballVelocity: Vector3, charge: number, ballTyp
 	local kb = Config.Knockback
 	local flat = Vector3.new(ballVelocity.X, 0, ballVelocity.Z)
 	local dir = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, 1)
-	local horizontal = (kb.HorizontalMin + (kb.HorizontalMax - kb.HorizontalMin) * charge) * def.HorizontalKnockbackScale
+	local horizontal = (kb.HorizontalMin + (kb.HorizontalMax - kb.HorizontalMin) * charge)
+		* def.HorizontalKnockbackScale
 	local up = kb.Upward * def.UpwardKnockbackScale
 	local v = dir * horizontal + Vector3.new(0, up, 0)
 	if v.Magnitude > kb.MaxSpeed then

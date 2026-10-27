@@ -188,7 +188,8 @@ function SpinService.spin(c: any, how: string): (any?, string?)
 		duplicate = duplicate,
 		coins = coins,
 		how = how,
-	}, nil
+	},
+		nil
 end
 
 -- Robux extra spin (only when Config.Spin.RobuxProductId is set). Receipts are remembered on the

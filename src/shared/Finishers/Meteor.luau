@@ -227,7 +227,11 @@ local function clouds(ctx: any, center: Vector3, radius: number, rng: Random)
 				Color = ColorSequence.new(CLOUD),
 				LightInfluence = 1,
 				Size = NumberSequence.new(size * 0.6, size * 0.9),
-				Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.3, 0.55), NumberSequenceKeypoint.new(1, 1) }),
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 1),
+					NumberSequenceKeypoint.new(0.3, 0.55),
+					NumberSequenceKeypoint.new(1, 1),
+				}),
 				Lifetime = NumberRange.new(2, 3),
 				Speed = NumberRange.new(0.5, 1.5),
 				Rate = 3,
@@ -241,7 +245,11 @@ end
 local function rays(ctx: any, from: Vector3, toward: Vector3, rng: Random)
 	local base = (toward - from).Unit
 	for _ = 1, (if ctx.reducedMotion then 3 else 7) do
-		local dir = (base + Vector3.new(rng:NextNumber(-0.45, 0.45), rng:NextNumber(-0.1, 0.25), rng:NextNumber(-0.45, 0.45))).Unit
+		local dir = (base + Vector3.new(
+			rng:NextNumber(-0.45, 0.45),
+			rng:NextNumber(-0.1, 0.25),
+			rng:NextNumber(-0.45, 0.45)
+		)).Unit
 		local len = rng:NextNumber(60, 110)
 		local ray = part({
 			Shape = Enum.PartType.Cylinder,

@@ -113,7 +113,15 @@ local function makeBat(ctx: any, rng: Random, from: Vector3, to: Vector3, launch
 	for _ = 1, 2 do
 		table.insert(wings, part({ Size = Vector3.new(0.95, 0.05, 0.42), Color = dark }, ctx.folder))
 	end
-	local eye = part({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.12, Color = Color3.fromRGB(255, 40, 40), Material = Enum.Material.Neon }, ctx.folder)
+	local eye = part(
+		{
+			Shape = Enum.PartType.Ball,
+			Size = Vector3.one * 0.12,
+			Color = Color3.fromRGB(255, 40, 40),
+			Material = Enum.Material.Neon,
+		},
+		ctx.folder
+	)
 	table.insert(wings, eye) -- moved with the body below
 	return {
 		body = body,
@@ -132,7 +140,12 @@ local function moveBat(b: Bat, t: number)
 	-- arc slightly upward on the way, then hover-flutter at the perch
 	local pos = b.from:Lerp(b.to, e) + Vector3.new(0, math.sin(u * math.pi) * 2, 0)
 	if u >= 1 then
-		pos = b.to + Vector3.new(math.cos(t * 3 + b.phase) * 0.8, math.sin(t * 5 + b.phase) * 0.5, math.sin(t * 3 + b.phase) * 0.8)
+		pos = b.to
+			+ Vector3.new(
+				math.cos(t * 3 + b.phase) * 0.8,
+				math.sin(t * 5 + b.phase) * 0.5,
+				math.sin(t * 3 + b.phase) * 0.8
+			)
 	end
 	local dir = (b.to - b.from).Unit
 	local cf = CFrame.lookAt(pos, pos + dir)
@@ -144,7 +157,10 @@ local function moveBat(b: Bat, t: number)
 			w.CFrame = cf * CFrame.new(0, 0.08, -0.2) -- eyes, facing the way it flies
 		else
 			local sgn = if i == 1 then 1 else -1
-			w.CFrame = cf * CFrame.new(0.15 * sgn, 0, 0) * CFrame.Angles(0, 0, flap * sgn) * CFrame.new(0.47 * sgn, 0, 0)
+			w.CFrame = cf
+				* CFrame.new(0.15 * sgn, 0, 0)
+				* CFrame.Angles(0, 0, flap * sgn)
+				* CFrame.new(0.47 * sgn, 0, 0)
 		end
 		w.Transparency = b.body.Transparency
 	end
@@ -152,7 +168,10 @@ end
 
 -- Undead arm: ragged sleeve, rotting forearm, clawed hand. Returns a rig based at the elbow end.
 local function makeArm(ctx: any, rng: Random): Rig
-	local sleeve = part({ Size = Vector3.new(1.15, 1.4, 1.15), Color = Color3.fromRGB(70, 55, 85), Material = Enum.Material.Fabric }, ctx.folder)
+	local sleeve = part(
+		{ Size = Vector3.new(1.15, 1.4, 1.15), Color = Color3.fromRGB(70, 55, 85), Material = Enum.Material.Fabric },
+		ctx.folder
+	)
 	local rig: Rig = { base = sleeve, parts = {} }
 	local forearm = part({ Size = Vector3.new(0.8, 2.3, 0.8), Color = ZOMBIE }, ctx.folder)
 	rigAdd(rig, forearm, CFrame.new(0, 1.7, 0))
@@ -161,12 +180,18 @@ local function makeArm(ctx: any, rng: Random): Rig
 		local patch = part({ Size = Vector3.new(0.3, 0.45, 0.06), Color = Color3.fromRGB(70, 90, 55) }, ctx.folder)
 		rigAdd(rig, patch, CFrame.new(rng:NextNumber(-0.2, 0.2), 1.2 + i * 0.5, -0.42))
 	end
-	local hand = part({ Size = Vector3.new(1.05, 0.75, 0.5), Color = ZOMBIE:Lerp(Color3.new(1, 1, 1), 0.08) }, ctx.folder)
+	local hand =
+		part({ Size = Vector3.new(1.05, 0.75, 0.5), Color = ZOMBIE:Lerp(Color3.new(1, 1, 1), 0.08) }, ctx.folder)
 	rigAdd(rig, hand, CFrame.new(0, 3.2, 0))
 	-- clawed fingers and a thumb, curled toward the grab
 	for i = -1.5, 1.5 do
 		local finger = part({ Size = Vector3.new(0.2, 0.85, 0.2), Color = ZOMBIE }, ctx.folder)
-		rigAdd(rig, finger, CFrame.new(i * 0.24, 3.85, -0.12) * CFrame.Angles(math.rad(-38 + rng:NextNumber(-12, 12)), 0, math.rad(i * 8)))
+		rigAdd(
+			rig,
+			finger,
+			CFrame.new(i * 0.24, 3.85, -0.12)
+				* CFrame.Angles(math.rad(-38 + rng:NextNumber(-12, 12)), 0, math.rad(i * 8))
+		)
 		local claw = part({ Size = Vector3.new(0.14, 0.25, 0.14), Color = Color3.fromRGB(40, 35, 30) }, ctx.folder)
 		rigAdd(rig, claw, CFrame.new(i * 0.24, 4.25, -0.42) * CFrame.Angles(math.rad(-70), 0, 0))
 	end
@@ -184,7 +209,9 @@ local function mound(ctx: any, at: Vector3)
 		Color = DIRT,
 		Material = Enum.Material.Ground,
 	}, ctx.folder)
-	game:GetService("TweenService"):Create(m, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Size = Vector3.new(0.5, 3.2, 3.2) }):Play()
+	game:GetService("TweenService")
+		:Create(m, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Size = Vector3.new(0.5, 3.2, 3.2) })
+		:Play()
 end
 
 -- Local forward kinematics for the puppet: place every limb from the root through its joints.
@@ -195,13 +222,25 @@ local function puppetJoints(model: Model): { Joint }
 	for _, d in model:GetDescendants() do
 		if d:IsA("AnimationConstraint") and d.Attachment0 and d.Attachment1 then
 			local a0, a1 = d.Attachment0 :: Attachment, d.Attachment1 :: Attachment
-			table.insert(joints, { name = d.Name, p0 = a0.Parent :: BasePart, p1 = a1.Parent :: BasePart, f0 = a0.CFrame, f1 = a1.CFrame })
+			table.insert(
+				joints,
+				{ name = d.Name, p0 = a0.Parent :: BasePart, p1 = a1.Parent :: BasePart, f0 = a0.CFrame, f1 = a1.CFrame }
+			)
 		elseif d:IsA("JointInstance") and d.Part0 and d.Part1 then
 			-- Motor6D limbs (classic rigs) and Welds (accessories) both carry C0/C1
 			table.insert(joints, { name = d.Name, p0 = d.Part0, p1 = d.Part1, f0 = d.C0, f1 = d.C1 })
 		elseif d:IsA("WeldConstraint") and d.Part0 and d.Part1 then
 			-- team band / hit proxy: keep their current offset
-			table.insert(joints, { name = d.Name, p0 = d.Part0, p1 = d.Part1, f0 = d.Part0.CFrame:ToObjectSpace(d.Part1.CFrame), f1 = CFrame.identity })
+			table.insert(
+				joints,
+				{
+					name = d.Name,
+					p0 = d.Part0,
+					p1 = d.Part1,
+					f0 = d.Part0.CFrame:ToObjectSpace(d.Part1.CFrame),
+					f1 = CFrame.identity,
+				}
+			)
 		end
 	end
 	return joints
@@ -288,7 +327,8 @@ return {
 					local r = math.min(1, (t - REVEAL) / 0.22)
 					roll = math.rad(35) * (1 - (1 - r) ^ 3)
 				end
-				cam.CFrame = CFrame.lookAt(camPos, lookAt + Vector3.new(0, if t >= REVEAL then 0.3 else 0, 0)) * CFrame.Angles(0, 0, roll)
+				cam.CFrame = CFrame.lookAt(camPos, lookAt + Vector3.new(0, if t >= REVEAL then 0.3 else 0, 0))
+					* CFrame.Angles(0, 0, roll)
 
 				-- choreography
 				if stage == 0 and t >= 0.55 then
@@ -366,7 +406,14 @@ return {
 		end)
 		-- creeping ground fog
 		for i = 1, (if ctx.reducedMotion then 2 else 5) do
-			local anchor = part({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(G + o * (i * 4 - 4) + s * rng:NextNumber(-4, 4)) }, ctx.folder)
+			local anchor = part(
+				{
+					Size = Vector3.one * 0.2,
+					Transparency = 1,
+					CFrame = CFrame.new(G + o * (i * 4 - 4) + s * rng:NextNumber(-4, 4)),
+				},
+				ctx.folder
+			)
 			local a = Instance.new("Attachment")
 			a.Parent = anchor
 			local fog = Instance.new("ParticleEmitter")
@@ -374,7 +421,11 @@ return {
 			fog.Color = ColorSequence.new(Color3.fromRGB(120, 160, 130))
 			fog.LightInfluence = 0.5
 			fog.Size = NumberSequence.new(6, 10)
-			fog.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.4, 0.75), NumberSequenceKeypoint.new(1, 1) })
+			fog.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 1),
+				NumberSequenceKeypoint.new(0.4, 0.75),
+				NumberSequenceKeypoint.new(1, 1),
+			})
 			fog.Lifetime = NumberRange.new(2, 3)
 			fog.Speed = NumberRange.new(0.5, 1.2)
 			fog.Rate = 6
@@ -398,14 +449,13 @@ return {
 		end
 		-- undead arms: two grabbers at the feet, the rest clawing out to the sides and behind (never
 		-- between the camera and the victim)
-		local clawSpots = { Vector2.new(0.3, 3.3), Vector2.new(0.3, -3.3), Vector2.new(2.6, 2.3), Vector2.new(2.6, -2.3) }
+		local clawSpots =
+			{ Vector2.new(0.3, 3.3), Vector2.new(0.3, -3.3), Vector2.new(2.6, 2.3), Vector2.new(2.6, -2.3) }
 		local arms: { { rig: Rig, at: Vector3, grab: boolean, phase: number } } = {}
 		for i = 1, 6 do
 			local grab = i <= 2
 			local spot = clawSpots[i - 2]
-			local at = if grab
-				then G + o * 0.9 + s * (if i == 1 then 0.45 else -0.45)
-				else G + o * spot.X + s * spot.Y
+			local at = if grab then G + o * 0.9 + s * (if i == 1 then 0.45 else -0.45) else G + o * spot.X + s * spot.Y
 			table.insert(arms, { rig = makeArm(ctx, rng), at = at, grab = grab, phase = rng:NextNumber(0, 6) })
 		end
 		ctx.sound("UndeadRise", G)
@@ -480,7 +530,8 @@ return {
 					local sgn = if side == "Right" then 1 else -1
 					local sh, el = byName[side .. "Shoulder"], byName[side .. "Elbow"]
 					if sh then
-						tf[sh.name] = axisRot(sh, X, fl * (150 + 25 * math.sin(t * 13 + sgn))) * axisRot(sh, Z, fl * sgn * (25 + 25 * math.sin(t * 9 + sgn * 2)))
+						tf[sh.name] = axisRot(sh, X, fl * (150 + 25 * math.sin(t * 13 + sgn)))
+							* axisRot(sh, Z, fl * sgn * (25 + 25 * math.sin(t * 9 + sgn * 2)))
 					end
 					if el then
 						tf[el.name] = axisRot(el, X, fl * (35 + 35 * math.sin(t * 15 + sgn * 1.5)))
@@ -488,7 +539,8 @@ return {
 				end
 				local neck = byName["Neck"]
 				if neck then
-					tf[neck.name] = axisRot(neck, X, fl * 35 * math.sin(t * 11)) * axisRot(neck, Z, fl * 30 * math.sin(t * 7.5))
+					tf[neck.name] = axisRot(neck, X, fl * 35 * math.sin(t * 11))
+						* axisRot(neck, Z, fl * 30 * math.sin(t * 7.5))
 				end
 				local waist = byName["Waist"]
 				if waist then
@@ -512,7 +564,11 @@ return {
 					tilt = CFrame.Angles(math.rad(38), 0, 0)
 				else
 					base = arm.at + Vector3.new(0, -3.2 + 2.4 * rise ^ 0.5, 0)
-					tilt = CFrame.Angles(math.rad(12 * math.sin(t * 6 + arm.phase)), 0, math.rad(10 * math.sin(t * 4 + arm.phase)))
+					tilt = CFrame.Angles(
+						math.rad(12 * math.sin(t * 6 + arm.phase)),
+						0,
+						math.rad(10 * math.sin(t * 4 + arm.phase))
+					)
 					if t > 1.6 then
 						-- the clawing arms sink back down once the victim is gone
 						base -= Vector3.new(0, 4 * math.clamp((t - 1.6) / 0.6, 0, 1), 0)
