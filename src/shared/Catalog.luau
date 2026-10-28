@@ -16,6 +16,10 @@ export type Item = {
 	Price: number, -- coins; 0 = free / owned by default
 	RobuxProductId: number, -- placeholder until products exist (Amendment A5)
 	Default: boolean?,
+	-- an event cosmetic (e.g. "Halloween"): sold only while that event is on, never on the spin or
+	-- chest wheels, and kept forever once owned. Limited items show a LIMITED tag.
+	Event: string?,
+	Limited: boolean?,
 	Data: { [string]: any },
 }
 
@@ -305,6 +309,21 @@ function Catalog.rarity(item: Item): Rarity
 		end
 	end
 	return "Common"
+end
+
+-- Which events are running right now (the server sets an attribute per event on ReplicatedStorage;
+-- only "Halloween" exists so far).
+function Catalog.activeEvents(): { [string]: boolean }
+	local rs = game:GetService("ReplicatedStorage")
+	return { Halloween = rs:GetAttribute("Halloween") == true }
+end
+
+-- Is this item on sale right now? Event items only while their event runs.
+function Catalog.isOffered(item: Item, events: { [string]: boolean }?): boolean
+	if not item.Event then
+		return true
+	end
+	return (events or Catalog.activeEvents())[item.Event] == true
 end
 
 -- The equipped item for a category from a profile's Equipped map, falling back to the default.

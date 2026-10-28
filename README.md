@@ -41,6 +41,7 @@ Optional place settings:
   - F8 toggles the debug overlay (leak counters and hit-outcome tuning data).
   - F9 runs the scenario test suite. Results print to Output and go to `workspace.RD_TestResults`. You can also start it from the server command bar with `workspace:SetAttribute("RD_RunTests", true)`.
   - F10 launches your own character with a full-charge hit, to feel the knockback.
+  - H toggles the Halloween event (also works for the game's owner on a live server, for that server only). From the server command bar: `workspace:SetAttribute("RD_Halloween", true)`. `Config.Halloween.Enabled` is what every server starts with.
 - **Knockback escalates:** each hit you take launches you harder than the last (`Config.Knockback.Escalation`). Hits thrown from jail don't raise it. It resets each round and when you return from jail.
 - **Hub (between matches, 7 s):** the SHOP and DAILY buttons, or the kiosks, open the coins shop and locker and the daily reward. Keeping the shop open holds you in the hub.
 - **Loot chests:** three chests stand around the hub plaza. Walk up and press the prompt to see the chest's wheel; opening one costs 1,000 coins and wins any cosmetic (`Config.Chest`). Press G in Studio for dev coins.

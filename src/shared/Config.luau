@@ -446,6 +446,68 @@ Config.Visuals = {
 	BallOutline = Color3.fromRGB(28, 20, 14),
 }
 
+-- Halloween event. `Enabled` is the switch servers start with; the live state is the "Halloween"
+-- attribute on ReplicatedStorage (HalloweenService), which the dev toggle flips at runtime: H in
+-- Studio or for the game's owner, or workspace:SetAttribute("RD_Halloween", true/false) from the
+-- server command bar. While it's on: dusk lighting, props from the asset pack around the hub, the
+-- music, the Halloween UI palette, jack-o-lantern balls, and the Halloween cosmetics in the shop.
+Config.Halloween = {
+	Enabled = false,
+	-- looping background music (free DistroKid tracks from the Creator Store), played in turn
+	Music = { "rbxassetid://111631783838916", "rbxassetid://115585877205328" },
+	MusicVolume = { Hub = 0.32, Match = 0.16 }, -- quieter while you're playing
+	-- Halloween lighting (ArenaBuilder.setupLighting restores the normal day)
+	Lighting = {
+		ClockTime = 17.95, -- the sun just setting: an orange horizon and stars, with the court still easy to read
+		Brightness = 2.4,
+		Ambient = Color3.fromRGB(146, 118, 168),
+		OutdoorAmbient = Color3.fromRGB(160, 128, 178),
+		Atmosphere = {
+			Density = 0.32,
+			Offset = 0.1,
+			Color = Color3.fromRGB(196, 140, 200),
+			Decay = Color3.fromRGB(120, 50, 80),
+			Glare = 0.4,
+			Haze = 1.4,
+		},
+		Bloom = { Intensity = 1, Size = 26, Threshold = 0.95 },
+		Color = { Saturation = 0.18, Contrast = 0.1, Brightness = 0.02, Tint = Color3.fromRGB(255, 232, 214) },
+		VoidGlow = Color3.fromRGB(255, 120, 40), -- the glow far below the court turns pumpkin orange
+	},
+	-- Props from ServerStorage.HalloweenAssets ("Folder/Model"), placed on the hub deck (deck frame:
+	-- X = right, F = toward the court, Yaw 0 = facing the court). A spot that would overlap anything
+	-- already on the deck is skipped, so the hub's own layout always wins.
+	Props = {
+		{ Asset = "Structures/SkullArch", X = 0, F = 18, Yaw = 0, Scale = 1 },
+		{ Asset = "Props/PumpkinStack", X = -8, F = -24, Yaw = 20, Scale = 1 },
+		{ Asset = "Props/PumpkinStack", X = 27, F = -24, Yaw = -25, Scale = 1 },
+		{ Asset = "Lighting/JackSignPostLantern", X = -24, F = 10, Yaw = 30, Scale = 1 },
+		{ Asset = "Lighting/BannerLanternPost", X = 24, F = 10, Yaw = -30, Scale = 1 },
+		{ Asset = "Lighting/BigLantern", X = -36, F = -30, Yaw = 0, Scale = 1 },
+		{ Asset = "Lighting/BigLantern", X = 36, F = -30, Yaw = 0, Scale = 1 },
+		{ Asset = "Props/PurpleCauldron", X = -28, F = -12, Yaw = 0, Scale = 1 },
+		{ Asset = "Props/PurpleScarecrow", X = 47, F = 22, Yaw = -60, Scale = 1 },
+		{ Asset = "Props/LanternCrateStack", X = -48, F = -36, Yaw = 40, Scale = 1 },
+		{ Asset = "Graveyard/FencedGrave", X = 46, F = -36, Yaw = -30, Scale = 1 },
+		{ Asset = "Graveyard/LeaningCoffin", X = 30, F = -38, Yaw = 10, Scale = 1 },
+		{ Asset = "Structures/CandleFence", X = -16, F = 26, Yaw = 0, Scale = 1 },
+		{ Asset = "Structures/CandleFence", X = 16, F = 26, Yaw = 0, Scale = 1 },
+		{ Asset = "Structures/PotionStall", X = -45, F = 24, Yaw = 60, Scale = 1 },
+		{ Asset = "Structures/LanternWell", X = 40, F = 2, Yaw = 0, Scale = 1 },
+		{ Asset = "Nature/HauntedLanternTree", X = -52, F = 34, Yaw = 0, Scale = 1 },
+		{ Asset = "Nature/CrystalTree", X = 52, F = 34, Yaw = 0, Scale = 1 },
+		{ Asset = "Creatures/BlackCat", X = -6, F = 8, Yaw = 150, Scale = 1 },
+	},
+	-- jack-o-lantern Standard balls (client-side look; the ball's physics never change)
+	Ball = {
+		Body = Color3.fromRGB(255, 122, 26),
+		Rib = Color3.fromRGB(214, 90, 14),
+		Stem = Color3.fromRGB(86, 120, 44),
+		Carve = Color3.fromRGB(255, 214, 90), -- the glowing carved face
+		Scale = 1.2, -- body size relative to the ball (its height is squashed to 88%), so the sphere stays hidden inside
+	},
+}
+
 Config.Camera = {
 	MaxShake = 0.6,
 	ShakeDecay = 6,

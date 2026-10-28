@@ -108,6 +108,11 @@ end
 
 function MatchService.start()
 	S.NetService.on(NetSchema.Actions.Dev, function(player, p)
+		-- the Halloween switch has its own permission (Studio, or the game's owner on a live server)
+		if p.cmd == "ToggleHalloween" then
+			S.HalloweenService.devToggle(player)
+			return
+		end
 		if Config.Debug.DevKeysInStudioOnly and not RunService:IsStudio() then
 			S.NetService.reject(player, "dev-outside-studio")
 			return

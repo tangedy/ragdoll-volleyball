@@ -42,7 +42,8 @@ function SpinService.pool(): { [string]: { Catalog.Item } }
 	end
 	local p: { [string]: { Catalog.Item } } = { Common = {}, Rare = {}, Epic = {}, Legendary = {} }
 	for _, item in Catalog.Items do
-		if not item.Default and item.Price > 0 then
+		-- event cosmetics are never on the wheels (they're only sold during their event)
+		if not item.Default and item.Price > 0 and not item.Event then
 			table.insert(p[Catalog.rarity(item)], item)
 		end
 	end

@@ -12,6 +12,7 @@ local ORDER = {
 	"GraphicsController",
 	"SoundController",
 	"BallVisualController",
+	"HalloweenController",
 	"AimController",
 	"LockController",
 	"OutlineController",
@@ -65,6 +66,18 @@ if RunService:IsStudio() then
 			C.Net.request(C.Net.Actions.Dev, { cmd = "GiveCoins" })
 		elseif input.KeyCode == Enum.KeyCode.T then
 			C.Net.request(C.Net.Actions.Dev, { cmd = "SkipToFinisher" })
+		end
+	end)
+end
+
+-- H toggles Halloween: in Studio, or for the game's owner on a live server (HalloweenService.canToggle
+-- decides; for a group-owned game the client can't tell, so it asks and the server says no).
+local Players = game:GetService("Players")
+local me = Players.LocalPlayer
+if RunService:IsStudio() or game.CreatorType == Enum.CreatorType.Group or me.UserId == game.CreatorId then
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if not processed and input.KeyCode == Enum.KeyCode.H then
+			C.Net.request(C.Net.Actions.Dev, { cmd = "ToggleHalloween" })
 		end
 	end)
 end

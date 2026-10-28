@@ -114,6 +114,18 @@ From the Nintendo UX audio study: a few short, dry sounds that each mean one thi
 - Finishers get `ctx.toEdge(pos, dir)` (distance to the back edge on whichever court they play on) and `ctx.courtOrigin`. Dodgeball Rush uses it to put the cart just past the edge.
 - `Config.Visuals.FinisherNeonExempt` lists the finishers spared the extra finisher-neon dimming: Purple Flash, and Pumpkin, whose carved face must glow.
 
+## Halloween event (`Config.Halloween`)
+- **Switch:** `Config.Halloween.Enabled` is the starting state. The live state is the `Halloween` attribute on ReplicatedStorage.
+- **Dev toggles:** H (Studio, or the game's owner live), or `workspace:SetAttribute("RD_Halloween", bool)` from the server command bar.
+- **Server (`HalloweenService`):**
+  - Dusk lighting; `ArenaBuilder.setupLighting()` restores the day, and the void glow turns orange.
+  - Props from `ServerStorage.HalloweenAssets`, which syncs from `assets/HalloweenAssetPack.rbxm` (no scripts inside). They're placed on the hub deck at `Config.Halloween.Props`, and a spot that overlaps anything already there is skipped: today the cauldron and the lantern well.
+- **Client (`HalloweenController`):**
+  - The UI palette swap: `Theme.HalloweenToybox`, every Day token remapped, including later recolours.
+  - The music (two DistroKid tracks), quieter in matches.
+  - Jack-o-lanterns: carved pumpkins welded onto every Standard ball, match, visual and practice. Look only; power-up balls keep their colours.
+- **Event cosmetics:** give a catalog item `Event = "Halloween"` (and `Limited = true`). It's sold and shown only during the event (kept once owned), never on the spin or chest wheels, and bots don't use it.
+
 ## Gotchas worth knowing
 - `SoundController` preloads every cue's audio and only starts a layer's `stopAfter` once it's really playing. UI layers are cut to 60–80 ms, so timing them from `Play()` used to let a slow load swallow them.
 - `Theme.autoScale`, `Theme.pop` and `Theme.popIn` share one `UIScale` per element. Its `Base` attribute is the resting scale (the today card uses Base 1.08).

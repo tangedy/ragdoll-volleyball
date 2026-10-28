@@ -82,6 +82,9 @@ function ShopService.buy(c: any, id: string): (boolean, string?)
 	if item.Price <= 0 then
 		return false, "Not for sale"
 	end
+	if not Catalog.isOffered(item) then
+		return false, ("Only during %s"):format(item.Event or "its event")
+	end
 	if c.profile.Coins < item.Price then
 		return false, ("Need %d more coins"):format(item.Price - c.profile.Coins)
 	end
@@ -193,6 +196,9 @@ end
 function ShopService.pickBotFinisher(): Catalog.Item
 	local byTier: { [string]: { Catalog.Item } } = {}
 	for _, item in Catalog.inCategory("Finisher") do
+		if item.Event then
+			continue -- bots don't show off event limiteds
+		end
 		local tier = Catalog.rarity(item)
 		byTier[tier] = byTier[tier] or {}
 		table.insert(byTier[tier], item)

@@ -85,6 +85,7 @@ local function makePart(ballType: string, at: Vector3): Part
 	local def = BallDefinitions.get(ballType)
 	local p = Instance.new("Part")
 	p.Name = "BallVisual"
+	p:SetAttribute("BallType", ballType) -- read by HalloweenController (jack-o-lantern Standard balls)
 	p.Shape = Enum.PartType.Ball
 	p.Size = Vector3.one * ProjectileMath.radius(ballType) * 2
 	p.Color = def.Color

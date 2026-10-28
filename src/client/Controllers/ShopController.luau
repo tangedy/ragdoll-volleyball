@@ -377,7 +377,14 @@ local function renderShelf()
 	end
 	table.clear(tiles)
 	walletLabel.Text = commas(profile.coins or 0)
-	local items = Catalog.inCategory(currentTab)
+	-- event cosmetics show while their event runs (and forever once owned)
+	local items = {}
+	local events = Catalog.activeEvents()
+	for _, item in Catalog.inCategory(currentTab) do
+		if Catalog.isOffered(item, events) or owns(item) then
+			table.insert(items, item)
+		end
+	end
 	local keep = selectedId
 	selectedId = nil
 	local pick: string? = nil
@@ -1175,6 +1182,12 @@ function ShopController.init()
 end
 
 function ShopController.start()
+	-- an event starting or ending changes what's on the shelf
+	ReplicatedStorage:GetAttributeChangedSignal("Halloween"):Connect(function()
+		if shop.frame.Visible then
+			renderShelf()
+		end
+	end)
 	Net.on("Profile", function(d)
 		local justClaimed = claimPending and d.daily and d.daily.claimed
 		profile = d

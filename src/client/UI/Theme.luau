@@ -68,6 +68,34 @@ local T = {
 }
 Theme.Toybox = T
 
+-- The Halloween palette (HalloweenController swaps the UI onto it while the event runs). Same roles
+-- and the same contrast as Day: light parchment surfaces, deep purple ink and outline, and the fills
+-- turned pumpkin, slime, lavender, witch magenta, candy corn and violet. Roles that share a Day
+-- color share a Halloween one (ink = outline = onFill, surface = paper), so the swap is one-to-one.
+Theme.HalloweenToybox = {
+	ground = Color3.fromHex("#f7e6d0"),
+	surface = Color3.fromHex("#fff0dc"),
+	surfaceSunk = Color3.fromHex("#f0d6b6"),
+	ink = Color3.fromHex("#2e1a3a"),
+	inkMuted = Color3.fromHex("#6e4f7e"),
+	line = Color3.fromHex("#e8c9a4"),
+	outline = Color3.fromHex("#2e1a3a"),
+	onFill = Color3.fromHex("#2e1a3a"),
+	leaf = Color3.fromHex("#8fdc5a"),
+	sun = Color3.fromHex("#ff9a2e"),
+	sky = Color3.fromHex("#b49cff"),
+	candy = Color3.fromHex("#e07cff"),
+	peach = Color3.fromHex("#ffc06b"),
+	joyBlue = Color3.fromHex("#8b5cf6"),
+	joyRed = Color3.fromHex("#e8343b"),
+	select = Color3.fromHex("#ff7a00"),
+	success = Color3.fromHex("#3f7d2a"),
+	danger = Color3.fromHex("#c62f22"),
+	shadowToy = Color3.fromHex("#c6997a"),
+	paper = Color3.fromHex("#fff0dc"),
+	dim = Color3.fromHex("#170a20"),
+}
+
 Theme.Colors = {
 	-- Toybox roles
 	Ground = T.ground,
