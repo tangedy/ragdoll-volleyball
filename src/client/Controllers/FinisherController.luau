@@ -118,11 +118,15 @@ local function attachFollowers(copy: Model)
 		if a and b then
 			-- the free end is whichever side isn't a posed body part
 			local part, to = if driven[a] then b else a, if driven[a] then a else b
-			if not driven[part] and not seen[part] and part:IsDescendantOf(copy) then
-				seen[part] = true
-				table.insert(follow, { part = part, to = to, offset = to.CFrame:ToObjectSpace(part.CFrame) });
+			if not driven[part] and part:IsDescendantOf(copy) then
+				if not seen[part] then
+					seen[part] = true
+					table.insert(follow, { part = part, to = to, offset = to.CFrame:ToObjectSpace(part.CFrame) })
+					part.Anchored = true
+				end
+				-- every joint on a pinned part goes off, not just the first: one left on would drag
+				-- the limb it holds to wherever the anchored part sits
 				(d :: any).Enabled = false
-				part.Anchored = true
 			end
 		end
 	end

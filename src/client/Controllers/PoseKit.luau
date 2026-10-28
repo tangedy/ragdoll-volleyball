@@ -70,6 +70,18 @@ local POSES: { [string]: PoseDef } = {
 		neck = -8,
 	},
 	LookUp = { Right = REST_R, Left = REST_L, neck = 12 },
+	-- left (gauntlet) hand raised in front of the face, fingers ready to snap (Destiny Arrives)
+	SnapReady = {
+		Right = REST_R,
+		Left = { upper = Vector3.new(-0.45, -0.1, -0.88), fore = Vector3.new(0.1, 0.95, -0.3) },
+		neck = 4,
+	},
+	-- the snap: the hand flicks forward and down a touch
+	Snap = {
+		Right = REST_R,
+		Left = { upper = Vector3.new(-0.45, -0.05, -0.89), fore = Vector3.new(0.05, 0.75, -0.65) },
+		neck = 0,
+	},
 }
 
 type JointInfo = { inst: Instance, f0: CFrame, f1: CFrame }
@@ -178,6 +190,10 @@ end
 for name, frame in IntroPoses.Frames do
 	POSES[name] = frame :: any
 end
+
+-- The joint Transforms a pose (or intro pose frame) solves to on `model`, without holding it. Used to
+-- pose a rig that isn't simulated (the shop's pose portraits).
+PoseKit.solve = solvePose
 
 function PoseKit.has(poseName: string): boolean
 	return POSES[poseName] ~= nil

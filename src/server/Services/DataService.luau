@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Progression = require(Shared.Progression)
+local Catalog = require(Shared.Catalog)
 
 local DataService = {}
 
@@ -40,6 +41,8 @@ export type Profile = {
 	ChestOpens: number,
 	-- schema v7: Robux receipts already granted (PurchaseService), newest last
 	Receipts: { string },
+	-- schema v8: shop items this player has already seen (a shop tab says NEW! until they look)
+	ShopSeen: { [string]: boolean },
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -63,6 +66,7 @@ local function default(): Profile
 		Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} },
 		ChestOpens = 0,
 		Receipts = {},
+		ShopSeen = {}, -- a brand-new player finds every tab NEW!
 		Lock = nil,
 	}
 end
@@ -108,6 +112,16 @@ function DataService.migrate(old: any): Profile
 	if version < 7 or type(data.Receipts) ~= "table" then
 		-- v7: Robux receipts move to one list for every product
 		data.Receipts = {}
+	end
+	if version < 8 or type(data.ShopSeen) ~= "table" then
+		-- v8: returning players have effectively seen today's catalog; only items added from now on
+		-- (and event items, when their event runs) show as NEW!
+		data.ShopSeen = {}
+		for _, item in Catalog.Items do
+			if not item.Event then
+				data.ShopSeen[item.Id] = true
+			end
+		end
 	end
 	data.SchemaVersion = D.SchemaVersion
 	return data
@@ -172,6 +186,7 @@ local function pushProfile(c: any)
 		streak = p.CurrentWinStreak,
 		persistent = c.persistent,
 		tutorialStep = p.TutorialStep,
+		seen = p.ShopSeen,
 	})
 	S.PlayerStateService.setAttr(c, "Level", p.Level)
 	S.PlayerStateService.setAttr(c, "Streak", p.CurrentWinStreak)

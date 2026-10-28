@@ -24,6 +24,8 @@ local AimController = require(script.Parent.AimController)
 local SoundController = require(script.Parent.SoundController)
 local GraphicsController = require(script.Parent.GraphicsController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
+local PoseKit = require(script.Parent.PoseKit)
+local IntroPoses = require(Shared.IntroPoses)
 
 local player = Players.LocalPlayer
 local T = Theme.Toybox
@@ -64,6 +66,71 @@ local function owns(item: Catalog.Item): boolean
 	return item.Default == true or (profile.owned and profile.owned[item.Id] == true)
 end
 
+-- NEW! tags on the category tabs: a tab is new while it has something on sale this player has never
+-- seen (and doesn't own). Opening the tab marks it seen; the server saves that (ShopSeen), so the tag
+-- only comes back when an item is added to that category (or an event brings its items back).
+local tabTags: { [string]: GuiObject } = {}
+local seenHere: { [string]: boolean } = {} -- marked this session, before the server's next Profile
+local function isNew(item: Catalog.Item, events: { [string]: boolean }): boolean
+	if owns(item) or seenHere[item.Id] or (profile.seen and profile.seen[item.Id]) then
+		return false
+	end
+	return Catalog.isOffered(item, events)
+end
+
+local function refreshTabTags()
+	local events = Catalog.activeEvents()
+	for cat, tag in tabTags do
+		local any = false
+		for _, item in Catalog.inCategory(cat) do
+			if isNew(item, events) then
+				any = true
+				break
+			end
+		end
+		tag.Visible = any
+	end
+end
+
+local function markSeen(cat: string)
+	local events = Catalog.activeEvents()
+	local changed = false
+	for _, item in Catalog.inCategory(cat) do
+		if isNew(item, events) then
+			seenHere[item.Id] = true
+			changed = true
+		end
+	end
+	if changed then
+		Net.request(Net.Actions.MarkSeen, { category = cat })
+		refreshTabTags()
+	end
+end
+
+-- A little red NEW! sticker sitting on the top edge of a tab.
+local function newTag(tab: GuiObject): Frame
+	local tag = Theme.new("Frame", {
+		Name = "NewTag",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0, -1),
+		Size = UDim2.fromOffset(48, 20),
+		Rotation = -6,
+		BackgroundColor3 = Theme.Colors.JoyRed,
+		Visible = false,
+		ZIndex = tab.ZIndex + 6,
+	}, tab)
+	Theme.round(tag)
+	Theme.stroke(tag, Theme.Colors.Outline, 2)
+	Theme.text(tag, 12, {
+		Size = UDim2.fromScale(1, 1),
+		FontFace = Theme.DisplayFace,
+		Text = "NEW!",
+		TextColor3 = Theme.Colors.Paper,
+		ZIndex = tag.ZIndex + 1,
+	})
+	return tag
+end
+
 local function isEquipped(item: Catalog.Item): boolean
 	return Catalog.equipped(profile.equipped, item.Category).Id == item.Id
 end
@@ -85,6 +152,121 @@ local function toneOf(item: Catalog.Item): Color3
 end
 
 -- The art inside a tile: a ball, a trail stripe, the title text, or the item's icon.
+-- Pose portraits: the practice dummy standing in a pose, drawn live in a ViewportFrame (like a
+-- screenshot, but nothing to upload). A ViewportFrame doesn't simulate, so the posed rig is built by
+-- hand: every body part is placed from the root outward through its joints, with the pose's joint
+-- rotations from PoseKit. It shows the pose's signature frame (the one held longest).
+local function posedDummy(poseId: string): Model?
+	local template = ReplicatedStorage:FindFirstChild(Config.Practice.TemplateName)
+	if not template or not template:IsA("Model") then
+		return nil
+	end
+	local wasArchivable = template.Archivable
+	template.Archivable = true
+	local rig = template:Clone()
+	template.Archivable = wasArchivable
+	for _, d in rig:GetDescendants() do
+		local hitbox = d:IsA("BasePart") and (d.Name == "HitBox" or d.Name == "HitProxy")
+		if hitbox or d:IsA("LuaSourceContainer") or d:IsA("BillboardGui") or d:IsA("ProximityPrompt") then
+			d:Destroy()
+		end
+	end
+	local pose = IntroPoses.get(poseId)
+	local frame, longest = pose.Frames[#pose.Frames].frame, -1
+	for _, step in pose.Frames do
+		if step.hold >= longest then
+			frame, longest = step.frame, step.hold
+		end
+	end
+	local transforms = PoseKit.solve(rig, frame)
+	-- the joint graph: part0 -> part1 through f0 * Transform * f1:Inverse()
+	type Link = { p0: BasePart, p1: BasePart, f0: CFrame, f1: CFrame, t: CFrame }
+	local links: { Link } = {}
+	for _, d in rig:GetDescendants() do
+		if d:IsA("AnimationConstraint") and d.Attachment0 and d.Attachment1 then
+			local a0, a1 = d.Attachment0 :: Attachment, d.Attachment1 :: Attachment
+			local p0, p1 = a0.Parent, a1.Parent
+			if p0 and p1 and p0:IsA("BasePart") and p1:IsA("BasePart") then
+				table.insert(
+					links,
+					{ p0 = p0, p1 = p1, f0 = a0.CFrame, f1 = a1.CFrame, t = transforms[d] or CFrame.identity }
+				)
+			end
+		elseif d:IsA("JointInstance") and d.Part0 and d.Part1 then
+			table.insert(
+				links,
+				{ p0 = d.Part0, p1 = d.Part1, f0 = d.C0, f1 = d.C1, t = transforms[d] or CFrame.identity }
+			)
+		elseif d:IsA("WeldConstraint") and d.Part0 and d.Part1 then
+			local rel = d.Part0.CFrame:ToObjectSpace(d.Part1.CFrame)
+			table.insert(links, { p0 = d.Part0, p1 = d.Part1, f0 = rel, f1 = CFrame.identity, t = CFrame.identity })
+		end
+	end
+	local root = rig:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not root then
+		rig:Destroy()
+		return nil
+	end
+	local placed: { [BasePart]: CFrame } = { [root] = CFrame.identity }
+	local grew = true
+	while grew do
+		grew = false
+		for _, l in links do
+			if placed[l.p0] and not placed[l.p1] then
+				placed[l.p1] = placed[l.p0] * l.f0 * l.t * l.f1:Inverse()
+				grew = true
+			elseif placed[l.p1] and not placed[l.p0] then
+				placed[l.p0] = placed[l.p1] * l.f1 * l.t:Inverse() * l.f0:Inverse()
+				grew = true
+			end
+		end
+	end
+	for _, d in rig:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			if placed[d] then
+				d.CFrame = placed[d]
+			end
+			if d.Name == "HumanoidRootPart" then
+				d.Transparency = 1
+			end
+		elseif d:IsA("Constraint") or d:IsA("JointInstance") or d:IsA("WeldConstraint") then
+			d:Destroy() -- nothing to solve in a viewport; the parts are placed
+		end
+	end
+	local h = rig:FindFirstChildOfClass("Humanoid")
+	if h then
+		h.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	end
+	return rig
+end
+
+local function posePortrait(art: Frame, poseId: string, z: number): boolean
+	local rig = posedDummy(poseId)
+	if not rig then
+		return false
+	end
+	local vp = Theme.new("ViewportFrame", {
+		Name = "Portrait",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Ambient = Color3.fromRGB(180, 176, 190),
+		LightColor = Color3.new(1, 1, 1),
+		LightDirection = Vector3.new(-0.5, -1, 0.6),
+		ZIndex = z,
+	}, art)
+	rig.Parent = vp
+	local cf, size = rig:GetBoundingBox()
+	local cam = Instance.new("Camera")
+	cam.FieldOfView = 30
+	-- in front of the dummy (it faces -Z), a little to its right and above, so the pose reads in 3D
+	local dist = (size.Y / 2 + 0.4) / math.tan(math.rad(cam.FieldOfView / 2))
+	cam.CFrame = CFrame.lookAt(cf.Position + Vector3.new(0.3, 0.12, -1).Unit * dist, cf.Position)
+	cam.Parent = vp
+	vp.CurrentCamera = cam
+	return true
+end
+
 local function drawArt(item: Catalog.Item, art: Frame)
 	local d = item.Data
 	local z = art.ZIndex + 1
@@ -141,6 +323,8 @@ local function drawArt(item: Catalog.Item, art: Frame)
 				ZIndex = z,
 			})
 		end
+	elseif item.Category == "Pose" and type(d.Pose) == "string" and posePortrait(art, d.Pose, z) then
+		art:SetAttribute("Portrait", true) -- the dummy, posed (the icon below is the fallback)
 	elseif item.Category == "Title" then
 		Theme.label(art, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -369,6 +553,15 @@ local function itemCard(item: Catalog.Item, order: number): { [string]: any }
 	b.MouseEnter:Connect(function()
 		selectItem(id)
 	end)
+	-- a finisher card plays its preview wherever you click it (the buy button sits on top and keeps
+	-- its own click)
+	if item.Category == "Finisher" then
+		b.Activated:Connect(function()
+			selectItem(id)
+			SoundController.play("UIClick")
+			previewAction(item)
+		end)
+	end
 	b.SelectionGained:Connect(function()
 		selectItem(id)
 	end)
@@ -549,6 +742,7 @@ function ShopController.openShop(on: boolean)
 		ShopController.openDaily(false)
 		ShopController.openSettings(false)
 		Theme.show(f, backdrop)
+		markSeen(currentTab) -- opening the shop on a tab counts as looking at it
 		renderShelf()
 		bindShopKeys(true)
 	else
@@ -751,8 +945,9 @@ local function buildShop()
 	for _, cat in Catalog.Categories do
 		table.insert(items, { key = cat, label = Catalog.CategoryNames[cat] or cat })
 	end
-	local _, setter = Theme.segmented(body, items, currentTab, function(cat)
+	local tabsTrack, setter = Theme.segmented(body, items, currentTab, function(cat)
 		currentTab = cat
+		markSeen(cat)
 		renderShelf()
 		Theme.popIn((function()
 			local list = {}
@@ -763,6 +958,12 @@ local function buildShop()
 		end)())
 	end, { Size = UDim2.new(1, 0, 0, 48), ZIndex = 4 })
 	setTab = setter
+	for _, cat in Catalog.Categories do
+		local tab = tabsTrack:FindFirstChild(cat) :: GuiObject?
+		if tab then
+			tabTags[cat] = newTag(tab)
+		end
+	end
 	-- the grid: four cards a row, scrolling down
 	shelf = new("ScrollingFrame", {
 		Name = "Shelf",
@@ -1202,13 +1403,16 @@ end
 function ShopController.start()
 	-- an event starting or ending changes what's on the shelf
 	ReplicatedStorage:GetAttributeChangedSignal("Halloween"):Connect(function()
+		refreshTabTags()
 		if shop.frame.Visible then
+			markSeen(currentTab)
 			renderShelf()
 		end
 	end)
 	Net.on("Profile", function(d)
 		local justClaimed = claimPending and d.daily and d.daily.claimed
 		profile = d
+		refreshTabTags()
 		if justClaimed then
 			claimPending = false
 			renderDaily()

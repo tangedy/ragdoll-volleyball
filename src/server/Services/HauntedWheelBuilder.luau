@@ -1,12 +1,14 @@
 --!strict
--- The Haunted Wheel (Halloween): a showpiece booth, on show in the dev room (DevRoomService) for
--- now. A black-and-orange wheel (glowing slices, bone dividers, a thorny rim
--- studded with candle bulbs) turns slowly in front of a harvest-moon halo on a gothic wall with bat
--- wings, under a jack-o-lantern hub that stays upright. A heap of carved pumpkins, candles and a
--- skull sit in front between two fire braziers, and black and orange mist rolls off all of it.
+-- The Haunted Wheel (Halloween): a showpiece booth that stands in for the spin station's booth
+-- while Halloween is on (HalloweenService), and is on show in the dev room (DevRoomService). A
+-- black-and-orange wheel (glowing slices, bone dividers, a thorny rim studded with candle bulbs)
+-- turns slowly in front of a harvest-moon halo on a gothic wall with bat wings, under a
+-- jack-o-lantern hub that stays upright. A heap of carved pumpkins, candles and a skull sit in front
+-- between two fire braziers, and black and orange mist rolls off all of it.
 --
--- It only looks the part: no prompt, no prizes. The wheel turns through the same "HubWheel" tag as
--- the prize wheel (HubController, at its SpinRate), and the "HubFlicker" lights flicker like flames.
+-- It only looks the part: the spin station keeps its own prompt, and the booth has none. The wheel
+-- turns through the same "HubWheel" tag as the prize wheel (HubController, at its SpinRate), and
+-- the "HubFlicker" lights flicker like flames.
 -- Booth frame: x = right, y = up from the deck, -z = toward the court (LobbyBuilder.at).
 
 local LobbyBuilder = require(script.Parent.LobbyBuilder)

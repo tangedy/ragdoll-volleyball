@@ -326,35 +326,103 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "glassbreak.wav", volume = 0.45, pitch = 0.7, delay = 0.03 },
 		{ id = S .. "impact_water.mp3", volume = 0.4, pitch = 0.6, delay = 0.05, stopAfter = 1.2 },
 	},
-	-- Pumpkin Reaper finisher
-	SpookyToss = {
-		{ id = S .. "swordlunge.wav", volume = 0.5, pitch = 0.8, jitter = 0.05 },
+	-- Pumpkin Reaper finisher (horror cues from APM's "Horror Tools" and Pro Sound Effects, both
+	-- free in the Creator Store)
+	-- crowning: a creepy string build while the pumpkin goes on (0.55 s), ending on the reveal (1.9 s).
+	-- To audition alternatives, open https://create.roblox.com/store/asset/<id> and swap the id:
+	--   1846042216 String Effects 7 (APM)  [current]
+	--   1846042187 String Effects 3 (APM)
+	--   1840490160 Terror Sequence (Y) (APM)
+	PumpkinDread = {
+		{
+			id = "rbxassetid://1846042216",
+			volume = 0.9,
+			pitch = 1,
+			stopAfter = 1.45,
+			gamma = { shape = 3, scale = 0.65, tail = 0.15 }, -- swells to its peak (1.3 s in) right on the reveal
+		},
 	},
-	PumpkinCatch = {
-		{ id = S .. "snap.wav", volume = 0.6, pitch = 0.6 },
-		{ id = S .. "bass.wav", volume = 0.5, pitch = 1.2, stopAfter = 0.25 },
+	-- the zoom into the face: a screeching string stab that swells, peaks, then dies away into the cut
+	PumpkinScream = {
+		{
+			id = "rbxassetid://9043353994", -- ONE SHOT-SCREAMER 04
+			volume = 1.0,
+			pitch = 1,
+			startAt = 1.2,
+			stopAfter = 1.7,
+			gamma = { shape = 2, scale = 0.6, tail = 0.35 },
+		},
+		{ id = "rbxassetid://9120432706", volume = 0.6, pitch = 1, startAt = 1.3, stopAfter = 1.0 }, -- violin scrape
 	},
-	PumpkinReveal = {
+	-- the drag: bats squeaking and flapping past (it used to be an explosion)
+	-- the cut to the victim: the ghost moan right away, then bats flapping and swooping past. The
+	-- wing-flap recording is about 5x quieter than the squeaks, hence its high volume.
+	BatsFlyBy = {
+		{ id = S .. "HalloweenGhost.wav", volume = 0.6, pitch = 1, reverb = true, stopAfter = 1.8 },
+		{ id = "rbxassetid://9113443901", volume = 3.0, pitch = 1.4, startAt = 0.4, stopAfter = 2.3 }, -- wing flaps
+		{ id = S .. "swordlunge.wav", volume = 1.0, pitch = 1.5, delay = 0.2 }, -- one swooping past
+		{ id = S .. "swordlunge.wav", volume = 0.9, pitch = 1.9, delay = 0.95 }, -- and another
+		{ id = "rbxassetid://9117003596", volume = 0.4, pitch = 1.7, delay = 0.1, stopAfter = 1.7 }, -- squeaks
+		{ id = "rbxassetid://9117003596", volume = 0.28, pitch = 2.15, delay = 0.6, stopAfter = 1.4 },
+	},
+	-- the drag itself: a low pull
+	Drag = {
+		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.3, reverb = true },
+	},
+	-- Destiny Arrives finisher (free Pro Sound Effects assets from the Creator Store, plus built-ins)
+	DestinyPortal = {
+		{ id = "rbxassetid://9120726501", volume = 1.0, pitch = 0.8, stopAfter = 2.2, reverb = true }, -- giant airy whomp
 		{
 			id = S .. "bass.wav",
-			volume = 1.0,
-			pitch = 0.4,
-			eq = { low = 10, mid = 0, high = -8 },
-			distortion = 0.5,
+			volume = 0.8,
+			pitch = 0.32,
+			eq = { low = 10, mid = -4, high = -10 },
+			reverb = true,
+			stopAfter = 1.6,
+		},
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 0.55, delay = 0.15, reverb = true },
+	},
+	DestinyStep = {
+		{
+			id = S .. "bass.wav",
+			volume = 0.8,
+			pitch = 0.75,
+			eq = { low = 8, mid = 0, high = -8 },
+			distortion = 0.2,
+			stopAfter = 0.35,
+		},
+		{ id = S .. "collide.wav", volume = 0.35, pitch = 0.5, jitter = 0.05 },
+	},
+	DestinySnap = {
+		{ id = "rbxassetid://9114428331", volume = 1.6, pitch = 1, stopAfter = 0.4 }, -- a clean finger snap
+		{
+			id = S .. "bass.wav",
+			volume = 0.9,
+			pitch = 0.45,
+			delay = 0.04,
+			eq = { low = 10, mid = -2, high = -8 },
 			reverb = true,
 			stopAfter = 1.2,
 		},
-		{ id = S .. "HalloweenGhost.wav", volume = 0.7, pitch = 1.0, reverb = true, stopAfter = 2.2 },
-		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 0.4, delay = 0.05, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 2.5, delay = 0.05, reverb = true },
 	},
-	UndeadRise = {
-		{ id = S .. "collide.wav", volume = 0.8, pitch = 0.5, distortion = 0.3 },
-		{ id = S .. "bass.wav", volume = 0.8, pitch = 0.55, eq = { low = 10, mid = 0, high = -6 }, stopAfter = 0.7 },
-		{ id = S .. "impact_water.mp3", volume = 0.35, pitch = 0.45, delay = 0.05, stopAfter = 0.8 },
-	},
-	Drag = {
-		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.3, reverb = true },
-		{ id = S .. "HalloweenGhost.wav", volume = 0.45, pitch = 0.8, delay = 0.2, stopAfter = 1.8, reverb = true },
+	-- the victim blowing away: an eerie breathy wind and a fine hiss of dust
+	DestinyDust = {
+		{
+			id = "rbxassetid://9113587573",
+			volume = 1.0,
+			pitch = 1,
+			stopAfter = 2.2,
+			gamma = { shape = 2, scale = 0.6, tail = 0.4 },
+		},
+		{
+			id = S .. "impact_water.mp3",
+			volume = 0.35,
+			pitch = 2.4,
+			eq = { low = -10, mid = 0, high = 6 },
+			delay = 0.2,
+			stopAfter = 1.6,
+		},
 	},
 	-- Purple Flash finisher
 	PurpleOrbs = {

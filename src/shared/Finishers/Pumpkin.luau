@@ -219,16 +219,13 @@ local function puppetJoints(model: Model): { Joint }
 	for _, d in model:GetDescendants() do
 		if d:IsA("AnimationConstraint") and d.Attachment0 and d.Attachment1 then
 			local a0, a1 = d.Attachment0 :: Attachment, d.Attachment1 :: Attachment
-			table.insert(
-				joints,
-				{
-					name = d.Name,
-					p0 = a0.Parent :: BasePart,
-					p1 = a1.Parent :: BasePart,
-					f0 = a0.CFrame,
-					f1 = a1.CFrame,
-				}
-			)
+			table.insert(joints, {
+				name = d.Name,
+				p0 = a0.Parent :: BasePart,
+				p1 = a1.Parent :: BasePart,
+				f0 = a0.CFrame,
+				f1 = a1.CFrame,
+			})
 		elseif d:IsA("JointInstance") and d.Part0 and d.Part1 then
 			-- Motor6D limbs (classic rigs) and Welds (accessories) both carry C0/C1
 			table.insert(joints, { name = d.Name, p0 = d.Part0, p1 = d.Part1, f0 = d.C0, f1 = d.C1 })
@@ -308,7 +305,6 @@ return {
 			local lookAt = K + Vector3.new(0, 1.9, 0)
 			local stage = 0
 			local placeFrom: CFrame? = nil
-			ctx.sound("SpookyToss")
 			ctx.pose(killer, "Catch", 0.3)
 			ctx.runFor(CUT, function(alpha: number)
 				local t = alpha * CUT
@@ -333,7 +329,8 @@ return {
 				-- choreography
 				if stage == 0 and t >= 0.55 then
 					stage = 1
-					ctx.sound("PumpkinCatch", handsMid())
+					-- caught: the dread builds while the pumpkin goes on, peaking on the reveal
+					ctx.sound("PumpkinDread")
 				elseif stage == 1 and t >= 0.75 then
 					stage = 2
 					ctx.pose(killer, "RaiseOverhead", 0.4)
@@ -344,11 +341,10 @@ return {
 					stage = 4
 					ctx.hideHead(killer)
 					ctx.pose(killer, "BowHead", 0.3)
-					ctx.sound("PumpkinCatch", handsMid())
 				elseif stage == 4 and t >= REVEAL then
 					stage = 5
 					ctx.pose(killer, "LookUp", 0.12)
-					ctx.sound("PumpkinReveal")
+					ctx.sound("PumpkinScream") -- the horror string stab as the camera lunges at the face
 					light.Range = 14
 					light.Brightness = 6
 					for _, c in carved do
@@ -455,7 +451,7 @@ return {
 			local at = if grab then G + o * 0.9 + s * (if i == 1 then 0.45 else -0.45) else G + o * spot.X + s * spot.Y
 			table.insert(arms, { rig = makeArm(ctx, rng), at = at, grab = grab, phase = rng:NextNumber(0, 6) })
 		end
-		ctx.sound("UndeadRise", G)
+		ctx.sound("BatsFlyBy")
 		ctx.fx.burst(G, DIRT, if ctx.reducedMotion then 15 else 45, 22, 1.2)
 		ctx.fx.shake(0.25)
 

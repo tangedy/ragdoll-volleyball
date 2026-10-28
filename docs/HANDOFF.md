@@ -124,11 +124,16 @@ From the Nintendo UX audio study: a few short, dry sounds that each mean one thi
   - The UI palette swap: `Theme.HalloweenToybox`, every Day token remapped, including later recolours.
   - The music (two DistroKid tracks), quieter in matches.
   - Jack-o-lanterns: carved pumpkins welded onto every Standard ball, match, visual and practice. Look only; power-up balls keep their colours.
+- **Pumpkin Reaper** is Halloween-exclusive (`Event = "Halloween"`, `Limited = true`). Its sounds are free Creator Store assets: an APM "Horror Tools" riser and screamer stab, plus Pro Sound Effects violin scrape, squeaks and wing flaps.
 - **Event cosmetics:** give a catalog item `Event = "Halloween"` (and `Limited = true`). It's sold and shown only during the event (kept once owned), never on the spin or chest wheels, and bots don't use it.
 - **Haunted Wheel (`HauntedWheelBuilder`):** a showpiece booth (black/orange wheel, bat wings, pumpkin heap, braziers, particle mist). No prompt or prizes. It turns via the `HubWheel` tag at its `SpinRate`; `HubFlicker` lights flicker in `HubController`; mist emitters marked `Scenery` switch off in performance mode. For now it only stands in the dev room.
 
 ## Dev room (`DevRoomService`, `Config.DevRoom`)
 - **;** (same permission as H) teleports you to a hall far above the map and back. It's built on the first visitor and torn down when the last leaves; visitors are kept out of the match queue.
+
+## Shop NEW! tags
+- Each shop tab wears a red NEW! sticker while it holds something on sale the player hasn't seen and doesn't own. Opening the shop on a tab, or switching to it, marks it seen (`MarkSeen` remote, saved as `ShopSeen` in schema v8; v7 is the Robux receipts list).
+- New players see every tab as NEW!. Saves migrated from v7 or older are pre-marked with the catalog as it stood, so only items added later (and event items while their event runs) light the tag again.
 
 ## Gotchas worth knowing
 - `SoundController` preloads every cue's audio and only starts a layer's `stopAfter` once it's really playing. UI layers are cut to 60–80 ms, so timing them from `Play()` used to let a slow load swallow them.

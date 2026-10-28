@@ -1,7 +1,8 @@
 --!strict
 -- The Halloween event (Config.Halloween). One switch: the "Halloween" attribute on ReplicatedStorage,
 -- which servers start from Config.Halloween.Enabled and the dev toggle flips at runtime. The server
--- owns the shared world changes: dusk lighting and the asset-pack props around the hub. Clients do
+-- owns the shared world changes: dusk lighting, the asset-pack props around the hub, and the Haunted
+-- Wheel standing in for the spin station's booth. Clients do
 -- the rest from the attribute (HalloweenController: UI palette, music, jack-o-lantern balls), and
 -- the shop only offers Halloween cosmetics while it's on (Catalog.isOffered).
 --
@@ -19,6 +20,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local ArenaLayout = require(Shared.ArenaLayout)
 local ArenaBuilder = require(script.Parent.ArenaBuilder)
+local HauntedWheelBuilder = require(script.Parent.HauntedWheelBuilder)
 
 local H = Config.Halloween
 
@@ -28,6 +30,7 @@ local S: any
 local on = false
 local propsFolder: Folder? = nil
 local voidGlowDay: Color3? = nil
+local spinBooth: Folder? = nil -- the regular spin booth's parts, put away while the haunted wheel stands in
 
 function HalloweenService.init(services: any)
 	S = services
@@ -144,6 +147,45 @@ local function place(spot: any, lobby: Instance, folder: Folder): boolean
 	return true
 end
 
+-- The Haunted Wheel stands in for the spin station's booth. Everything of the regular booth but
+-- its prompt is put away in ServerStorage, so the Daily Spin prompt keeps working from the same spot.
+local function hauntSpinBooth(lobby: Instance, folder: Folder)
+	local stations = lobby:FindFirstChild("Stations")
+	local station = stations and stations:FindFirstChild("SpinStation")
+	local platform = station and station:FindFirstChild("Platform") :: BasePart?
+	if not station or not platform or spinBooth then
+		return
+	end
+	local stash = Instance.new("Folder")
+	stash.Name = "SpinBoothStash"
+	for _, child in station:GetChildren() do
+		if child.Name ~= "PromptAnchor" then
+			child.Parent = stash
+		end
+	end
+	stash.Parent = ServerStorage
+	spinBooth = stash
+	-- both booths stand on the same 12x9 platform: the station's base is under its middle
+	HauntedWheelBuilder.build(platform.CFrame * CFrame.new(0, -0.2, -0.5), folder)
+end
+
+local function restoreSpinBooth()
+	local stash = spinBooth
+	spinBooth = nil
+	if not stash then
+		return
+	end
+	local lobby = Workspace:FindFirstChild("Lobby")
+	local stations = lobby and lobby:FindFirstChild("Stations")
+	local station = stations and stations:FindFirstChild("SpinStation")
+	if station then
+		for _, child in stash:GetChildren() do
+			child.Parent = station
+		end
+	end
+	stash:Destroy()
+end
+
 local function placeProps()
 	local lobby = Workspace:FindFirstChild("Lobby")
 	if not lobby then
@@ -154,6 +196,8 @@ local function placeProps()
 	-- parented under the hub, so it hides with the hub for players on the court
 	folder.Parent = lobby
 	propsFolder = folder
+	-- first, so the props below make room for it
+	hauntSpinBooth(lobby, folder)
 	local placed, skipped = 0, {}
 	for _, spot in H.Props do
 		if place(spot, lobby, folder) then
@@ -177,6 +221,7 @@ local function clearProps()
 		propsFolder:Destroy()
 		propsFolder = nil
 	end
+	restoreSpinBooth()
 end
 
 -- Switch -------------------------------------------------------------------------------------------

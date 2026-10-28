@@ -57,6 +57,131 @@ local function buildDummyTemplate()
 	model.Parent = ReplicatedStorage
 end
 
+-- The Destiny Arrives titan: built once from the items in Config.Finisher.DestinyAvatar and parked
+-- in ReplicatedStorage for the clients' finisher (loading the items is a web call, so it never
+-- blocks start-up).
+local DESC_FIELDS =
+	{ "Head", "Face", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg", "Shirt", "Pants", "GraphicTShirt" }
+local ACCESSORY_FIELDS: { [Enum.AccessoryType]: string } = {
+	[Enum.AccessoryType.Hat] = "HatAccessory",
+	[Enum.AccessoryType.Hair] = "HairAccessory",
+	[Enum.AccessoryType.Face] = "FaceAccessory",
+	[Enum.AccessoryType.Neck] = "NeckAccessory",
+	[Enum.AccessoryType.Shoulder] = "ShouldersAccessory",
+	[Enum.AccessoryType.Front] = "FrontAccessory",
+	[Enum.AccessoryType.Back] = "BackAccessory",
+	[Enum.AccessoryType.Waist] = "WaistAccessory",
+}
+local function buildDestinyTemplate()
+	local F = Config.Finisher
+	local look = F.DestinyAvatar
+	local ok, model = pcall(function()
+		local desc = Instance.new("HumanoidDescription")
+		for _, field in DESC_FIELDS do
+			local id = look[field]
+			if type(id) == "number" then
+				(desc :: any)[field] = id
+			end
+		end
+		if look.SkinColor then
+			for _, field in
+				{ "HeadColor", "TorsoColor", "LeftArmColor", "RightArmColor", "LeftLegColor", "RightLegColor" }
+			do
+				(desc :: any)[field] = look.SkinColor
+			end
+		end
+		-- rigid accessories go in the per-type id lists (SetAccessories on a fresh description builds a
+		-- model without them)
+		local byType: { [string]: { string } } = {}
+		local list: { any } = look.Accessories or {}
+		for _, a in list do
+			local field = ACCESSORY_FIELDS[a.AccessoryType]
+			if field then
+				byType[field] = byType[field] or {}
+				table.insert(byType[field], tostring(a.AssetId))
+			end
+		end
+		for field, ids in byType do
+			(desc :: any)[field] = table.concat(ids, ",")
+		end
+		return Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
+	end)
+	if not ok or not model then
+		warn("[Lobby] couldn't build the Destiny Arrives avatar: " .. tostring(model))
+		return
+	end
+	model.Name = F.DestinyTemplateName
+	-- accessories that should ride on a body part instead of where they're hung (the gauntlet on the
+	-- hand): the model is built in the rest pose, so keep each exactly where it sits now and just weld
+	-- it to that part, matched by accessory type
+	local hung: { any } = look.Accessories or {}
+	for _, spec in hung do
+		local target = if spec.AttachTo then model:FindFirstChild(spec.AttachTo) :: BasePart? else nil
+		if not target then
+			continue
+		end
+		for _, acc in model:GetChildren() do
+			if acc:IsA("Accessory") and acc.AccessoryType == spec.AccessoryType then
+				local handle = acc:FindFirstChild("Handle") :: BasePart?
+				if handle then
+					-- the model isn't simulated yet, so the handle still sits where it was loaded: first put
+					-- it where its own joint holds it (Weld offsets, or a RigidConstraint's attachments),
+					-- then swap that joint for a weld to the part, which keeps the offset it has now
+					for _, j in handle:GetChildren() do
+						if j:IsA("JointInstance") and j.Part0 and j.Part1 then
+							if j.Part0 == handle then
+								handle.CFrame = j.Part1.CFrame * j.C1 * j.C0:Inverse()
+							else
+								handle.CFrame = j.Part0.CFrame * j.C0 * j.C1:Inverse()
+							end
+						elseif j:IsA("RigidConstraint") and j.Attachment0 and j.Attachment1 then
+							local mine = if j.Attachment0.Parent == handle then j.Attachment0 else j.Attachment1
+							local other = if mine == j.Attachment0 then j.Attachment1 else j.Attachment0
+							handle.CFrame = other.WorldCFrame * mine.CFrame:Inverse()
+						end
+					end
+					for _, j in handle:GetChildren() do
+						if j:IsA("JointInstance") or j:IsA("WeldConstraint") or j:IsA("RigidConstraint") then
+							j:Destroy()
+						end
+					end
+					-- a Weld with its offset written down, not a WeldConstraint: the model's joints only settle
+					-- once a copy is in the workspace (the hand drops about a stud), and a WeldConstraint
+					-- would take its offset from that moment, leaving the gauntlet up the forearm
+					local weld = Instance.new("Weld")
+					weld.Name = "AttachWeld"
+					weld.Part0 = target
+					weld.Part1 = handle
+					weld.C0 = target.CFrame:ToObjectSpace(handle.CFrame)
+					weld.Parent = handle
+					-- no longer an Accessory: a Humanoid re-joins accessories to their stock attachment
+					-- on every copy, and that joint would fight the weld (it pinned the hand in place)
+					handle.Name = acc.Name
+					handle.Parent = model
+					acc:Destroy()
+				end
+			end
+		end
+	end
+	for _, d in model:GetDescendants() do
+		if d:IsA("LuaSourceContainer") then
+			d:Destroy()
+		elseif d:IsA("BasePart") then
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.Anchored = d.Name == "HumanoidRootPart"
+		end
+	end
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		humanoid.BreakJointsOnDeath = false
+		humanoid.RequiresNeck = false
+	end
+	model.Parent = ReplicatedStorage
+end
+
 local function onPlayerAdded(player: Player)
 	local c = S.PlayerStateService.create(player.DisplayName, player, false, false)
 	c.joinedAt = os.clock()
@@ -113,6 +238,7 @@ function LobbyService.start()
 		task.spawn(onPlayerAdded, p)
 	end
 	buildDummyTemplate()
+	task.spawn(buildDestinyTemplate)
 
 	S.NetService.on(NetSchema.Actions.SetAutoQueue, function(player, p)
 		local c = S.PlayerStateService.get(player)
@@ -127,6 +253,12 @@ function LobbyService.start()
 			c.busy = p.value
 			player:SetAttribute("Busy", p.value)
 		end
+	end)
+	-- Player.DevTouchCameraMode can only be set from the server (LockController asks for Shift lock)
+	S.NetService.on(NetSchema.Actions.SetTouchCamera, function(player, p)
+		player.DevTouchCameraMode = if p.classic
+			then Enum.DevTouchCameraMovementMode.Classic
+			else game:GetService("StarterPlayer").DevTouchCameraMovementMode
 	end)
 	S.NetService.on(NetSchema.Actions.ReportDevice, function(player, p)
 		local c = S.PlayerStateService.get(player)

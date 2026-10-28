@@ -174,7 +174,17 @@ local items: { Item } = {
 		Name = "Pumpkin Reaper",
 		Price = 2500,
 		RobuxProductId = 0,
+		Event = "Halloween", -- Halloween exclusive: on sale only during the event, kept once owned
+		Limited = true,
 		Data = { Module = "Pumpkin", Icon = "🎃" },
+	},
+	{
+		Id = "Finisher_DestinyArrives",
+		Category = "Finisher",
+		Name = "Destiny Arrives",
+		Price = 5000,
+		RobuxProductId = 0,
+		Data = { Module = "DestinyArrives", Icon = "🌀" },
 	},
 	{
 		Id = "Finisher_PurpleFlash",

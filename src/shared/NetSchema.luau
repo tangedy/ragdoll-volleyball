@@ -18,12 +18,14 @@ NetSchema.Actions = {
 	Catch = "Catch",
 	SetAutoQueue = "SetAutoQueue",
 	SetBusy = "SetBusy", -- a hub menu is open: don't pull this player into a match meanwhile
+	SetTouchCamera = "SetTouchCamera", -- Shift lock on touch: the camera only turns when dragged
 	SetSetting = "SetSetting",
 	ReportDevice = "ReportDevice",
 	BuyItem = "BuyItem",
 	EquipItem = "EquipItem",
 	ClaimDaily = "ClaimDaily",
 	Spin = "Spin",
+	MarkSeen = "MarkSeen",
 	OpenChest = "OpenChest",
 	Practice = "Practice",
 	Dev = "Dev",
@@ -93,6 +95,12 @@ NetSchema.Validators = {
 		end
 		return { value = p.value }
 	end,
+	SetTouchCamera = function(p: any): any
+		if not isTable(p) or type(p.classic) ~= "boolean" then
+			return nil
+		end
+		return { classic = p.classic }
+	end,
 	SetSetting = function(p: any): any
 		if not isTable(p) or type(p.key) ~= "string" or type(p.value) ~= "boolean" then
 			return nil
@@ -122,6 +130,13 @@ NetSchema.Validators = {
 	end,
 	ClaimDaily = function(_p: any): any
 		return {}
+	end,
+	MarkSeen = function(p: any): any
+		-- a shop category the player just looked at
+		if not isTable(p) or type(p.category) ~= "string" or #p.category > 32 then
+			return nil
+		end
+		return { category = p.category }
 	end,
 	Spin = function(p: any): any
 		-- paid = true spends coins on an extra spin; otherwise it's the free daily spin

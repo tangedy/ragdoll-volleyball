@@ -225,6 +225,24 @@ end
 
 function ShopService.start()
 	local A = NetSchema.Actions
+	-- the player opened a shop tab: everything on sale there is no longer NEW! (saved with the profile)
+	S.NetService.on(A.MarkSeen, function(player, p)
+		local c = S.PlayerStateService.get(player)
+		if not c or not c.profile or not c.profileLoaded then
+			return
+		end
+		local seen = c.profile.ShopSeen
+		if type(seen) ~= "table" then
+			seen = {}
+			c.profile.ShopSeen = seen
+		end
+		local events = Catalog.activeEvents()
+		for _, item in Catalog.inCategory(p.category) do
+			if Catalog.isOffered(item, events) then
+				seen[item.Id] = true
+			end
+		end
+	end)
 	S.NetService.on(A.BuyItem, function(player, p)
 		local c = S.PlayerStateService.get(player)
 		if c then

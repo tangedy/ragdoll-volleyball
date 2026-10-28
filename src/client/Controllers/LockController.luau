@@ -15,6 +15,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 local AimController = require(script.Parent.AimController)
+local Net = require(script.Parent.Net)
 
 local player = Players.LocalPlayer
 
@@ -25,19 +26,18 @@ LockController.changed = Instance.new("BindableEvent")
 
 local BASE_OFFSET = Vector3.new(0, 1.2, 0) -- CharacterController's raised third-person view
 local applied = false -- whether we're currently overriding rotation / camera / mouse
-local savedTouchMode: Enum.DevTouchCameraMovementMode? = nil -- the touch camera mode before Shift
+local touchClassic = false -- whether we've asked the server for the Classic touch camera
 
 -- Roblox's default touch camera is "Follow": it swings round behind wherever the character moves.
 -- Shift lock turns the character to face the camera, so the two chase each other and strafing
 -- spins the view. While Shift is on, the touch camera is Classic (it only turns when dragged), so
--- the screen and the character both keep facing where you look.
+-- the screen and the character both keep facing where you look. Only the server may set
+-- Player.DevTouchCameraMode (a client write throws, which used to abort the release halfway and
+-- leave the lock stuck on), so we ask it, once per change.
 local function classicTouch(on: boolean)
-	if on and savedTouchMode == nil then
-		savedTouchMode = player.DevTouchCameraMode
-		player.DevTouchCameraMode = Enum.DevTouchCameraMovementMode.Classic
-	elseif not on and savedTouchMode ~= nil then
-		player.DevTouchCameraMode = savedTouchMode
-		savedTouchMode = nil
+	if on ~= touchClassic then
+		touchClassic = on
+		Net.request(Net.Actions.SetTouchCamera, { classic = on })
 	end
 end
 
@@ -60,13 +60,13 @@ local function release(humanoid: Humanoid?)
 	if not applied then
 		return
 	end
-	applied = false
-	classicTouch(false)
 	if humanoid then
 		humanoid.AutoRotate = true
 		humanoid.CameraOffset = BASE_OFFSET
 	end
 	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	classicTouch(false)
+	applied = false
 end
 
 local function face(rootPart: BasePart, dir: Vector3)

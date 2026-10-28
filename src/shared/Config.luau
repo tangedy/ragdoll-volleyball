@@ -417,6 +417,22 @@ Config.Finisher = {
 	DefaultId = "Default",
 	MinDuration = 3, -- every finisher runs 3-5 s (module Duration is clamped to this range)
 	MaxDuration = 5,
+	-- Destiny Arrives: the titan's look, baked from a set of catalog items (the server builds it once
+	-- into ReplicatedStorage; if that fails the finisher dresses the practice dummy instead). Asset ids
+	-- are HumanoidDescription fields; anything left out stays the default.
+	DestinyAvatar = {
+		Head = 10725826963,
+		LeftArm = 27112052,
+		Shirt = 5648314277,
+		Pants = 3107419155,
+		Accessories = {
+			-- the gauntlet: sold as a shoulder accessory hung on the torso, where it only lines up with
+			-- the hand at rest; AttachTo re-welds it to the hand so it follows the snap
+			{ AssetId = 2988781799, AccessoryType = Enum.AccessoryType.Shoulder, AttachTo = "LeftHand" },
+		},
+		SkinColor = Color3.fromRGB(167, 94, 155), -- every body part
+	},
+	DestinyTemplateName = "DestinyTitanTemplate",
 }
 
 -- Match intro (Splatoon-style): when a match starts, both teams stand on their spawns doing their
@@ -471,9 +487,9 @@ Config.DevRoom = {
 -- attribute on ReplicatedStorage (HalloweenService), which the dev toggle flips at runtime: H in
 -- Studio or for the game's owner, or workspace:SetAttribute("RD_Halloween", true/false) from the
 -- server command bar. While it's on: dusk lighting, props from the asset pack around the hub, the
--- music, the Halloween UI palette, jack-o-lantern balls, and the Halloween cosmetics in the shop.
+-- Haunted Wheel in place of the spin station's booth, the music, the Halloween UI palette, jack-o-lantern balls, and the Halloween cosmetics in the shop.
 Config.Halloween = {
-	Enabled = false,
+	Enabled = true,
 	-- looping background music (free DistroKid tracks from the Creator Store), played in turn
 	Music = { "rbxassetid://111631783838916", "rbxassetid://115585877205328" },
 	MusicVolume = { Hub = 0.32, Match = 0.16 }, -- quieter while you're playing
@@ -536,7 +552,7 @@ Config.Camera = {
 
 Config.Data = {
 	StoreName = "PlayerData_v1",
-	SchemaVersion = 7,
+	SchemaVersion = 8,
 	AutosaveInterval = 120,
 	MaxRetries = 4,
 	SessionLockTimeout = 300,
