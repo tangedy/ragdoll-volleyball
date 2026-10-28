@@ -374,7 +374,9 @@ local function onImpact(d: any)
 			shockwave(pos, dir, def.Color:Lerp(Color3.new(1, 1, 1), 0.5), 14, 0.3)
 			popText(pos, def.Color)
 		end
-		SoundController.play(if d.ballType == "Heavy" then "HitHeavy" else "Hit", pos)
+		-- heavy balls and big escalated launches get the harder smack
+		local heavy = d.ballType == "Heavy" or (type(d.escalation) == "number" and d.escalation >= 1.5)
+		SoundController.play(if heavy then "HitHeavy" else "Hit", pos)
 		if d.target == player then
 			EffectsController.addShake(0.6)
 			HUDController.vignette(0.55, 0.45)
@@ -496,9 +498,6 @@ function EffectsController.start()
 	end)
 	Net.on("DodgeAccepted", function()
 		SoundController.play("Dodge")
-	end)
-	Net.on("Finisher", function()
-		SoundController.play("Finisher")
 	end)
 	Net.on("ShopResult", function(d)
 		-- purchases play their sting with the UNLOCKED banner

@@ -18,7 +18,7 @@ Every request is rate-limited to `Config.Net.MaxActionsPerSecond` per player and
 | `Dodge` | `{ dir: Vector3 }` | Flattened to the horizontal plane. Off cooldown, not ragdolled, catching or in throw recovery, and not frozen in the countdown. |
 | `Catch` | `{}` | Empty hands, off cooldown, `Active` or `Lobby` status (jailed players can't catch). Opens a `CatchWindow` on the server. |
 | `SetAutoQueue` | `{ value: boolean }` | The lobby "Play again" toggle. |
-| `SetBusy` | `{ value: boolean }` | A hub menu (shop, daily, spin, settings) is open. Busy players aren't pulled into a match. |
+| `SetBusy` | `{ value: boolean }` | A hub menu (shop, daily, spin, chest, settings) is open. Busy players aren't pulled into a match. |
 | `SetSetting` | `{ key: "ReducedMotion" \| "CameraShake", value: boolean }` | Stored per session. |
 | `ReportDevice` | `{ kind: "Touch" \| "Mouse" \| "Gamepad" }` | Analytics only, logged once per kind per session. |
 | `BuyItem` | `{ id: string }` | Hub only. The item must exist, cost more than 0, be unowned and be affordable. It's equipped on purchase. |
@@ -26,6 +26,7 @@ Every request is rate-limited to `Config.Net.MaxActionsPerSecond` per player and
 | `ClaimDaily` | `{}` | Once per UTC day; repeat requests are refused. |
 | `Practice` | `{ event: "Pickup" \| "Throw" \| "HitDummy" }` | Hub only. The practice dummy and balls are client-side; this only advances the tutorial and the onboarding funnel. |
 | `Spin` | `{ paid: boolean? }` | Hub only. Free: once per UTC day. Paid: `Config.Spin.ExtraSpinCost` coins, at most `MaxPaidPerDay` per day. The server rolls, grants (or pays duplicate coins) and saves. |
+| `OpenChest` | `{ chest: number }` | Hub only, standing at that chest (`Config.Chest.Spots[chest]`). Costs `Config.Chest.Cost` coins, no daily cap. The server rolls the chest's wheel, grants (or pays `Config.Chest.DuplicateCoins`) and saves. |
 | `Dev` | `{ cmd: "SkipIntermission" \| "ForceOvertime" \| "RunTests" }` | Honoured only in Studio. Bound to F6, F7 (sudden death) and F9 (test suite). |
 
 ## Server → client: `Net.Feedback` (RemoteEvent)
@@ -49,10 +50,12 @@ Signature: `FireClient(kind: string, data: table)`.
 | `Finisher` | `{ module, killer, victim, killerName, victimName, winner, duration }` | Plays the finisher cutscene; sent only to players in the match. |
 | `Tutorial` | `{ step }` | Tutorial card. |
 | `SpinResult` | `{ ok, index, slots, id, rarity, duplicate, coins, how }` or `{ ok = false, message }` | Lands the spin wheel on `slots[index]` and reveals the prize. |
+| `ChestResult` | `{ ok, chest, index, slots, id, rarity, duplicate, coins }` or `{ ok = false, chest, message }` | Bursts the chest open, then lands the chest wheel on `slots[index]` and reveals the prize. |
+| `ChestOpened` | `{ chest, rarity, userId, delay }` | Broadcast: everyone else sees that chest rattle, burst open and flash the prize's rarity. |
 | `FaceCourt` | `{ focus }` | After a hub or jail placement: swing the camera behind the character to look at `focus`. |
 | `Intro` | `{ teams = { [team] = { members = { { model, pose } }, center, facing, halfWidth } }, order, times, cinematic }` | Match-start intro poses on every client; the team pans only when `cinematic` (players in the match). |
 
-`Profile` also carries `spin = { free, paidLeft, cost, slots, robux }`. `BallLaunched` also carries `context` (`"Match"` or `"Lobby"`).
+`Profile` also carries `spin = { free, paidLeft, cost, slots, robux }` and `chest = { cost, slots }` (the next chest wheel). `BallLaunched` also carries `context` (`"Match"` or `"Lobby"`).
 
 ## Replicated state (attributes)
 

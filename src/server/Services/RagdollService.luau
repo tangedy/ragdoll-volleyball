@@ -119,7 +119,7 @@ end
 
 -- Ragdoll the character and apply one bounded velocity change to every limb (mass-independent,
 -- so avatar size and accessories do not change competitive performance).
-function RagdollService.ragdoll(character: Model, velocityChange: Vector3?)
+function RagdollService.ragdoll(character: Model, velocityChange: Vector3?, maxSpeed: number?)
 	local rig = rigs[character]
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not rig or not humanoid then
@@ -127,6 +127,12 @@ function RagdollService.ragdoll(character: Model, velocityChange: Vector3?)
 	end
 	local player = Players:GetPlayerFromCharacter(character)
 	setOwner(character, nil) -- temporary server ownership during the launch
+	-- a bot's facing constraint (BotService) must never stiffen the tumble, even for one step
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local facing = root and root:FindFirstChild("BotFace")
+	if facing and facing:IsA("AlignOrientation") then
+		facing.Enabled = false
+	end
 	rig.active = true
 	humanoid.PlatformStand = true
 	humanoid:ChangeState(Enum.HumanoidStateType.Physics)
@@ -140,7 +146,7 @@ function RagdollService.ragdoll(character: Model, velocityChange: Vector3?)
 	end
 	if velocityChange then
 		local kb = Config.Knockback
-		local maxSpeed = kb.MaxSpeed
+		local cap = maxSpeed or kb.MaxSpeed
 		-- a shared tumble about a random axis so the whole body flips, plus independent limb spin
 		-- and flail so arms and legs windmill around their floppy joints
 		local axis = Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-1, 1), rng:NextNumber(-1, 1))
@@ -153,8 +159,8 @@ function RagdollService.ragdoll(character: Model, velocityChange: Vector3?)
 					then Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-0.3, 1), rng:NextNumber(-1, 1)) * kb.LimbFlail
 					else Vector3.zero
 				local v = part.AssemblyLinearVelocity * 0.2 + velocityChange + flail
-				if v.Magnitude > maxSpeed then
-					v = v.Unit * maxSpeed
+				if v.Magnitude > cap then
+					v = v.Unit * cap
 				end
 				part.AssemblyLinearVelocity = v
 				local limbSpin = if isLimb

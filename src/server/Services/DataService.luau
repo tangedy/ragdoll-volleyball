@@ -36,6 +36,8 @@ export type Profile = {
 	BestWinStreak: number,
 	-- schema v5: daily cosmetic spin counters (SpinService)
 	Spin: { date: string, freeUsed: boolean, paid: number, total: number, receipts: { string } },
+	-- schema v6: hub loot chests opened (seeds the next chest wheel, ChestService)
+	ChestOpens: number,
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -57,6 +59,7 @@ local function default(): Profile
 		CurrentWinStreak = 0,
 		BestWinStreak = 0,
 		Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} },
+		ChestOpens = 0,
 		Lock = nil,
 	}
 end
@@ -95,6 +98,10 @@ function DataService.migrate(old: any): Profile
 		-- v5: the daily cosmetic spin; everyone starts with today's free spin available
 		data.Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} }
 	end
+	if version < 6 then
+		-- v6: loot chests
+		data.ChestOpens = tonumber(data.ChestOpens) or 0
+	end
 	data.SchemaVersion = D.SchemaVersion
 	return data
 end
@@ -122,6 +129,7 @@ local function pushProfile(c: any)
 		equipped = p.Equipped,
 		daily = S.ShopService.dailyStatus(c),
 		spin = S.SpinService.status(c),
+		chest = S.ChestService.status(c),
 		level = p.Level,
 		xp = p.XP,
 		xpNext = Progression.xpToNext(p.Level),

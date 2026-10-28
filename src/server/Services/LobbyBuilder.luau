@@ -11,6 +11,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local ArenaLayout = require(Shared.ArenaLayout)
+local ChestBuilder = require(script.Parent.ChestBuilder)
 
 local A = Config.Arena
 local L = Config.Lobby
@@ -1164,6 +1165,11 @@ function LobbyBuilder.build(): Folder
 		station(def, stations)
 	end
 	leaderboard(stations, collidable)
+	-- loot chests on their daises around the plaza
+	local chests = sub("Chests")
+	for i, spot in Config.Chest.Spots do
+		ChestBuilder.build(i, at(spot.X, 0, spot.F) * CFrame.Angles(0, math.rad(spot.Yaw), 0), spot.Style, chests)
+	end
 	watchZone(collidable, decorF)
 	helipad(decorF)
 	signpost(decorF, collidable)

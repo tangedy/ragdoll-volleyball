@@ -37,17 +37,17 @@ Config.MatchSizing = {
 
 Config.Arena = {
 	Origin = Vector3.new(0, 200, 0), -- top surface of the court is at Origin.Y
-	CourtLength = 96, -- along Z
-	CourtWidth = 64, -- along X
+	CourtLength = 144, -- along Z
+	CourtWidth = 96, -- along X
 	FloorThickness = 2,
 	VoidDepth = 25, -- elimination plane below the court surface
-	SpawnSetback = 24, -- spawn distance from the center line (24 from the back edge too)
-	SpawnEdgeMargin = 14,
+	SpawnSetback = 36, -- spawn distance from the center line (36 from the back edge too)
+	SpawnEdgeMargin = 21,
 	OpeningBallSpots = 6,
-	OpeningBallOffset = 6, -- studs from the center line
+	OpeningBallOffset = 9, -- studs from the center line
 	BarrierHeight = 40,
 	-- Overtime: outer strips retract symmetrically.
-	OvertimeStripWidth = 6,
+	OvertimeStripWidth = 9,
 	OvertimeStrips = 4, -- per side
 	OvertimeStepInterval = 5,
 	OvertimeWarning = 1,
@@ -60,7 +60,7 @@ Config.Arena = {
 	-- across a void gap wider than any knockback can carry a body (LobbyGap). Players on the court
 	-- don't see the hub at all (HubController hides it for them).
 	LobbyGap = 36,
-	LobbyOrigin = Vector3.new(-(64 / 2 + 36 + 84 / 2), 200, 0), -- -(CourtWidth/2 + LobbyGap + depth/2)
+	LobbyOrigin = Vector3.new(-(96 / 2 + 36 + 84 / 2), 200, 0), -- -(CourtWidth/2 + LobbyGap + depth/2)
 	LobbySize = Vector3.new(110, 2, 84),
 }
 
@@ -117,8 +117,9 @@ Config.Player = {
 	PickupRadius = 6, -- horizontal distance from the player to the ball
 	MaxHeldBalls = 1,
 	FullChargeTime = 0.65,
-	MinThrowSpeed = 85,
-	MaxThrowSpeed = 120,
+	-- Every throw is full power (tap to fire), so both ends are the same speed.
+	MinThrowSpeed = 140,
+	MaxThrowSpeed = 140,
 	ThrowRecovery = 0.4,
 	RagdollDuration = 1.1,
 	PostHitImmunity = 0.75,
@@ -148,6 +149,11 @@ Config.Knockback = {
 	TumbleSpin = 7, -- rad/s whole-body flip
 	LimbSpin = 9, -- rad/s random per-limb spin
 	LimbFlail = 10, -- studs/s random per-limb velocity (averages out across the body)
+	-- Each hit you take launches you harder (Smash-style). The knockback above is scaled by
+	-- First + PerHit × (hits already taken), up to Max; the ragdoll lasts a little longer too.
+	-- Hits thrown from jail land at your current level without raising it. The count resets each
+	-- round and when you get back on court from jail.
+	Escalation = { First = 0.3, PerHit = 0.3, Max = 2.4 },
 }
 
 Config.Ball = {
@@ -167,11 +173,25 @@ Config.Ball = {
 	SpawnUp = 1.5,
 }
 
--- Client aim assist: pulls the throw onto an enemy near the aim, only with line of sight.
+-- Client auto-aim: while you hold a ball it's always locked on to an enemy in line of sight (the
+-- one nearest your aim, or the nearest one in Aim lock), and a tap throws at them.
 Config.AimAssist = {
-	ConeDeg = { Mouse = 6, Gamepad = 10, Touch = 14 }, -- how far off the aim an enemy can be picked
-	KeepFactor = 1.5, -- a picked enemy stays locked for the charge while inside cone × this
-	Range = 160, -- studs
+	ConeDeg = { Mouse = 6, Gamepad = 10, Touch = 22 }, -- enemies inside this cone of the aim win the pick
+	KeepFactor = 1.5, -- the current target stays picked while inside cone × this
+	-- share of the target's movement the throw leads by (touch gets the strongest assist)
+	Lead = { Mouse = 0.5, Gamepad = 0.8, Touch = 1 },
+	Range = 220, -- studs
+	BufferTime = 0.3, -- a tap during a dodge or throw recovery fires as soon as you're free
+	-- incoming-ball warning: an enemy ball whose arc passes this close to you shows a "!"
+	WarnRadius = 7,
+	WarnLookahead = 1.2, -- seconds of the arc checked ahead
+}
+
+-- Camera lock modes (the lock button, or Shift / R3): Free is normal Roblox movement, Shift lock
+-- keeps you facing where the camera looks, Aim lock keeps you facing the nearest enemy.
+Config.Lock = {
+	Modes = { "Free", "Shift", "Aim" },
+	ShoulderOffset = 1.75, -- studs the camera moves right in Shift lock
 }
 
 -- Hub practice (client-side): each player has their own dummy and practice balls.
@@ -320,6 +340,51 @@ Config.Spin = {
 	},
 }
 
+-- Loot chests on the hub deck: pay coins, spin a wheel of any cosmetic. Unlike the daily spin
+-- there is no daily cap, and the odds lean a little richer to match the price. Each spot is in the
+-- deck frame (X = right, F = toward the court); Yaw turns the chest (0 = facing the court).
+Config.Chest = {
+	Cost = 1000, -- coins per open
+	Slots = 12,
+	RarityWeights = { Common = 48, Rare = 32, Epic = 15, Legendary = 5 },
+	DuplicateCoins = { Common = 250, Rare = 400, Epic = 700, Legendary = 1200 }, -- already owned
+	SpinDuration = 4.6, -- seconds the wheel spins on the client before the reveal
+	PromptDistance = 11,
+	LidOpenTime = 6, -- seconds the lid stays open after a reveal before it settles shut
+	Spots = {
+		{ X = -10, F = -17, Yaw = 0, Style = "Gold" },
+		{ X = 10, F = -17, Yaw = 0, Style = "Frost" },
+		{ X = 38, F = -4, Yaw = 90, Style = "Royal" },
+	},
+	-- wood, banding metal and the treasure glow for each look (all three are the same chest)
+	Styles = {
+		Gold = {
+			Wood = Color3.fromRGB(122, 72, 40),
+			WoodAlt = Color3.fromRGB(104, 60, 34),
+			Metal = Color3.fromRGB(255, 196, 60),
+			Glow = Color3.fromRGB(255, 210, 90),
+			Gem = Color3.fromRGB(255, 70, 90),
+			Stone = Color3.fromRGB(70, 64, 86),
+		},
+		Frost = {
+			Wood = Color3.fromRGB(70, 92, 128),
+			WoodAlt = Color3.fromRGB(58, 78, 112),
+			Metal = Color3.fromRGB(200, 236, 255),
+			Glow = Color3.fromRGB(110, 225, 255),
+			Gem = Color3.fromRGB(90, 200, 255),
+			Stone = Color3.fromRGB(56, 66, 92),
+		},
+		Royal = {
+			Wood = Color3.fromRGB(78, 40, 96),
+			WoodAlt = Color3.fromRGB(64, 32, 80),
+			Metal = Color3.fromRGB(255, 186, 70),
+			Glow = Color3.fromRGB(205, 120, 255),
+			Gem = Color3.fromRGB(190, 90, 255),
+			Stone = Color3.fromRGB(62, 52, 82),
+		},
+	},
+}
+
 Config.Rewards = {
 	StreakEndMin = 5, -- "STREAK ENDED!" feed message threshold
 }
@@ -373,6 +438,12 @@ Config.Graphics = {
 
 Config.Visuals = {
 	NeonIntensity = 0.5, -- every neon part, glow panel and scenery light shows at this fraction
+	FinisherNeon = 0.7, -- finisher neon and lights are dimmed further by this (not Purple Flash)
+	FinisherNeonExempt = { PurpleFlash = true },
+	-- Outlines so players and balls stand out from the court: each team is outlined in the other
+	-- team's color (blue players stand on a blue floor), and balls get a dark ink outline.
+	TeamOutline = { Red = Color3.fromRGB(60, 120, 235), Blue = Color3.fromRGB(232, 70, 60) },
+	BallOutline = Color3.fromRGB(28, 20, 14),
 }
 
 Config.Camera = {
@@ -382,7 +453,7 @@ Config.Camera = {
 
 Config.Data = {
 	StoreName = "PlayerData_v1",
-	SchemaVersion = 5,
+	SchemaVersion = 6,
 	AutosaveInterval = 120,
 	MaxRetries = 4,
 	SessionLockTimeout = 300,

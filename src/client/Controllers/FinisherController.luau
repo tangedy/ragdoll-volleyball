@@ -363,6 +363,10 @@ local function play(def: any, d: any, preview: boolean)
 	end
 	local folder = Instance.new("Folder")
 	folder.Name = "FinisherFX"
+	if not Config.Visuals.FinisherNeonExempt[def.Id] then
+		-- NeonController dims this finisher's neon and lights a little further
+		folder:SetAttribute("NeonScale", Config.Visuals.FinisherNeon)
+	end
 	folder.Parent = Workspace
 	local duration = FinisherController.duration(def)
 	local ctx = {

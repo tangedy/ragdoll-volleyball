@@ -18,6 +18,7 @@ local Config = require(Shared.Config)
 local BallDefinitions = require(Shared.BallDefinitions)
 local Net = require(script.Parent.Net)
 local AimController = require(script.Parent.AimController)
+local LockController = require(script.Parent.LockController)
 local SoundController = require(script.Parent.SoundController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
@@ -400,7 +401,7 @@ local function build()
 		Text = "",
 	})
 
-	-- Reticle: crosshair ring + ticks, charge bar underneath, hitmarker
+	-- Reticle: crosshair ring + ticks, hitmarker
 	local reticleGui = Theme.new("ScreenGui", {
 		Name = "Reticle",
 		ResetOnSpawn = false,
@@ -444,17 +445,6 @@ local function build()
 		BackgroundColor3 = T.sun,
 	}, ret)
 	Theme.round(dot)
-	refs.chargeBack = Theme.new("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 1, 10),
-		Size = UDim2.fromOffset(88, 12),
-		BackgroundColor3 = T.surfaceSunk,
-		Visible = false,
-	}, ret)
-	Theme.round(refs.chargeBack)
-	Theme.stroke(refs.chargeBack, T.outline, 2)
-	refs.chargeFill = Theme.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.sun }, refs.chargeBack)
-	Theme.round(refs.chargeFill)
 	local hm = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
@@ -504,7 +494,7 @@ local function build()
 		Name = "Legends",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L),
-		Size = UDim2.fromOffset(2 * 144 + Theme.Space.S, 46),
+		Size = UDim2.fromOffset(3 * 144 + 2 * Theme.Space.S, 46),
 		BackgroundTransparency = 1,
 	}, gui)
 	Theme.new("UIListLayout", {
@@ -517,6 +507,20 @@ local function build()
 	refs.chips = legends
 	refs.dodgeChip, refs.dodgeKey = Theme.legend(legends, "Q", "Dodge", { LayoutOrder = 1 }, T.joyRed)
 	refs.catchChip, refs.catchKey = Theme.legend(legends, "E", "Catch", { LayoutOrder = 2 }, T.joyBlue)
+	-- camera lock: shows the current mode; Shift (R3) or a click cycles it
+	local lockChip, lockKey, lockCaption = Theme.legend(legends, "Shift", "Free", { LayoutOrder = 3 }, T.sun)
+	lockKey.TextSize = 10
+	refs.lockKey, refs.lockCaption = lockKey, lockCaption
+	Theme.new("TextButton", {
+		Name = "Hit",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "",
+		ZIndex = lockChip.ZIndex + 4,
+	}, lockChip).Activated
+		:Connect(function()
+			LockController.cycle()
+		end)
 	-- Bottom right, in the hub: the Play again toggle
 	local corner = Theme.new("Frame", {
 		Name = "Corner",
@@ -925,6 +929,9 @@ local function fmtTime(seconds: number): string
 	return ("%d:%02d"):format(seconds // 60, seconds % 60)
 end
 
+local TEAMS = { "Red", "Blue" }
+local boardKeys: { [string]: string } = {}
+
 local function update()
 	if HUDController.cinematic then
 		return
@@ -942,9 +949,23 @@ local function update()
 
 	if live then
 		local teamSize = num("TeamSize", 3)
-		for _, team in { "Red", "Blue" } do
+		for _, team in TEAMS do
 			local active = num(team .. "Active", 0)
 			local jailed = num(team .. "Jail", 0)
+			local wins = num(team .. "Wins", 0)
+			-- the plate only changes when the roster does: skip re-parsing and re-writing ~40 GUI
+			-- properties every frame
+			local key = ("%s|%s|%s|%s|%s"):format(
+				tostring(MS:GetAttribute(team .. "Roster")),
+				teamSize,
+				active,
+				jailed,
+				wins
+			)
+			if boardKeys[team] == key then
+				continue
+			end
+			boardKeys[team] = key
 			local entries = rosterOf(team, teamSize, active, jailed)
 			for i, p in pips[team] do
 				local e = entries[i]
@@ -966,7 +987,6 @@ local function update()
 			end
 			-- just wide enough for the team's headshots
 			refs[team .. "Plate"].Size = UDim2.fromOffset(math.max(132, 32 + teamSize * (FACE + 6) - 6), PLATE.Y)
-			local wins = num(team .. "Wins", 0)
 			for i, s in stars[team] do
 				local won = i <= wins
 				s.BackgroundColor3 = if won then T.sun else T.surfaceSunk
@@ -1041,30 +1061,26 @@ local function update()
 		then UDim2.new(1, -Theme.Space.M, 0, Theme.Space.M)
 		else UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L)
 
-	-- reticle + charge: while charging the crosshair sits where the throw really goes (on the
-	-- aim-assisted enemy when assist locks on), the same point the arc preview heads for. Before
-	-- that it only follows the mouse; touch and gamepad show it with the arc.
+	-- reticle: while you hold a ball (or in Aim lock) the crosshair sits on the enemy the auto-aim
+	-- is locked on to, the same player a tap throws at. With no target it follows the mouse.
 	local holding = AimController.holding()
 	local ret = refs.reticle :: Frame
-	local charging = AimController.charging
-	local aiming = charging or (holding and AimController.lastInput == "Mouse")
+	local model = AimController.assistModel
+	local aiming = (holding or AimController.preferNearest)
+		and (model ~= nil or (holding and AimController.lastInput == "Mouse"))
 	ret.Visible = aiming or refs.hitmarker.Visible
 	if aiming then
 		local sp = AimController.screenPoint()
-		-- the locked enemy's live position (no frame of lag behind the arc), else the plain aim point
-		local model = AimController.assistModel
+		-- the target's live position (no frame of lag behind the arc)
 		local root = model and model:FindFirstChild("HumanoidRootPart") :: BasePart?
-		local aim = if root then root.Position else AimController.aimPoint
-		if charging and aim then
-			local v, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(aim)
+		if root then
+			local v, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(root.Position)
 			if onScreen then
 				sp = Vector2.new(v.X, v.Y)
 			end
 		end
 		ret.Position = UDim2.fromOffset(sp.X, sp.Y)
 	end
-	refs.chargeBack.Visible = AimController.charging
-	refs.chargeFill.Size = UDim2.fromScale(AimController.chargeFraction(), 1)
 
 	-- held ball
 	local heldType = player:GetAttribute("HeldBall")
@@ -1091,6 +1107,9 @@ local function update()
 	local gamepad = AimController.lastInput == "Gamepad"
 	refs.dodgeKey.Text = if gamepad then "X" else "Q"
 	refs.catchKey.Text = if gamepad then "LB" else "E"
+	refs.lockKey.Text = if gamepad then "R3" else "Shift"
+	local mode = LockController.mode
+	refs.lockCaption.Text = if mode == "Shift" then "Shift lock" elseif mode == "Aim" then "Aim lock" else "Free cam"
 end
 
 function HUDController.init()

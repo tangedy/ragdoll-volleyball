@@ -13,6 +13,8 @@ local ORDER = {
 	"SoundController",
 	"BallVisualController",
 	"AimController",
+	"LockController",
+	"OutlineController",
 	"InputController",
 	"HUDController",
 	"EffectsController",
@@ -26,6 +28,7 @@ local ORDER = {
 	"HubController",
 	"ShopController",
 	"SpinController",
+	"ChestController",
 	"DebugController",
 }
 

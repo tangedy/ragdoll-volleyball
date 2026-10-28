@@ -47,6 +47,7 @@ local dummy: Model? = nil
 local dummyHitbox: BasePart? = nil
 local dummyDown = false
 local dummyHitAt = 0
+local dummyHits = 0 -- knockback escalation; a fresh dummy starts over
 local dummyBackAt = 0
 local collide: { [BasePart]: boolean } = {}
 local rng = Random.new()
@@ -246,6 +247,7 @@ local function spawnDummy()
 	dummy = m
 	dummyHitbox = box
 	dummyDown = false
+	dummyHits = 0
 	dummyBackAt = 0
 end
 
@@ -281,7 +283,11 @@ local function launchDummy(ball: PBall, at: Vector3)
 	if not m then
 		return
 	end
-	local kb = ProjectileMath.knockback(ball.vel, ball.charge, "Standard")
+	-- the dummy feels escalation like a real player: every hit launches it harder until it respawns
+	local scale = ProjectileMath.escalation(dummyHits)
+	dummyHits += 1
+	local kb = ProjectileMath.knockback(ball.vel, ball.charge, "Standard", scale)
+	local cap = ProjectileMath.maxKnockbackSpeed(scale)
 	local K = Config.Knockback
 	setLimp(m, true)
 	local axis = Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-1, 1), rng:NextNumber(-1, 1))
@@ -291,8 +297,8 @@ local function launchDummy(ball: PBall, at: Vector3)
 			local flail = Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-0.3, 1), rng:NextNumber(-1, 1))
 				* K.LimbFlail
 			local v = kb + flail
-			if v.Magnitude > K.MaxSpeed then
-				v = v.Unit * K.MaxSpeed
+			if v.Magnitude > cap then
+				v = v.Unit * cap
 			end
 			d.AssemblyLinearVelocity = v
 			d.AssemblyAngularVelocity = axis * K.TumbleSpin
@@ -309,6 +315,7 @@ local function launchDummy(ball: PBall, at: Vector3)
 		targetModel = m,
 		thrower = player,
 		charge = ball.charge,
+		escalation = scale,
 	})
 	HUDController.hitmarker()
 	HUDController.hint("HIT!", 0.6)
@@ -414,7 +421,6 @@ local function step(dt: number)
 		and held == nil
 		and root ~= nil
 		and (action == "Idle" or action == "Dodging" or action == "Recovering" or action == nil)
-		and not AimController.charging
 	local t = os.clock()
 	for _, b in balls do
 		if b.state == "InFlight" then
@@ -470,6 +476,14 @@ function PracticeController.init()
 		return held ~= nil
 	end
 	AimController.localThrow = PracticeController.throw
+	-- in the hub the auto-aim locks on to your dummy
+	AimController.extraTargets = function(): { Model }
+		local m = dummy
+		if m and m.Parent and not dummyDown and inHub() then
+			return { m }
+		end
+		return {}
+	end
 end
 
 function PracticeController.start()

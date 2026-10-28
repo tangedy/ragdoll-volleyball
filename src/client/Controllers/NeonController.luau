@@ -3,7 +3,8 @@
 -- Config.Visuals.NeonIntensity: court rims and curtains, the hub, effects, power balls, team bands,
 -- finishers. Parts that change color later (server rim pulses, warning strips, tweens) are re-scaled
 -- on each change. The glow panels (light curtains, signs) and lights of the arena and hub are
--- dimmed by the same factor. Nothing on the server changes.
+-- dimmed by the same factor. A folder with a NeonScale attribute (finisher effects) dims its neon
+-- and lights by that much more. Nothing on the server changes.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -16,8 +17,15 @@ local K = Config.Visuals.NeonIntensity
 local ATTR = "NeonShown" -- the dimmed color we last applied (clones carry it, so never dim twice)
 local watched: { [BasePart]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
-local function scale(c: Color3): Color3
-	return Color3.new(c.R * K, c.G * K, c.B * K)
+-- Extra dimming from an enclosing NeonScale folder (1 when there's none).
+local function extraScale(d: Instance): number
+	local f = d:FindFirstAncestor("FinisherFX")
+	local s = f and f:GetAttribute("NeonScale")
+	return if type(s) == "number" then s else 1
+end
+
+local function scale(c: Color3, k: number): Color3
+	return Color3.new(c.R * k, c.G * k, c.B * k)
 end
 
 local busy = false
@@ -29,7 +37,7 @@ local function apply(p: BasePart)
 		return -- already showing the dimmed color
 	end
 	busy = true -- our own write fires Color-changed (immediately or deferred)
-	p.Color = scale(p.Color)
+	p.Color = scale(p.Color, K * extraScale(p))
 	-- remember the color as stored (part colors are 8-bit), so the check above matches exactly
 	p:SetAttribute(ATTR, p.Color)
 	busy = false
@@ -76,9 +84,29 @@ local function dimGlow(d: Instance)
 	end
 end
 
+-- Lights inside a NeonScale folder: dimmed by its factor, and again whenever the effect sets a new
+-- brightness. Brightness is stored as a float, so we remember the value as read back.
+local LIGHT_ATTR = "BrightnessShown"
+local function dimLight(l: Light, k: number)
+	local function apply()
+		if l:GetAttribute(LIGHT_ATTR) == l.Brightness then
+			return
+		end
+		l.Brightness *= k
+		l:SetAttribute(LIGHT_ATTR, l.Brightness)
+	end
+	apply()
+	l:GetPropertyChangedSignal("Brightness"):Connect(apply)
+end
+
 local function onDescendant(d: Instance)
 	if d:IsA("BasePart") then
 		watch(d)
+	elseif d:IsA("Light") then
+		local k = extraScale(d)
+		if k < 1 then
+			dimLight(d, k)
+		end
 	end
 end
 

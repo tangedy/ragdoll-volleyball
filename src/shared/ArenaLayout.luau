@@ -77,7 +77,7 @@ function ArenaLayout.openingBallSpots(): { Vector3 }
 	for _, sign in { -1, 1 } do
 		for i = 1, perSide do
 			local t = if perSide == 1 then 0.5 else (i - 1) / (perSide - 1)
-			local x = -16 + 32 * t
+			local x = ArenaLayout.HalfWidth * (t - 0.5)
 			table.insert(spots, A.Origin + Vector3.new(x, 2, sign * A.OpeningBallOffset))
 		end
 	end

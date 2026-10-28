@@ -49,8 +49,56 @@ local rng = Random.new()
 -- part only needs an occasional position while flying (late joiners, debugging). Writing it every
 -- 1/60 s step replicated ~60 CFrame updates a second per ball to every client.
 local FLIGHT_SYNC_INTERVAL = 0.1
-local sweepParams = RaycastParams.new()
-sweepParams.FilterType = Enum.RaycastFilterType.Include
+-- Sweep filters, one per (context, thrower team). Building the include list and assigning
+-- FilterDescendantsInstances (which marshals the whole array into the engine) used to happen for
+-- every flying ball on every 1/60 s step; now each list is rebuilt once per frame, and the params
+-- are only re-assigned when the list actually changed. A hit or catch invalidates them at once,
+-- since it changes who is targetable (immunity, ragdolls).
+type Sweep = { params: RaycastParams, list: { Instance }, frame: number }
+local sweeps: { [string]: Sweep } = {}
+local sweepFrame = 0
+
+local function sameList(a: { Instance }, b: { Instance }): boolean
+	if #a ~= #b then
+		return false
+	end
+	for i, v in a do
+		if b[i] ~= v then
+			return false
+		end
+	end
+	return true
+end
+
+local function sweepParamsFor(ball: Ball): RaycastParams
+	local key = ball.context .. "|" .. (ball.lastTeam or "")
+	local sweep = sweeps[key]
+	if sweep and sweep.frame == sweepFrame then
+		return sweep.params
+	end
+	local include: { Instance } = table.clone(S.ArenaService.sceneryList(ball.context))
+	for _, t in S.CombatService.targetsFor(ball) do
+		if t.proxy then
+			table.insert(include, t.proxy)
+		end
+	end
+	if not sweep then
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = include
+		sweep = { params = params, list = include, frame = sweepFrame }
+		sweeps[key] = sweep
+	elseif not sameList(sweep.list, include) then
+		sweep.params.FilterDescendantsInstances = include
+		sweep.list = include
+	end
+	sweep.frame = sweepFrame
+	return sweep.params
+end
+
+local function invalidateSweeps()
+	sweepFrame += 1
+end
 
 local function now(): number
 	return Workspace:GetServerTimeNow()
@@ -336,6 +384,7 @@ function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: 
 		ballType = ball.type,
 		t0 = ball.stateAt,
 		thrower = c.player,
+		team = c.team, -- clients warn about incoming enemy balls
 		throwId = throwId,
 		context = ball.context,
 	})
@@ -385,15 +434,7 @@ local function simulate(ball: Ball, dt: number)
 	-- Catch is evaluated before hits in the same step (spec §7 "Catch").
 	local catcher, catchPos = S.CombatService.findCatcher(ball, from, to)
 
-	local targets = S.CombatService.targetsFor(ball)
-	local include: { Instance } = table.clone(S.ArenaService.sceneryList(ball.context))
-	for _, t in targets do
-		if t.proxy then
-			table.insert(include, t.proxy)
-		end
-	end
-	sweepParams.FilterDescendantsInstances = include
-	local result = if delta.Magnitude > 1e-4 then Workspace:Spherecast(from, r, delta, sweepParams) else nil
+	local result = if delta.Magnitude > 1e-4 then Workspace:Spherecast(from, r, delta, sweepParamsFor(ball)) else nil
 
 	if catcher then
 		local catchT = (catchPos - from):Dot(delta) / math.max(delta:Dot(delta), 1e-6)
@@ -402,11 +443,13 @@ local function simulate(ball: Ball, dt: number)
 			else math.huge
 		if catchT <= hitT + 1e-3 then
 			S.CombatService.resolveCatch(ball, catcher)
+			invalidateSweeps()
 			return
 		end
 	end
 
 	if result then
+		invalidateSweeps()
 		local inst = result.Instance
 		local target = if inst.Name == "HitProxy" then S.PlayerStateService.fromCharacter(inst.Parent) else nil
 		local hitPos = result.Position
@@ -441,6 +484,7 @@ end
 
 function BallService.step(dt: number)
 	local cfg = Config.Ball
+	invalidateSweeps() -- targets (immunity, statuses) are re-read once per frame
 	accumulator += dt
 	local steps = math.floor(accumulator / cfg.SimStep)
 	if steps > cfg.MaxCatchUpSteps then

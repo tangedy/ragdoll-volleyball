@@ -40,10 +40,34 @@ function HubController.boostWheel(seconds: number)
 	wheelBoostUntil = os.clock() + seconds
 end
 
+-- Tagged props, kept current from CollectionService signals instead of re-fetched (a fresh array
+-- per tag) every frame.
+local tagged: { [string]: { Instance } } = {}
+local beaconOn: boolean? = nil -- last beacon state written (nil = write on the next frame)
+local function taggedList(tag: string): { Instance }
+	local list = tagged[tag]
+	if list then
+		return list
+	end
+	local fresh = CollectionService:GetTagged(tag)
+	tagged[tag] = fresh
+	CollectionService:GetInstanceAddedSignal(tag):Connect(function(inst)
+		table.insert(fresh, inst)
+		beaconOn = nil
+	end)
+	CollectionService:GetInstanceRemovedSignal(tag):Connect(function(inst)
+		local i = table.find(fresh, inst)
+		if i then
+			table.remove(fresh, i)
+		end
+	end)
+	return fresh
+end
+
 local function animateProps(dt: number)
 	local boost = math.max(0, wheelBoostUntil - os.clock())
 	wheelAngle += dt * (IDLE_WHEEL_SPEED + boost * 4)
-	for _, m in CollectionService:GetTagged("HubWheel") do
+	for _, m in taggedList("HubWheel") do
 		if m:IsA("Model") and m.PrimaryPart then
 			local home = wheelHome[m]
 			if not home then
@@ -54,26 +78,38 @@ local function animateProps(dt: number)
 			m:PivotTo(home * CFrame.Angles(wheelAngle, 0, 0))
 		end
 	end
+	-- beacons only change twice per blink: write them then, not every frame
 	local on = (os.clock() % Config.Lobby.BeaconBlink) < Config.Lobby.BeaconBlink * 0.35
-	for _, b in CollectionService:GetTagged("HubBeacon") do
-		if b:IsA("BasePart") then
-			b.Transparency = if on then 0 else 0.85
-			local light = b:FindFirstChildOfClass("PointLight")
-			if light then
-				light.Enabled = on
+	if on ~= beaconOn then
+		beaconOn = on
+		for _, b in taggedList("HubBeacon") do
+			if b:IsA("BasePart") then
+				b.Transparency = if on then 0 else 0.85
+				local light = b:FindFirstChildOfClass("PointLight")
+				if light then
+					light.Enabled = on
+				end
 			end
 		end
 	end
 	fanAngle += dt * 9
-	for _, f in CollectionService:GetTagged("HubFan") do
-		if f:IsA("BasePart") then
-			local home = fanHome[f]
-			if not home then
-				home = f.CFrame
-				fanHome[f] = home
+	local fans = taggedList("HubFan")
+	if #fans > 0 then
+		local parts: { BasePart } = {}
+		local cframes: { CFrame } = {}
+		for _, f in fans do
+			if f:IsA("BasePart") then
+				local home = fanHome[f]
+				if not home then
+					home = f.CFrame
+					fanHome[f] = home
+				end
+				table.insert(parts, f)
+				table.insert(cframes, home * CFrame.Angles(fanAngle, 0, 0)) -- cylinder axis is its local X
 			end
-			f.CFrame = home * CFrame.Angles(fanAngle, 0, 0) -- cylinder axis is its local X
 		end
+		-- one engine call for every fan instead of a CFrame write each
+		Workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)
 	end
 end
 

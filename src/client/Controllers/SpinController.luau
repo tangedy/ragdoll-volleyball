@@ -52,16 +52,22 @@ local function inHub(): boolean
 	return player:GetAttribute("Status") == "Lobby" and (player:GetAttribute("Team") or "") == ""
 end
 
--- Build the wheel's slots around the rim (they ride on `rotor`, which is what spins).
-local function buildWheel(slots: { string })
-	for _, f in rotor:GetChildren() do
+-- Draw a wheel's slots around the rim of `target` (the rotor, which is what spins). Prizes already
+-- in `ownedMap` carry a sticker with the coins they'd pay instead (`dupCoins` by rarity). Shared
+-- with the loot chests (ChestController).
+function SpinController.drawWheel(
+	target: Frame,
+	slots: { string },
+	ownedMap: { [string]: boolean },
+	dupCoins: { [string]: number }
+): { Frame }
+	for _, f in target:GetChildren() do
 		f:Destroy()
 	end
-	table.clear(slotFrames)
-	slotsShown = slots
+	local frames: { Frame } = {}
 	local n = #slots
 	if n == 0 then
-		return
+		return frames
 	end
 	for i, id in slots do
 		local item = Catalog.get(id)
@@ -77,7 +83,7 @@ local function buildWheel(slots: { string })
 			BackgroundColor3 = T.line,
 			BorderSizePixel = 0,
 			ZIndex = 5,
-		}, rotor)
+		}, target)
 		if not item then
 			continue
 		end
@@ -90,32 +96,38 @@ local function buildWheel(slots: { string })
 			Rotation = angle,
 			BackgroundColor3 = Theme.Rarity[rarity],
 			ZIndex = 6,
-		}, rotor)
+		}, target)
 		Theme.corner(slot, Theme.Radius.S)
 		Theme.stroke(slot, T.outline, 2.5)
 		ShopController.drawArt(item, slot)
-		if owned[id] then
+		if ownedMap[id] then
 			-- already owned: it would pay coins instead
-			Theme.sticker(slot, "+" .. tostring(SP.DuplicateCoins[rarity] or 0), T.sun, {
+			Theme.sticker(slot, "+" .. tostring(dupCoins[rarity] or 0), T.sun, {
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.fromScale(0.5, 1),
 				Size = UDim2.fromOffset(0, 18),
 				ZIndex = 9,
 			})
 		end
-		table.insert(slotFrames, slot)
+		table.insert(frames, slot)
 	end
+	return frames
 end
 
--- Odds of THIS wheel by rarity (each slot is 1 in N).
-local function renderOdds()
-	for _, f in oddsList:GetChildren() do
+local function buildWheel(slots: { string })
+	slotsShown = slots
+	slotFrames = SpinController.drawWheel(rotor, slots, owned, SP.DuplicateCoins)
+end
+
+-- Odds of a wheel by rarity (each slot is 1 in N), as rows in `list`.
+function SpinController.drawOdds(list: Frame, slots: { string })
+	for _, f in list:GetChildren() do
 		if f:IsA("Frame") then
 			f:Destroy()
 		end
 	end
 	local counts: { [string]: number } = {}
-	for _, id in slotsShown do
+	for _, id in slots do
 		local item = Catalog.get(id)
 		if item then
 			local r = Catalog.rarity(item)
@@ -129,7 +141,7 @@ local function renderOdds()
 			Size = UDim2.new(1, 0, 0, 26),
 			BackgroundTransparency = 1,
 			ZIndex = 4,
-		}, oddsList)
+		}, list)
 		Theme.sticker(row, r, Theme.Rarity[r], {
 			AnchorPoint = Vector2.new(0, 0.5),
 			Position = UDim2.fromScale(0, 0.5),
@@ -139,12 +151,16 @@ local function renderOdds()
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.fromScale(1, 0.5),
 			Size = UDim2.fromScale(0.4, 1),
-			Text = ("%d%%"):format(math.floor(n / math.max(#slotsShown, 1) * 100 + 0.5)),
+			Text = ("%d%%"):format(math.floor(n / math.max(#slots, 1) * 100 + 0.5)),
 			TextColor3 = if n > 0 then T.ink else T.inkMuted,
 			TextXAlignment = Enum.TextXAlignment.Right,
 			ZIndex = 5,
 		})
 	end
+end
+
+local function renderOdds()
+	SpinController.drawOdds(oddsList, slotsShown)
 end
 
 local function fmtCountdown(seconds: number): string
@@ -181,9 +197,7 @@ function SpinController.open(on: boolean)
 		if not ShopController.isOpen(panel) then
 			SoundController.play("UIOpen")
 		end
-		ShopController.openShop(false)
-		ShopController.openDaily(false)
-		ShopController.openSettings(false)
+		ShopController.closeAll() -- shop, daily, settings and the loot chest sheet
 		Theme.show(panel, ShopController.getBackdrop())
 		Theme.focus(spinButton)
 	elseif not spinning then
@@ -228,7 +242,9 @@ local function confetti(parent: GuiObject, color: Color3)
 	end
 end
 
-local function showReveal(result: any)
+-- Fill the prize card `reveal` for a spin/chest result and show it; its buttons hand focus back to
+-- `back`. Shared with the loot chests (ChestController).
+function SpinController.drawReveal(reveal: Frame, result: any, back: GuiObject)
 	local item = Catalog.get(result.id)
 	if not item then
 		return
@@ -335,7 +351,7 @@ local function showReveal(result: any)
 		equip.Activated:Connect(function()
 			Net.request(Net.Actions.EquipItem, { id = item.Id })
 			Theme.hide(reveal)
-			Theme.focus(spinButton)
+			Theme.focus(back)
 		end)
 		focusOn = equip
 	end
@@ -346,7 +362,7 @@ local function showReveal(result: any)
 	})
 	ok.Activated:Connect(function()
 		Theme.hide(reveal)
-		Theme.focus(spinButton)
+		Theme.focus(back)
 	end)
 	Theme.show(reveal)
 	Theme.focus(focusOn or ok)
@@ -359,6 +375,10 @@ local function showReveal(result: any)
 			HUDController.coinPop(result.coins)
 		end)
 	end
+end
+
+local function showReveal(result: any)
+	SpinController.drawReveal(reveal, result, spinButton)
 end
 
 local function stopSpin()
@@ -438,20 +458,9 @@ function SpinController.spin()
 	end)
 end
 
-function SpinController.init()
-	sheet = ShopController.sheet(
-		"Spin",
-		"Daily spin",
-		SHEET_SIZE,
-		"One free spin a day. Every slot is equally likely.",
-		{ tone = T.candy, glyph = "star" }
-	)
-	panel = sheet.frame
-	sheet.close.Activated:Connect(function()
-		SpinController.open(false)
-	end)
-	local body = sheet.body :: Frame
-	-- wheel: a sunk disc in the toy outline; the rotor (slots + spokes) is what turns
+-- The wheel on the left of a sheet's `body`: a sunk disc in the toy outline with a label on the hub
+-- and a pointer at the top. Returns the rotor (where the slots go), which is what turns.
+function SpinController.wheelFrame(body: Frame, hubText: string, hubColor: Color3): Frame
 	local wheelHolder = new("Frame", {
 		Name = "Wheel",
 		AnchorPoint = Vector2.new(0, 0.5),
@@ -474,12 +483,12 @@ function SpinController.init()
 	}, wheelHolder)
 	Theme.round(disc)
 	Theme.stroke(disc, T.outline, 4)
-	rotor = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 5 }, disc)
+	local wheelRotor = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 5 }, disc)
 	local hub = new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromScale(0.24, 0.24),
-		BackgroundColor3 = T.sun,
+		BackgroundColor3 = hubColor,
 		ZIndex = 10,
 	}, disc)
 	Theme.round(hub)
@@ -487,7 +496,7 @@ function SpinController.init()
 	Theme.label(hub, {
 		Size = UDim2.fromScale(0.7, 0.34),
 		Position = UDim2.fromScale(0.15, 0.33),
-		Text = "Spin",
+		Text = hubText,
 		TextColor3 = T.onFill,
 		ZIndex = 11,
 	}, 0)
@@ -503,6 +512,23 @@ function SpinController.init()
 	}, wheelHolder)
 	Theme.corner(pointer, 5)
 	Theme.stroke(pointer, T.outline, Theme.StrokeToy)
+	return wheelRotor
+end
+
+function SpinController.init()
+	sheet = ShopController.sheet(
+		"Spin",
+		"Daily spin",
+		SHEET_SIZE,
+		"One free spin a day. Every slot is equally likely.",
+		{ tone = T.candy, glyph = "star" }
+	)
+	panel = sheet.frame
+	sheet.close.Activated:Connect(function()
+		SpinController.open(false)
+	end)
+	local body = sheet.body :: Frame
+	rotor = SpinController.wheelFrame(body, "Spin", T.sun)
 
 	-- info column: status line, odds, buttons
 	local infoCol = new("Frame", {

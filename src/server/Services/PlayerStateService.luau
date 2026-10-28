@@ -46,6 +46,7 @@ export type Combatant = {
 	catchReadyAt: number,
 	catchUntil: number,
 	immuneUntil: number,
+	hitsTaken: number, -- knockback escalation (Config.Knockback.Escalation)
 	lastHitBy: Combatant?,
 	lastHitAt: number,
 	eliminatedBy: Combatant?,
@@ -115,6 +116,7 @@ function PlayerStateService.create(name: string, player: Player?, isBot: boolean
 		catchReadyAt = 0,
 		catchUntil = 0,
 		immuneUntil = 0,
+		hitsTaken = 0,
 		lastHitBy = nil,
 		lastHitAt = -math.huge,
 		eliminatedBy = nil,

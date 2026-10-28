@@ -93,11 +93,11 @@ function BotService.start()
 			end
 		end
 	end)
-	RunService.Heartbeat:Connect(function()
+	RunService.Heartbeat:Connect(function(dt)
 		if not paused then
 			BotService.react()
 		end
-		BotService.animate()
+		BotService.animate(dt)
 	end)
 end
 
@@ -163,8 +163,11 @@ local function playAnim(c: any, key: string, speed: number?)
 			track:Play(0.2)
 		end
 		brain.playing = key
+		brain.trackSpeed = nil
 	end
-	if track and speed then
+	-- only push a new speed when it has really changed (it is replicated to every client)
+	if track and speed and math.abs((brain.trackSpeed or -1) - speed) > 0.03 then
+		brain.trackSpeed = speed
 		track:AdjustSpeed(speed)
 	end
 end
@@ -275,7 +278,98 @@ function BotService.clear()
 	end
 end
 
-local function face(c: any, point: Vector3)
+-- Facing is a physics constraint, not CFrame writes: snapping the root every decision tick fought
+-- the Humanoid's AutoRotate (which turns toward the walk direction) and made strafing bots shake.
+-- While a bot faces something, AutoRotate is off and an AlignOrientation turns it smoothly; the
+-- Heartbeat keeps the goal on the target's live position between decision ticks.
+local FACE_HOLD = 0.35 -- seconds a face() call keeps steering after the last request
+local FACE_RESPONSIVENESS = 45
+
+local function facer(c: any): AlignOrientation?
+	local root = c.root :: BasePart?
+	if not root or not root.Parent then
+		return nil
+	end
+	local brain = c.bot
+	local ao = brain.align :: AlignOrientation?
+	if ao and ao.Parent == root then
+		return ao
+	end
+	local att = Instance.new("Attachment")
+	att.Name = "BotFaceAttachment"
+	att.Parent = root
+	local new = Instance.new("AlignOrientation")
+	new.Name = "BotFace"
+	new.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	new.Attachment0 = att
+	new.Responsiveness = FACE_RESPONSIVENESS
+	new.MaxTorque = 1e7
+	new.RigidityEnabled = false
+	new.Enabled = false
+	new.CFrame = root.CFrame.Rotation
+	new.Parent = root
+	brain.align = new
+	return new
+end
+
+local function setFaceGoal(c: any, ao: AlignOrientation, point: Vector3)
+	local pos = (c.root :: BasePart).Position
+	local flat = Vector3.new(point.X - pos.X, 0, point.Z - pos.Z)
+	if flat.Magnitude > 0.1 then
+		ao.CFrame = CFrame.lookAt(Vector3.zero, flat)
+	end
+end
+
+-- Turn toward `point` (or `target`'s live position) for the next FACE_HOLD seconds.
+local function face(c: any, point: Vector3, target: any?)
+	local ao = facer(c)
+	if not ao then
+		return
+	end
+	local brain = c.bot
+	brain.facePoint = point
+	brain.faceTarget = target
+	brain.faceUntil = now() + FACE_HOLD
+	setFaceGoal(c, ao, point)
+	if not ao.Enabled then
+		ao.Enabled = true
+	end
+	if not brain.facing then
+		brain.facing = true
+		if c.humanoid then
+			c.humanoid.AutoRotate = false
+		end
+	end
+end
+
+-- Per-frame facing upkeep: follow the target, release after FACE_HOLD, never fight a ragdoll.
+local function updateFacing(c: any, t: number)
+	local brain = c.bot
+	local ao = brain.align :: AlignOrientation?
+	if not ao or not brain.facing then
+		return
+	end
+	local root = c.root :: BasePart?
+	if not root or ao.Parent ~= root or c.action == "Ragdolled" or t > (brain.faceUntil or 0) then
+		ao.Enabled = false
+		brain.facing = false
+		brain.faceTarget = nil
+		if c.humanoid then
+			c.humanoid.AutoRotate = true
+		end
+		return
+	end
+	local target = brain.faceTarget
+	local troot = target and target.root :: BasePart?
+	if troot and troot.Parent then
+		brain.facePoint = troot.Position
+	end
+	setFaceGoal(c, ao, brain.facePoint)
+end
+
+-- One immediate turn (used only when a catch is pressed while still facing well away from the ball,
+-- so smoothing never changes whether a bot's catch can succeed).
+local function snapFace(c: any, point: Vector3)
 	local root = c.root :: BasePart?
 	if not root then
 		return
@@ -331,11 +425,18 @@ local function edgeDistance(team: string, pos: Vector3): number
 end
 BotService.edgeDistance = edgeDistance
 
+-- One shared params object; its filter is only re-marshalled when the court scenery folder changes.
+local sightParams = RaycastParams.new()
+sightParams.FilterType = Enum.RaycastFilterType.Include
+local sightScenery: Instance? = nil
+
 local function visible(from: Vector3, to: Vector3): boolean
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = S.ArenaService.sceneryList("Match")
-	return Workspace:Raycast(from + Vector3.new(0, 1.5, 0), to - from, params) == nil
+	local scenery = S.ArenaService.sceneryList("Match")[1]
+	if scenery ~= sightScenery then
+		sightScenery = scenery
+		sightParams.FilterDescendantsInstances = if scenery then { scenery } else {}
+	end
+	return Workspace:Raycast(from + Vector3.new(0, 1.5, 0), to - from, sightParams) == nil
 end
 
 -- Lower is better. Smart picks favour enemies near an edge (a hit can knock them off), enemies who
@@ -410,6 +511,19 @@ local function inward(c: any, pos: Vector3): Vector3
 	return if dir.Magnitude > 0.1 then pos + dir.Unit * 8 else center
 end
 
+-- Walk speed while strafing (nil = normal). A frozen humanoid (WalkSpeed 0 in the countdown) is
+-- left alone so this never unfreezes anyone.
+local function setStrafePace(c: any, pace: number?)
+	local humanoid = c.humanoid :: Humanoid?
+	if not humanoid or humanoid.WalkSpeed <= 0 then
+		return
+	end
+	local want = pace or Config.Player.WalkSpeed
+	if humanoid.WalkSpeed ~= want then
+		humanoid.WalkSpeed = want
+	end
+end
+
 local function aimDirection(c: any, target: any, chargeHold: number): Vector3
 	local root = c.root :: BasePart
 	local ballType = if c.heldBall then c.heldBall.type else "Standard"
@@ -456,24 +570,36 @@ local function thinkHolding(c: any, t: number)
 	local stalled = t - plan.heldAt > B.StallThrow
 	local target = plan.target or (if stalled then BotService.pickTarget(c, false, true) else nil)
 	if not target then
+		setStrafePace(c, nil)
 		-- nobody in sight: drift toward the middle of our half for a better angle
 		humanoid:MoveTo(
 			if c.status == "Jailed" then wanderPoint(c) else ArenaLayout.halfCenter(c.team) + Vector3.new(0, 3, 0)
 		)
 		return
 	end
-	face(c, target.root.Position)
-	-- sidestep while aiming (never toward an edge)
+	face(c, target.root.Position, target)
+	-- sidestep while aiming (never toward an edge). The bot used to MoveTo a point 4 × Strafe studs
+	-- aside every tick, which it reached (and stopped at) long before the next tick: a stop-go
+	-- shuffle. Now it walks continuously at the same average pace toward a goal it can't reach
+	-- before the next decision.
 	if c.status == "Active" and prof.Strafe > 0 then
 		local to = target.root.Position - c.root.Position
 		local side = Vector3.new(-to.Z, 0, to.X)
 		side = if side.Magnitude > 0.1 then side.Unit * plan.strafeDir else Vector3.zero
-		local step = c.root.Position + side * 4 * prof.Strafe
-		if not safeFor(c, step) then
+		local pace = math.min(Config.Player.WalkSpeed, 4 * prof.Strafe / B.TickInterval)
+		local reach = pace * B.TickInterval * 2 + 1
+		local probe = 4 * prof.Strafe
+		if not safeFor(c, c.root.Position + side * probe) then
 			plan.strafeDir = -plan.strafeDir
-			step = c.root.Position - side * 4 * prof.Strafe
+			side = -side
 		end
-		humanoid:MoveTo(if safeFor(c, step) then step else inward(c, c.root.Position))
+		if safeFor(c, c.root.Position + side * probe) then
+			setStrafePace(c, pace)
+			humanoid:MoveTo(c.root.Position + side * reach)
+		else
+			setStrafePace(c, nil)
+			humanoid:MoveTo(inward(c, c.root.Position))
+		end
 	else
 		humanoid:MoveTo(c.root.Position)
 	end
@@ -484,6 +610,7 @@ local function thinkHolding(c: any, t: number)
 		local hold = if c.chargeStart then now() - c.chargeStart else 0
 		S.CombatService.doThrow(c, aimDirection(c, target, hold), 0)
 		brain.plan = nil
+		setStrafePace(c, nil)
 	end
 end
 
@@ -543,6 +670,14 @@ function BotService.tickOne(c: any)
 	end
 	local t = now()
 	local brain = c.bot
+	-- forget old reaction decisions (counted here rather than every frame in react)
+	local n = 0
+	for _ in brain.reacted do
+		n += 1
+	end
+	if n > 40 then
+		brain.reacted = {}
+	end
 	if c.action == "Ragdolled" then
 		brain.plan = nil
 		brain.wasDown = true
@@ -556,6 +691,7 @@ function BotService.tickOne(c: any)
 		thinkHolding(c, t)
 	else
 		brain.plan = nil
+		setStrafePace(c, nil)
 		thinkFree(c, t)
 	end
 end
@@ -572,8 +708,18 @@ end
 -- Per-frame reactions to incoming balls. Each throw gets one decision per bot, made after the
 -- bot's reaction time: dodge sideways (toward the middle), try a catch (pressed with a timing
 -- error, so it can fail), or do nothing. A ball that arrives before the bot reacts just hits.
+local flying: { any } = {} -- reused every frame: the in-flight balls
 function BotService.react()
 	if not S.MatchService.isRoundLive() then
+		return
+	end
+	table.clear(flying)
+	for _, ball in S.BallService.all() do
+		if ball.state == "InFlight" then
+			table.insert(flying, ball)
+		end
+	end
+	if #flying == 0 then
 		return
 	end
 	local t = now()
@@ -581,8 +727,8 @@ function BotService.react()
 		if c.isBot and c.status == "Active" and c.root and c.action ~= "Ragdolled" then
 			local brain = c.bot
 			local prof = profileOf(c)
-			for _, ball in S.BallService.all() do
-				if ball.state == "InFlight" and ball.lastTeam ~= c.team then
+			for _, ball in flying do
+				if ball.lastTeam ~= c.team then
 					local rel = c.root.Position - ball.pos
 					local v = ball.vel
 					local vv = v:Dot(v)
@@ -634,6 +780,18 @@ function BotService.react()
 									r.catchAt = t + tc - Config.Player.CatchWindow / 2 + err * 2 * prof.CatchTimingError
 								end
 								if t >= r.catchAt then
+									-- the smooth turn is nearly always done by now; if it isn't, finish it
+									-- so the catch is decided by timing, exactly as before
+									local look = c.root.CFrame.LookVector
+									local flatIn = Vector3.new(-v.X, 0, -v.Z)
+									local flatLook = Vector3.new(look.X, 0, look.Z)
+									if
+										flatIn.Magnitude > 1e-3
+										and flatLook.Magnitude > 1e-3
+										and flatLook.Unit:Dot(flatIn.Unit) < 0.94
+									then
+										snapFace(c, ball.pos)
+									end
 									S.CombatService.doCatch(c)
 									r.choice = "Done"
 								end
@@ -642,38 +800,50 @@ function BotService.react()
 					end
 				end
 			end
-			-- forget old decisions
-			local n = 0
-			for _ in brain.reacted do
-				n += 1
-			end
-			if n > 40 then
-				brain.reacted = {}
-			end
 		end
 	end
 end
 
-function BotService.animate()
-	for _, c in bots() do
-		local brain = c.bot
+-- Smoothed locomotion speed per bot (the raw physics speed flickers frame to frame, which made the
+-- walk/run tracks speed up and slow down visibly and flip between walk and run near the threshold).
+local function smoothSpeed(brain: any, speed: number, dt: number): number
+	local prev = brain.animSpeed or speed
+	local k = 1 - math.exp(-dt * 12)
+	local s = prev + (speed - prev) * k
+	brain.animSpeed = s
+	return s
+end
+
+function BotService.animate(dt: number)
+	local t = now()
+	for _, c in S.PlayerStateService.all() do
+		local brain = c.isBot and c.bot
 		local humanoid = c.humanoid :: Humanoid?
+		if brain and humanoid then
+			updateFacing(c, t)
+		end
 		if brain and humanoid and brain.anims then
 			local state = humanoid:GetState()
+			local root = c.root :: BasePart?
+			local v = if root then root.AssemblyLinearVelocity else Vector3.zero
+			local speed = smoothSpeed(brain, Vector3.new(v.X, 0, v.Z).Magnitude, dt)
+			local playing = brain.playing
+			-- hysteresis: start moving above 1.5, stop below 0.8; run above 11, walk below 9
+			local moving = speed > (if playing == "walk" or playing == "run" then 0.8 else 1.5)
+			local running = speed > (if playing == "run" then 9 else 11)
 			if c.action == "Ragdolled" then
 				playAnim(c, "none") -- limp: no animation fights the ragdoll
 			elseif state == Enum.HumanoidStateType.Jumping then
 				playAnim(c, "jump")
 			elseif state == Enum.HumanoidStateType.Freefall then
 				playAnim(c, "fall")
-			elseif c.root and (c.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude > 1.5 then
+			elseif moving then
 				-- (bots walk with MoveTo, which leaves MoveDirection at zero, so go by actual speed)
 				-- walk below jogging pace, run above it, sped up/slowed to match the actual speed
-				local speed = (c.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude
-				if speed < 10 then
-					playAnim(c, "walk", math.max(0.4, speed / (WALK_SPEED_REF / 2)))
-				else
+				if running then
 					playAnim(c, "run", speed / WALK_SPEED_REF)
+				else
+					playAnim(c, "walk", math.max(0.4, speed / (WALK_SPEED_REF / 2)))
 				end
 			else
 				playAnim(c, "idle")

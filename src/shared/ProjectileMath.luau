@@ -73,18 +73,39 @@ function ProjectileMath.randomInCone(dir: Vector3, halfAngleDeg: number, rng: Ra
 	return (cf * offset).LookVector
 end
 
+-- Knockback scale after `hitsTaken` earlier hits: tiny at first, growing with every hit.
+function ProjectileMath.escalation(hitsTaken: number): number
+	local e = Config.Knockback.Escalation
+	return math.min(e.First + e.PerHit * math.max(hitsTaken, 0), e.Max)
+end
+
+-- Speed cap for a launch at this escalation (big late-game launches go past the base cap).
+function ProjectileMath.maxKnockbackSpeed(scale: number): number
+	return Config.Knockback.MaxSpeed * math.max(scale, 1)
+end
+
+-- How long a hit at this escalation keeps you ragdolled.
+function ProjectileMath.ragdollDuration(scale: number): number
+	return Config.Player.RagdollDuration * math.clamp(0.7 + 0.3 * scale, 0.75, 1.4)
+end
+
 -- Knockback velocity change for a hit (spec §7 "Knockback"). Bounded and mass-independent.
-function ProjectileMath.knockback(ballVelocity: Vector3, charge: number, ballType: string): Vector3
+-- `scale` is the escalation from ProjectileMath.escalation (1 when left out).
+function ProjectileMath.knockback(ballVelocity: Vector3, charge: number, ballType: string, scale: number?): Vector3
 	local def = BallDefinitions.get(ballType)
 	local kb = Config.Knockback
+	local k = scale or 1
 	local flat = Vector3.new(ballVelocity.X, 0, ballVelocity.Z)
 	local dir = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, 1)
 	local horizontal = (kb.HorizontalMin + (kb.HorizontalMax - kb.HorizontalMin) * charge)
 		* def.HorizontalKnockbackScale
-	local up = kb.Upward * def.UpwardKnockbackScale
+		* k
+	-- the hop grows more gently than the push, so big hits fly far rather than straight up
+	local up = kb.Upward * def.UpwardKnockbackScale * math.clamp(k, 0.5, 1.4)
 	local v = dir * horizontal + Vector3.new(0, up, 0)
-	if v.Magnitude > kb.MaxSpeed then
-		v = v.Unit * kb.MaxSpeed
+	local cap = ProjectileMath.maxKnockbackSpeed(k)
+	if v.Magnitude > cap then
+		v = v.Unit * cap
 	end
 	return v
 end

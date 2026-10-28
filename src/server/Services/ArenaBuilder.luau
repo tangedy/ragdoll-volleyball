@@ -103,20 +103,21 @@ local function label(parent: BasePart, text: string, color: Color3)
 	bb.Parent = parent
 end
 
--- Stylized dusk lighting: dark enough that the neon rims and power-up balls pop, with bloom on
--- neon only (high threshold) so the court itself stays readable. The haze is light enough that
--- the court reads clearly from the hub across the gap, and the ambient lifts faces out of shadow.
+-- Bright early-afternoon daylight: a high sun, a clear blue sky and a light, airy haze, with
+-- bloom on neon only (high threshold) so the court itself stays readable. The ambient is warm and
+-- high, so faces and the far side of the court never sit in shadow.
 -- (GraphicsController drops shadows, sun rays and bloom locally on slower machines.)
 function ArenaBuilder.setupLighting()
 	local Lighting = game:GetService("Lighting")
-	Lighting.ClockTime = 18.1
-	Lighting.Brightness = 2.2
-	Lighting.Ambient = Color3.fromRGB(96, 86, 122)
-	Lighting.OutdoorAmbient = Color3.fromRGB(138, 122, 168)
+	Lighting.ClockTime = 13.5
+	Lighting.GeographicLatitude = 30
+	Lighting.Brightness = 3
+	Lighting.Ambient = Color3.fromRGB(150, 150, 158)
+	Lighting.OutdoorAmbient = Color3.fromRGB(170, 172, 182)
 	Lighting.EnvironmentDiffuseScale = 1
 	Lighting.EnvironmentSpecularScale = 0.6
 	Lighting.GlobalShadows = true
-	Lighting.ShadowSoftness = 0.35
+	Lighting.ShadowSoftness = 0.25
 	local function ensure(className: string, name: string): Instance
 		local existing = Lighting:FindFirstChild(name)
 		if existing and existing.ClassName == className then
@@ -131,23 +132,23 @@ function ArenaBuilder.setupLighting()
 		return inst
 	end
 	local atmo = ensure("Atmosphere", "RD_Atmosphere") :: Atmosphere
-	atmo.Density = 0.25
-	atmo.Offset = 0.2
-	atmo.Color = Color3.fromRGB(205, 175, 255)
-	atmo.Decay = Color3.fromRGB(110, 70, 170)
-	atmo.Glare = 0.3
-	atmo.Haze = 1.0
+	atmo.Density = 0.22
+	atmo.Offset = 0.15
+	atmo.Color = Color3.fromRGB(205, 228, 255)
+	atmo.Decay = Color3.fromRGB(120, 165, 225)
+	atmo.Glare = 0.15
+	atmo.Haze = 0.6
 	local bloom = ensure("BloomEffect", "RD_Bloom") :: BloomEffect
 	bloom.Intensity = 0.8
 	bloom.Size = 24
 	bloom.Threshold = 1.15
 	local cc = ensure("ColorCorrectionEffect", "RD_Color") :: ColorCorrectionEffect
-	cc.Saturation = 0.16
-	cc.Contrast = 0.14
-	cc.Brightness = 0.02
-	cc.TintColor = Color3.fromRGB(255, 248, 255)
+	cc.Saturation = 0.12
+	cc.Contrast = 0.08
+	cc.Brightness = 0.04
+	cc.TintColor = Color3.fromRGB(255, 252, 245)
 	local rays = ensure("SunRaysEffect", "RD_SunRays") :: SunRaysEffect
-	rays.Intensity = 0.06
+	rays.Intensity = 0.04
 	rays.Spread = 0.6
 end
 
@@ -490,7 +491,7 @@ function ArenaBuilder.build(): Folder
 			Name = "Dispenser_" .. team,
 			Shape = Enum.PartType.Cylinder,
 			Size = Vector3.new(0.4, 6, 6),
-			CFrame = CFrame.new(o.X + sign * 20, o.Y + 0.2, o.Z + sign * 20) * CFrame.Angles(0, 0, math.rad(90)),
+			CFrame = CFrame.new(o.X + sign * 30, o.Y + 0.2, o.Z + sign * 30) * CFrame.Angles(0, 0, math.rad(90)),
 			Color = Color3.fromRGB(255, 215, 60),
 			Material = Enum.Material.Neon,
 		}, decorFolder)
@@ -498,12 +499,12 @@ function ArenaBuilder.build(): Folder
 		label(pad, "?", Color3.fromRGB(255, 230, 90))
 	end
 
-	-- Cartoon void far below the court (decorative only, nowhere near the playable surface).
+	-- Open sky far below the court (decorative only, nowhere near the playable surface).
 	decor({
 		Name = "VoidGlow",
 		Size = Vector3.new(800, 1, 800),
 		CFrame = CFrame.new(o.X, o.Y - 160, o.Z),
-		Color = Color3.fromRGB(60, 20, 110),
+		Color = Color3.fromRGB(120, 190, 255),
 		Material = Enum.Material.Neon,
 		Transparency = 0.45,
 	}, decorFolder)

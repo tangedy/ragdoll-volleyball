@@ -3,6 +3,7 @@
 -- low thump + a sharp crack + a slap instead of one thin sample. Layers use Roblox's built-in
 -- engine sounds (rbxasset://sounds, verified to load in Studio), shaped with EQ/distortion.
 -- To use your own uploaded audio, replace a layer's `id` with "rbxassetid://<id>".
+-- The dodgeball smacks are free Creator Store sound effects (kirbyzaz's Dodgeball_Impact set).
 
 export type Layer = {
 	id: string,
@@ -67,33 +68,30 @@ local Cues: { [string]: { Layer } } = {
 		},
 	},
 	Hit = {
-		-- body: a deep, slightly crunchy thump
+		-- a real rubber dodgeball smack
+		{ id = "rbxassetid://8254245367", volume = 1.0, pitch = 1, jitter = 0.06, stopAfter = 1.2 },
+		-- body: a soft low thump under it
 		{
 			id = S .. "bass.wav",
-			volume = 1.0,
+			volume = 0.45,
 			pitch = 1.9,
 			jitter = 0.05,
-			eq = { low = 8, mid = 2, high = -4 },
-			distortion = 0.35,
-			stopAfter = 0.35,
+			eq = { low = 6, mid = 0, high = -8 },
+			stopAfter = 0.3,
 		},
-		-- transient: the crack you feel
-		{ id = S .. "snap.wav", volume = 0.75, pitch = 0.8, jitter = 0.06, eq = { low = 0, mid = 3, high = 4 } },
-		-- slap tail
-		{ id = S .. "hit.wav", volume = 0.5, pitch = 1.2, jitter = 0.06, delay = 0.01 },
 	},
 	HitHeavy = {
+		{ id = "rbxassetid://8254247881", volume = 1.0, pitch = 0.95, jitter = 0.05, stopAfter = 1.2 },
+		{ id = "rbxassetid://8254245367", volume = 0.5, pitch = 0.8, jitter = 0.05, stopAfter = 1.2 },
 		{
 			id = S .. "bass.wav",
-			volume = 1.0,
+			volume = 0.7,
 			pitch = 1.4,
 			jitter = 0.04,
 			eq = { low = 10, mid = 0, high = -6 },
-			distortion = 0.5,
-			stopAfter = 0.5,
+			distortion = 0.2,
+			stopAfter = 0.45,
 		},
-		{ id = S .. "snap.wav", volume = 0.8, pitch = 0.6, jitter = 0.05 },
-		{ id = S .. "metal.ogg", volume = 0.35, pitch = 0.7, delay = 0.02 },
 	},
 	Catch = {
 		{ id = S .. "snap.wav", volume = 0.7, pitch = 1.35, jitter = 0.05 },
@@ -176,18 +174,6 @@ local Cues: { [string]: { Layer } } = {
 	},
 	RoundLose = {
 		{ id = S .. "victory.wav", volume = 0.35, pitch = 0.7 },
-	},
-	Finisher = {
-		{
-			id = S .. "bass.wav",
-			volume = 1.0,
-			pitch = 0.7,
-			eq = { low = 10, mid = 0, high = -4 },
-			distortion = 0.5,
-			reverb = true,
-		},
-		{ id = S .. "glassbreak.wav", volume = 0.4, pitch = 0.9, delay = 0.05 },
-		{ id = S .. "victory.wav", volume = 0.5, pitch = 1.1, delay = 0.35 },
 	},
 	-- Meteor Strike finisher
 	MeteorCharge = {
@@ -572,6 +558,22 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 1.4, delay = 0.06 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 1.9, delay = 0.16 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 2.5, delay = 0.28 },
+	},
+	-- Loot chests: the lid rattling, bursting open, and thudding shut
+	ChestRattle = {
+		{ id = S .. "clickfast.wav", volume = 0.35, pitch = 0.6, jitter = 0.1 },
+		{ id = S .. "collide.wav", volume = 0.2, pitch = 1.4, delay = 0.04, jitter = 0.1 },
+	},
+	ChestBurst = {
+		{ id = S .. "switch.wav", volume = 0.5, pitch = 0.6 },
+		{ id = S .. "glassbreak.wav", volume = 0.25, pitch = 1.6, delay = 0.03 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.2, delay = 0.08 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 1.8, delay = 0.18 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.4, delay = 0.3 },
+	},
+	ChestThud = {
+		{ id = S .. "collide.wav", volume = 0.4, pitch = 0.55 },
+		{ id = S .. "bass.wav", volume = 0.25, pitch = 1.3, delay = 0.02 },
 	},
 	-- Match intro (each team's shot)
 	IntroStinger = {

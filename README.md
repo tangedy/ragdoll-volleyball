@@ -41,13 +41,15 @@ Optional place settings:
   - F8 toggles the debug overlay (leak counters and hit-outcome tuning data).
   - F9 runs the scenario test suite. Results print to Output and go to `workspace.RD_TestResults`. You can also start it from the server command bar with `workspace:SetAttribute("RD_RunTests", true)`.
   - F10 launches your own character with a full-charge hit, to feel the knockback.
+- **Knockback escalates:** each hit you take launches you harder than the last (`Config.Knockback.Escalation`). Hits thrown from jail don't raise it. It resets each round and when you return from jail.
 - **Hub (between matches, 7 s):** the SHOP and DAILY buttons, or the kiosks, open the coins shop and locker and the daily reward. Keeping the shop open holds you in the hub.
+- **Loot chests:** three chests stand around the hub plaza. Walk up and press the prompt to see the chest's wheel; opening one costs 1,000 coins and wins any cosmetic (`Config.Chest`). Press G in Studio for dev coins.
 - **Controls:**
 
 | Action | PC | Mobile | Controller |
 | --- | --- | --- | --- |
-| Aim and throw | Hold / release left mouse | Hold / release THROW | Hold / release RT |
-| Cancel aim | Right mouse | Drag off THROW | LT |
+| Throw at the locked-on enemy | Click left mouse | Tap THROW | RT |
+| Camera lock (Free / Shift / Aim) | Shift, or click the lock chip | LOCK button | R3 |
 | Dodge | Q | DODGE | X |
 | Catch | E | CATCH | LB |
 | Spectator: switch player | Z / C | Arrow buttons | D-pad |

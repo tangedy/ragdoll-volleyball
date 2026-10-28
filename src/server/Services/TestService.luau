@@ -89,6 +89,7 @@ local function ready(c: any, pos: Vector3)
 	S.PlayerStateService.setStatus(c, "Active")
 	S.PlayerStateService.setAction(c, "Idle")
 	c.immuneUntil = 0
+	c.hitsTaken = 0
 	c.catchUntil = 0
 	c.chargeStart = nil
 	c.dodgeReadyAt = 0
@@ -374,7 +375,7 @@ end)
 
 test("one-way edge: a flung body past the edge can't come back onto the court", function()
 	local bot = bots("Blue")[1]
-	ready(bot, point("Blue", 0, 44))
+	ready(bot, point("Blue", 0, ArenaLayout.HalfLength - 4))
 	task.wait(0.3)
 	bot.immuneUntil = 0
 	S.PlayerStateService.setAction(bot, "Ragdolled")
@@ -512,7 +513,7 @@ test("bots: a smart bot targets the enemy at the edge over a closer one in the m
 	end
 	ready(bot, point("Red", 0, 12))
 	ready(blue[1], point("Blue", 0, 14)) -- closest, safe in the middle
-	ready(blue[2], point("Blue", 28, 20)) -- farther, 4 studs from the side edge
+	ready(blue[2], point("Blue", ArenaLayout.HalfWidth - 4, 20)) -- farther, 4 studs from the side edge
 	task.wait(0.3)
 	local smart = S.BotService.pickTarget(bot, true, false)
 	local naive = S.BotService.pickTarget(bot, false, false)
@@ -547,7 +548,7 @@ end)
 
 test("bots: dodges go toward the middle, never off the edge", function()
 	local bot = bots("Red")[1]
-	ready(bot, point("Red", 26, 24)) -- 6 from the right edge
+	ready(bot, point("Red", ArenaLayout.HalfWidth - 6, 24)) -- 6 from the right edge
 	task.wait(0.3)
 	local inside = S.BotService.safeFor(bot, bot.root.Position + Vector3.new(-8, 0, 0))
 	local outside = S.BotService.safeFor(bot, bot.root.Position + Vector3.new(8, 0, 0))
@@ -887,12 +888,13 @@ function TestService.knockbackProbe()
 		return
 	end
 	S.BotService.setPaused(true)
+	local hw, hl = ArenaLayout.HalfWidth, ArenaLayout.HalfLength
 	local spots = {
 		{ name = "center of half (x0, 14 from line)", x = 0, depth = 14 },
-		{ name = "spawn line (x0, 30 deep)", x = 0, depth = 30 },
-		{ name = "deep (x0, 38 deep = 10 from back)", x = 0, depth = 38 },
-		{ name = "near side (x22 = 10 from edge)", x = 22, depth = 24 },
-		{ name = "edge (x27 = 5 from edge)", x = 27, depth = 24 },
+		{ name = "spawn line", x = 0, depth = Config.Arena.SpawnSetback },
+		{ name = "deep (10 from back)", x = 0, depth = hl - 10 },
+		{ name = "near side (10 from edge)", x = hw - 10, depth = hl / 2 },
+		{ name = "edge (5 from edge)", x = hw - 5, depth = hl / 2 },
 	}
 	local lines = {}
 	for _, spot in spots do

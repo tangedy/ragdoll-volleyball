@@ -113,15 +113,12 @@ local function makeBat(ctx: any, rng: Random, from: Vector3, to: Vector3, launch
 	for _ = 1, 2 do
 		table.insert(wings, part({ Size = Vector3.new(0.95, 0.05, 0.42), Color = dark }, ctx.folder))
 	end
-	local eye = part(
-		{
-			Shape = Enum.PartType.Ball,
-			Size = Vector3.one * 0.12,
-			Color = Color3.fromRGB(255, 40, 40),
-			Material = Enum.Material.Neon,
-		},
-		ctx.folder
-	)
+	local eye = part({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * 0.12,
+		Color = Color3.fromRGB(255, 40, 40),
+		Material = Enum.Material.Neon,
+	}, ctx.folder)
 	table.insert(wings, eye) -- moved with the body below
 	return {
 		body = body,
@@ -224,23 +221,26 @@ local function puppetJoints(model: Model): { Joint }
 			local a0, a1 = d.Attachment0 :: Attachment, d.Attachment1 :: Attachment
 			table.insert(
 				joints,
-				{ name = d.Name, p0 = a0.Parent :: BasePart, p1 = a1.Parent :: BasePart, f0 = a0.CFrame, f1 = a1.CFrame }
+				{
+					name = d.Name,
+					p0 = a0.Parent :: BasePart,
+					p1 = a1.Parent :: BasePart,
+					f0 = a0.CFrame,
+					f1 = a1.CFrame,
+				}
 			)
 		elseif d:IsA("JointInstance") and d.Part0 and d.Part1 then
 			-- Motor6D limbs (classic rigs) and Welds (accessories) both carry C0/C1
 			table.insert(joints, { name = d.Name, p0 = d.Part0, p1 = d.Part1, f0 = d.C0, f1 = d.C1 })
 		elseif d:IsA("WeldConstraint") and d.Part0 and d.Part1 then
 			-- team band / hit proxy: keep their current offset
-			table.insert(
-				joints,
-				{
-					name = d.Name,
-					p0 = d.Part0,
-					p1 = d.Part1,
-					f0 = d.Part0.CFrame:ToObjectSpace(d.Part1.CFrame),
-					f1 = CFrame.identity,
-				}
-			)
+			table.insert(joints, {
+				name = d.Name,
+				p0 = d.Part0,
+				p1 = d.Part1,
+				f0 = d.Part0.CFrame:ToObjectSpace(d.Part1.CFrame),
+				f1 = CFrame.identity,
+			})
 		end
 	end
 	return joints
@@ -406,14 +406,11 @@ return {
 		end)
 		-- creeping ground fog
 		for i = 1, (if ctx.reducedMotion then 2 else 5) do
-			local anchor = part(
-				{
-					Size = Vector3.one * 0.2,
-					Transparency = 1,
-					CFrame = CFrame.new(G + o * (i * 4 - 4) + s * rng:NextNumber(-4, 4)),
-				},
-				ctx.folder
-			)
+			local anchor = part({
+				Size = Vector3.one * 0.2,
+				Transparency = 1,
+				CFrame = CFrame.new(G + o * (i * 4 - 4) + s * rng:NextNumber(-4, 4)),
+			}, ctx.folder)
 			local a = Instance.new("Attachment")
 			a.Parent = anchor
 			local fog = Instance.new("ParticleEmitter")

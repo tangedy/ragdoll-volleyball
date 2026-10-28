@@ -269,9 +269,9 @@ local function uprightPoint(c: any): Vector3?
 	return nil -- falling: never rescue a legitimate void fall
 end
 
-local function scheduleRecovery(c: any)
+local function scheduleRecovery(c: any, duration: number?)
 	local token = c.actionToken
-	task.delay(P.RagdollDuration, function()
+	task.delay(duration or P.RagdollDuration, function()
 		local tries = 0
 		while c.actionToken == token and c.action == "Ragdolled" and alive(c) do
 			local point = uprightPoint(c)
@@ -299,11 +299,17 @@ end
 function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 	local thrower = ball.lastThrower
 	local t = now()
-	local kb = ProjectileMath.knockback(ball.vel, ball.charge, ball.type)
+	-- every hit launches harder than the last; a throw from jail lands at the current level
+	local scale = ProjectileMath.escalation(target.hitsTaken)
+	local kb = ProjectileMath.knockback(ball.vel, ball.charge, ball.type, scale)
+	local ragdollTime = ProjectileMath.ragdollDuration(scale)
 	local ballType = ball.type
 	S.BallService.spend(ball, pos, -ball.vel * 0.12 + Vector3.new(0, 14, 0))
 	if t < target.immuneUntil then
 		return -- repeated hits during immunity add no force and do not extend the ragdoll
+	end
+	if not (thrower and thrower.status == "Jailed") then
+		target.hitsTaken += 1
 	end
 	-- cancel current action; getting hit while charging drops the ball
 	target.chargeStart = nil
@@ -312,11 +318,11 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 		S.BallService.drop(target)
 	end
 	S.PlayerStateService.setAction(target, "Ragdolled")
-	target.immuneUntil = t + P.RagdollDuration + P.PostHitImmunity
+	target.immuneUntil = t + ragdollTime + P.PostHitImmunity
 	if target.character then
-		S.RagdollService.ragdoll(target.character, kb)
+		S.RagdollService.ragdoll(target.character, kb, ProjectileMath.maxKnockbackSpeed(scale))
 	end
-	scheduleRecovery(target)
+	scheduleRecovery(target, ragdollTime)
 
 	if thrower and thrower.team ~= target.team then
 		target.lastHitBy = thrower
@@ -331,6 +337,7 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 		targetModel = target.character, -- clients flash this character white
 		thrower = thrower and thrower.player,
 		charge = ball.charge,
+		escalation = scale,
 	})
 	if thrower then
 		send(thrower, "Hint", { text = "HIT!", duration = 0.6 })
@@ -373,17 +380,14 @@ function CombatService.debugLaunch(c: any, charge: number)
 	S.PlayerStateService.setAction(c, "Ragdolled")
 	c.immuneUntil = now() + P.RagdollDuration + P.PostHitImmunity
 	S.RagdollService.ragdoll(c.character, kb)
-	S.NetService.broadcast(
-		"Impact",
-		{
-			kind = "Hit",
-			ballType = "Standard",
-			position = c.root.Position,
-			direction = look,
-			targetModel = c.character,
-			target = c.player,
-		}
-	)
+	S.NetService.broadcast("Impact", {
+		kind = "Hit",
+		ballType = "Standard",
+		position = c.root.Position,
+		direction = look,
+		targetModel = c.character,
+		target = c.player,
+	})
 	scheduleRecovery(c)
 end
 
@@ -411,8 +415,7 @@ function CombatService.doThrow(c: any, dir: Vector3, throwId: number): boolean
 		send(c, "ThrowResult", { throwId = throwId, ok = false })
 		return false
 	end
-	local hold = if c.chargeStart then now() - c.chargeStart else 0
-	local charge = ProjectileMath.chargeFromHold(hold) -- quick release = valid minimum-power throw
+	local charge = 1 -- every throw is full power: tap to fire, no charging
 	c.chargeStart = nil
 	local speed = ProjectileMath.throwSpeed(charge, ball.type)
 	S.BallService.launch(c, dir * speed, charge, throwId)

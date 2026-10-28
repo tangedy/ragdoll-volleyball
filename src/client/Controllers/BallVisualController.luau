@@ -4,8 +4,10 @@
 --
 -- In-flight balls follow a deterministic arc, so each client simulates it from the server's
 -- launch record instead of waiting for ~20 Hz part replication. The authoritative part is hidden
--- locally while a visual exists and shown again the moment its BallState leaves InFlight.
+-- locally while a visual exists and shown again once its BallState leaves InFlight (after a short
+-- glide onto the real ball, so the swap never jumps).
 -- The local thrower predicts the launch on release and blends into the server arc when it arrives.
+-- An enemy ball whose arc is about to pass close to you carries a "!" above it all the way in.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -18,6 +20,8 @@ local BallDefinitions = require(Shared.BallDefinitions)
 local ProjectileMath = require(Shared.ProjectileMath)
 local Net = require(script.Parent.Net)
 local HubController = require(script.Parent.HubController)
+local OutlineController = require(script.Parent.OutlineController)
+local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
 local player = Players.LocalPlayer
 
@@ -34,16 +38,48 @@ type Visual = {
 	stoppedAt: Vector3?,
 	createdAt: number,
 	lobby: boolean, -- a practice throw in the hub (collides with hub scenery, not the court)
+	team: string?, -- the thrower's team (nil for your own throws: never a threat)
+	warning: BillboardGui?, -- the "!" while it's heading at you
+	radius: number,
+	threat: boolean, -- last threat check result (re-checked at THREAT_RATE, not every frame)
+	nextThreatAt: number,
+	handoffAt: number?, -- the server ended the flight: glide onto the real ball, then hand over
 }
 
 local BallVisualController = {}
 
 local BLEND_TIME = 0.15
+local THREAT_RATE = 1 / 20 -- the "!" toggle doesn't need a 36-sample arc check every frame
+-- Handoff: when a flight ends, the real ball's replicated position can be a sync or two stale
+-- (in-flight parts are only written at 10 Hz), and showing it at once made balls jump backward on
+-- landing and catches. The visual waits briefly for fresh replication, glides onto it, then swaps.
+local HANDOFF_WAIT = 0.15 -- hold at most this long while the real ball is still far away
+local HANDOFF_FAR = 4
+local HANDOFF_DONE = 1.5 -- swap once this close (under two frames of motion at throw speed)
+local HANDOFF_MAX = 0.4
+local HANDOFF_RATE = 25
 local folder: Folder
 local visuals: { [Visual]: boolean } = {}
 local byBallId: { [number]: Visual } = {}
 local predicted: { [number]: Visual } = {} -- by throwId
 local serverParts: { [number]: BasePart } = {}
+
+-- GetServerTimeNow() wobbles by a few ms frame to frame as its clock estimate updates, which shows
+-- up as micro-stutter on a 140 stud/s ball. Track its offset from os.clock() and ease it, snapping
+-- only on a real resync.
+local clockOffset: number? = nil
+local function smoothServerNow(): number
+	local c = os.clock()
+	local target = Workspace:GetServerTimeNow() - c
+	local offset = clockOffset
+	if offset == nil or math.abs(target - offset) > 0.25 then
+		offset = target
+	else
+		offset += (target - offset) * 0.05
+	end
+	clockOffset = offset
+	return c + offset
+end
 
 local function makePart(ballType: string, at: Vector3): Part
 	local def = BallDefinitions.get(ballType)
@@ -86,19 +122,100 @@ local function setServerHidden(ballId: number?, hidden: boolean)
 	local part = serverParts[ballId]
 	if part then
 		part.LocalTransparencyModifier = if hidden then 1 else 0
+		OutlineController.setBallShown(part, not hidden)
 	end
+end
+
+-- The incoming-ball warning: a joy-red "!" disc that rides above the ball.
+local function makeWarning(ball: BasePart): BillboardGui
+	local T = Theme.Toybox
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "IncomingWarning"
+	bb.Size = UDim2.fromOffset(40, 40)
+	bb.StudsOffsetWorldSpace = Vector3.new(0, ball.Size.Y / 2 + 1.6, 0)
+	bb.AlwaysOnTop = true
+	bb.LightInfluence = 0
+	bb.MaxDistance = 250
+	bb.ResetOnSpawn = false
+	local disc = Theme.new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.9, 0.9),
+		BackgroundColor3 = T.joyRed,
+	}, bb)
+	Theme.round(disc)
+	Theme.stroke(disc, T.paper, 3)
+	local mark = Theme.text(disc, 26, {
+		Size = UDim2.fromScale(1, 1),
+		Text = "!",
+		TextColor3 = T.paper,
+		FontFace = Theme.DisplayFace,
+	})
+	Theme.textStroke(mark, 2)
+	local scale = Theme.new("UIScale", { Scale = 0.3 }, disc)
+	Theme.tween(scale, 0.18, { Scale = 1 }, Enum.EasingStyle.Back)
+	bb.Adornee = ball
+	bb.Parent = ball
+	return bb
+end
+
+-- Does this enemy arc pass within WarnRadius of you in the next WarnLookahead seconds, while still
+-- heading your way?
+local function threatens(v: Visual, t: number, me: Vector3): boolean
+	local A = Config.AimAssist
+	local step = 1 / 30
+	local s = 0
+	local radiusSq = A.WarnRadius * A.WarnRadius
+	while s <= A.WarnLookahead do
+		local at = t + s
+		local pos = ProjectileMath.positionAt(v.origin, v.vel, v.g, at)
+		local rel = me - pos
+		if rel:Dot(rel) < radiusSq then
+			return s > 0 or ProjectileMath.velocityAt(v.vel, v.g, at):Dot(rel) > 0
+		end
+		s += step
+	end
+	return false
 end
 
 local function remove(v: Visual)
 	visuals[v] = nil
-	if v.ballId and byBallId[v.ballId] == v then
-		byBallId[v.ballId] = nil
+	local ballId = v.ballId
+	local owns = ballId ~= nil and byBallId[ballId] == v
+	if owns then
+		byBallId[ballId :: number] = nil
 	end
 	if v.throwId and predicted[v.throwId] == v then
 		predicted[v.throwId] = nil
 	end
-	setServerHidden(v.ballId, false)
+	-- never un-hide a real ball that a newer visual (a re-throw) is drawing
+	if owns or (ballId ~= nil and byBallId[ballId :: number] == nil) then
+		setServerHidden(ballId, false)
+	end
 	v.part:Destroy()
+end
+
+local function newVisual(part: Part, origin: Vector3, vel: Vector3, g: number, t0: number): Visual
+	return {
+		part = part,
+		origin = origin,
+		vel = vel,
+		g = g,
+		t0 = t0,
+		offset = Vector3.zero,
+		blendStart = 0,
+		ballId = nil,
+		throwId = nil,
+		stoppedAt = nil,
+		createdAt = os.clock(),
+		lobby = false,
+		team = nil,
+		warning = nil,
+		radius = part.Size.X / 2,
+		threat = false,
+		nextThreatAt = 0,
+		handoffAt = nil,
+	}
 end
 
 local function heldPartOfMine(): BasePart?
@@ -119,25 +236,21 @@ end
 
 -- Called by AimController on release, before the server confirms.
 function BallVisualController.predict(throwId: number, origin: Vector3, vel: Vector3, ballType: string)
-	local v: Visual = {
-		part = makePart(ballType, origin),
-		origin = origin,
-		vel = vel,
-		g = ProjectileMath.gravity(ballType),
-		t0 = Workspace:GetServerTimeNow(),
-		offset = Vector3.zero,
-		blendStart = 0,
-		ballId = nil,
-		throwId = throwId,
-		stoppedAt = nil,
-		createdAt = os.clock(),
-		lobby = (player:GetAttribute("Team") or "") == "",
-	}
+	local v = newVisual(makePart(ballType, origin), origin, vel, ProjectileMath.gravity(ballType), smoothServerNow())
+	v.throwId = throwId
+	v.lobby = (player:GetAttribute("Team") or "") == ""
 	visuals[v] = true
 	predicted[throwId] = v
 	local held = heldPartOfMine()
 	if held then
+		-- a catch you're re-throwing may still be gliding in: finish it first
+		local heldId = held:GetAttribute("BallId")
+		local old = if type(heldId) == "number" then byBallId[heldId] else nil
+		if old then
+			remove(old)
+		end
 		held.LocalTransparencyModifier = 1 -- the real ball is still welded until the server acts
+		OutlineController.setBallShown(held, false)
 		v.ballId = held:GetAttribute("BallId") :: number?
 	end
 end
@@ -146,10 +259,14 @@ local function onLaunched(d: any)
 	if type(d.id) ~= "number" or typeof(d.origin) ~= "Vector3" or typeof(d.vel) ~= "Vector3" then
 		return
 	end
-	local serverNow = Workspace:GetServerTimeNow()
+	local serverNow = smoothServerNow()
 	local g = ProjectileMath.gravity(d.ballType)
 	local mine: Visual? = if d.thrower == player then predicted[d.throwId] else nil
 	if mine then
+		local stale = byBallId[d.id]
+		if stale and stale ~= mine then
+			remove(stale)
+		end
 		-- reconcile: switch to the authoritative arc, blending out the visible difference
 		local v = mine
 		local current = v.part.Position
@@ -174,20 +291,11 @@ local function onLaunched(d: any)
 	if lobby and HubController.lobbyHidden then
 		return -- you're on the court and the hub is hidden: don't draw practice throws
 	end
-	local v: Visual = {
-		part = makePart(d.ballType, ProjectileMath.positionAt(d.origin, d.vel, g, math.max(serverNow - d.t0, 0))),
-		origin = d.origin,
-		vel = d.vel,
-		g = g,
-		t0 = d.t0,
-		offset = Vector3.zero,
-		blendStart = 0,
-		ballId = d.id,
-		throwId = nil,
-		stoppedAt = nil,
-		createdAt = os.clock(),
-		lobby = lobby,
-	}
+	local part = makePart(d.ballType, ProjectileMath.positionAt(d.origin, d.vel, g, math.max(serverNow - d.t0, 0)))
+	local v = newVisual(part, d.origin, d.vel, g, d.t0)
+	v.ballId = d.id
+	v.lobby = lobby
+	v.team = if d.thrower ~= player and type(d.team) == "string" then d.team else nil
 	visuals[v] = true
 	byBallId[d.id] = v
 	setServerHidden(d.id, true)
@@ -249,8 +357,18 @@ local function track(part: Instance)
 	serverParts[id] = part
 	part:GetAttributeChangedSignal("BallState"):Connect(function()
 		local v = byBallId[id]
-		if v and part:GetAttribute("BallState") ~= "InFlight" then
-			remove(v) -- the server decided the outcome; show the real ball
+		local state = part:GetAttribute("BallState")
+		if v and state ~= "InFlight" and not v.handoffAt then
+			-- the server decided the outcome: glide onto the real ball, then show it
+			if state == "Resetting" then
+				remove(v) -- out of bounds: it vanishes anyway
+			else
+				v.handoffAt = os.clock()
+				if v.warning then
+					v.warning:Destroy()
+					v.warning = nil
+				end
+			end
 		end
 	end)
 	part.AncestryChanged:Connect(function()
@@ -286,45 +404,117 @@ function BallVisualController.start()
 		end
 	end)
 
-	-- court throws stop at court scenery; hub practice throws at the hub deck and its ball net
+	-- court throws stop at court scenery; hub practice throws at the hub deck and its ball net.
+	-- The filters are only re-marshalled when the scenery they point at changes, not every frame.
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
 	local lobbyParams = RaycastParams.new()
 	lobbyParams.FilterType = Enum.RaycastFilterType.Include
-	RunService.RenderStepped:Connect(function()
-		if next(visuals) == nil then
-			return -- nothing in flight: skip rebuilding the filters every frame
-		end
+	local courtScenery: Instance? = nil
+	local lobbyRoot: Instance? = nil
+	local lobbyDirty = true
+	local lobbyConns: { RBXScriptConnection } = {}
+	local function markLobbyDirty()
+		lobbyDirty = true
+	end
+	local function refreshFilters()
 		local arena = Workspace:FindFirstChild("Arena")
 		local collidable = arena and arena:FindFirstChild("Collidable")
-		params.FilterDescendantsInstances = if collidable then { collidable } else {}
+		if collidable ~= courtScenery then
+			courtScenery = collidable
+			params.FilterDescendantsInstances = if collidable then { collidable } else {}
+		end
 		local lobby = Workspace:FindFirstChild("Lobby")
-		lobbyParams.FilterDescendantsInstances = if lobby then lobby:GetChildren() else {}
-		local serverNow = Workspace:GetServerTimeNow()
+		if lobby ~= lobbyRoot then
+			lobbyRoot = lobby
+			lobbyDirty = true
+			for _, conn in lobbyConns do
+				conn:Disconnect()
+			end
+			table.clear(lobbyConns)
+			if lobby then
+				table.insert(lobbyConns, lobby.ChildAdded:Connect(markLobbyDirty))
+				table.insert(lobbyConns, lobby.ChildRemoved:Connect(markLobbyDirty))
+			end
+		end
+		if lobbyDirty then
+			lobbyDirty = false
+			lobbyParams.FilterDescendantsInstances = if lobby then lobby:GetChildren() else {}
+		end
+	end
+
+	RunService.RenderStepped:Connect(function(dt: number)
+		if next(visuals) == nil then
+			return -- nothing in flight
+		end
+		local clock = os.clock()
+		refreshFilters() -- two lookups; it only re-marshals a filter when the scenery changed
+		local serverNow = smoothServerNow()
+		local myTeam = player:GetAttribute("Team")
+		local character = player.Character
+		local myRoot = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
 		for v in visuals do
+			if v.handoffAt then
+				local real = if v.ballId then serverParts[v.ballId] else nil
+				local elapsed = clock - v.handoffAt
+				if not real or elapsed > HANDOFF_MAX then
+					remove(v)
+					continue
+				end
+				local cur = v.part.Position
+				local target = real.Position
+				local gap = (target - cur).Magnitude
+				if gap < HANDOFF_DONE then
+					remove(v)
+				elseif gap < HANDOFF_FAR or elapsed > HANDOFF_WAIT then
+					v.part.CFrame = CFrame.new(cur:Lerp(target, 1 - math.exp(-dt * HANDOFF_RATE)))
+				end -- else: the real ball's fresh position hasn't replicated yet; hold here
+				continue
+			end
 			local t = serverNow - v.t0
 			-- predictions the server never confirmed, and arcs past max flight time, expire
-			if t > Config.Ball.MaxFlightTime + 0.5 or (v.ballId == nil and os.clock() - v.createdAt > 1) then
+			if t > Config.Ball.MaxFlightTime + 0.5 or (v.ballId == nil and clock - v.createdAt > 1) then
 				remove(v)
 				continue
 			end
 			if v.stoppedAt then
 				continue
 			end
-			local blend = if v.blendStart > 0 then math.clamp(1 - (os.clock() - v.blendStart) / BLEND_TIME, 0, 1) else 1
-			local pos = ProjectileMath.positionAt(v.origin, v.vel, v.g, math.max(t, 0)) + v.offset * blend
+			local pos = ProjectileMath.positionAt(v.origin, v.vel, v.g, math.max(t, 0))
+			if v.blendStart > 0 then
+				local blend = 1 - (clock - v.blendStart) / BLEND_TIME
+				if blend > 0 then
+					pos += v.offset * blend
+				else
+					v.blendStart = 0 -- prediction error fully blended out
+				end
+			end
 			-- hold at scenery contact until the server's verdict replicates (never draw through floors)
 			local last = v.part.Position
 			local delta = pos - last
-			if delta.Magnitude > 1e-3 and (os.clock() - v.createdAt) > 0.05 then
-				local hit =
-					Workspace:Spherecast(last, v.part.Size.X / 2, delta, if v.lobby then lobbyParams else params)
+			if delta.Magnitude > 1e-3 and (clock - v.createdAt) > 0.05 then
+				local hit = Workspace:Spherecast(last, v.radius, delta, if v.lobby then lobbyParams else params)
 				if hit then
-					pos = hit.Position + hit.Normal * (v.part.Size.X / 2)
+					pos = hit.Position + hit.Normal * v.radius
 					v.stoppedAt = pos
 				end
 			end
 			v.part.CFrame = CFrame.new(pos)
+			-- incoming warning: enemy balls about to pass close to you
+			if v.team ~= nil and v.team ~= myTeam and not v.lobby and v.stoppedAt == nil and myRoot ~= nil then
+				if clock >= v.nextThreatAt then
+					v.nextThreatAt = clock + THREAT_RATE
+					v.threat = threatens(v, math.max(t, 0), myRoot.Position)
+				end
+			else
+				v.threat = false
+			end
+			if v.threat and not v.warning then
+				v.warning = makeWarning(v.part)
+			elseif not v.threat and v.warning then
+				v.warning:Destroy()
+				v.warning = nil
+			end
 		end
 	end)
 end

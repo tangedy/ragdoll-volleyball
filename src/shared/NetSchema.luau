@@ -24,6 +24,7 @@ NetSchema.Actions = {
 	EquipItem = "EquipItem",
 	ClaimDaily = "ClaimDaily",
 	Spin = "Spin",
+	OpenChest = "OpenChest",
 	Practice = "Practice",
 	Dev = "Dev",
 }
@@ -128,6 +129,16 @@ NetSchema.Validators = {
 			return nil
 		end
 		return { paid = p.paid == true }
+	end,
+	OpenChest = function(p: any): any
+		-- which hub chest (Config.Chest.Spots index); the server checks you're standing at it
+		if not isTable(p) or type(p.chest) ~= "number" or p.chest ~= math.floor(p.chest) then
+			return nil
+		end
+		if p.chest < 1 or p.chest > 16 then
+			return nil
+		end
+		return { chest = p.chest }
 	end,
 	Practice = function(p: any): any
 		if not isTable(p) or (p.event ~= "Pickup" and p.event ~= "Throw" and p.event ~= "HitDummy") then

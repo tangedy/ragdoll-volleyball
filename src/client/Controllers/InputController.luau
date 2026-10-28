@@ -1,6 +1,6 @@
 --!strict
--- Input for PC, mobile and controller (spec §9). Mobile gets dedicated large buttons: the finger holding
--- Throw can drag to turn the camera while aiming, and a second finger can turn it too.
+-- Input for PC, mobile and controller (spec §9). Throwing is a tap: the aim is always locked on to
+-- an enemy while you hold a ball. Mobile gets dedicated large buttons plus the camera lock button.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -13,6 +13,7 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
 local Net = require(script.Parent.Net)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 local AimController = require(script.Parent.AimController)
+local LockController = require(script.Parent.LockController)
 
 local player = Players.LocalPlayer
 
@@ -28,9 +29,6 @@ local function moveDirection(): Vector3
 end
 
 function InputController.dodge()
-	if AimController.charging then
-		AimController.cancel()
-	end
 	Net.request(Net.Actions.Dodge, { dir = moveDirection() })
 end
 
@@ -46,35 +44,6 @@ local function setInput(kind: string)
 	end
 end
 
-local CANCEL = "RD_CancelAim"
-
-local function bindCancel(on: boolean)
-	if on then
-		-- only bound while aiming, so right-drag camera rotation works the rest of the time
-		ContextActionService:BindActionAtPriority(CANCEL, function(_, state)
-			if state == Enum.UserInputState.Begin then
-				AimController.cancel()
-				bindCancel(false)
-			end
-			return Enum.ContextActionResult.Sink
-		end, false, 3000, Enum.UserInputType.MouseButton2, Enum.KeyCode.ButtonL2)
-	else
-		ContextActionService:UnbindAction(CANCEL)
-	end
-end
-
-local function throwBegin()
-	AimController.begin()
-	if AimController.charging then
-		bindCancel(true)
-	end
-end
-
-local function throwEnd()
-	bindCancel(false)
-	AimController.release()
-end
-
 local function bindDesktopAndGamepad()
 	ContextActionService:BindAction("RD_Throw", function(_, state, input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -83,12 +52,17 @@ local function bindDesktopAndGamepad()
 			setInput("Gamepad")
 		end
 		if state == Enum.UserInputState.Begin then
-			throwBegin()
-		elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
-			throwEnd()
+			AimController.fire()
 		end
 		return Enum.ContextActionResult.Pass
 	end, false, Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonR2)
+	ContextActionService:BindAction("RD_Lock", function(_, state, input)
+		if state == Enum.UserInputState.Begin then
+			setInput(if input.KeyCode == Enum.KeyCode.ButtonR3 then "Gamepad" else "Mouse")
+			LockController.cycle()
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.KeyCode.LeftShift, Enum.KeyCode.RightShift, Enum.KeyCode.ButtonR3)
 	ContextActionService:BindAction("RD_Dodge", function(_, state, input)
 		if state == Enum.UserInputState.Begin then
 			setInput(if input.KeyCode == Enum.KeyCode.ButtonX then "Gamepad" else "Mouse")
@@ -228,6 +202,33 @@ function Glyphs.Jump(box: Frame)
 	bar(box, 0.5, 0.82, 0.3, 0.06)
 end
 
+-- a padlock: open (Free), closed (Shift lock), or closed with a target on it (Aim lock); one
+-- variant per mode, shown by setLockGlyph
+function Glyphs.Lock(box: Frame)
+	for _, mode in Config.Lock.Modes do
+		local v = Theme.new("Frame", {
+			Name = mode,
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Visible = mode == "Free",
+		}, box)
+		local open = mode == "Free"
+		local top = if open then 0.26 else 0.4
+		arc(v, 0.5, top, 0.19, 180, 360, 0.11)
+		seg(v, 0.31, top, 0.31, if open then top + 0.06 else 0.5, 0.11)
+		seg(v, 0.69, top, 0.69, 0.5, 0.11)
+		local body = bar(v, 0.5, 0.68, 0.66, 0.46);
+		(body:FindFirstChildOfClass("UICorner") :: UICorner).CornerRadius = UDim.new(0.22, 0)
+		if mode == "Aim" then
+			arc(body, 0.5, 0.5, 0.27, 0, 360, 0.1, DISC)
+			bar(body, 0.5, 0.5, 0.14, 0.2, nil, nil, DISC)
+		else
+			bar(body, 0.5, 0.42, 0.14, 0.2, nil, nil, DISC)
+			bar(body, 0.5, 0.62, 0.08, 0.3, nil, nil, DISC)
+		end
+	end
+end
+
 -- Grey a whole glyph out (0 = white, 1 = the disc colour). It blends colour rather than fading,
 -- so overlapping strokes stay solid instead of showing their joins.
 local function setDim(btn: GuiObject, dim: number)
@@ -322,38 +323,20 @@ local function makeButton(parent: Instance, name: string, size: number, pos: UDi
 	return b
 end
 
--- The charge ring round Throw: short yellow strokes laid along the inner ring that light up
--- clockwise from the top as the throw charges, in step with the charge bar under the crosshair.
-local RING_STEPS = 40
-local chargeRing: { Frame } = {}
-local function makeChargeRing(btn: GuiObject): { Frame }
-	local holder = Theme.new("Frame", {
-		Name = "ChargeRing",
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		ZIndex = 4,
-	}, btn)
-	local r, t = 0.43, 0.06 -- on the white inner ring (0.86 across)
-	local segs = {}
-	for i = 0, RING_STEPS - 1 do
-		local a0 = math.rad(-90 + 360 * i / RING_STEPS)
-		local a1 = math.rad(-90 + 360 * (i + 1) / RING_STEPS)
-		local x1, y1 = 0.5 + r * math.cos(a0), 0.5 + r * math.sin(a0)
-		local x2, y2 = 0.5 + r * math.cos(a1), 0.5 + r * math.sin(a1)
-		local f = bar(
-			holder,
-			(x1 + x2) / 2,
-			(y1 + y2) / 2,
-			math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2) + t * 0.6,
-			t,
-			math.deg(math.atan2(y2 - y1, x2 - x1)),
-			nil,
-			Theme.Colors.Sun
-		)
-		f.Visible = false
-		segs[i + 1] = f
+-- Show the lock button's glyph and caption for a mode.
+local function setLockGlyph(btn: GuiObject, mode: string)
+	local box = btn:FindFirstChild("Icon")
+	if box then
+		for _, v in box:GetChildren() do
+			if v:IsA("GuiObject") then
+				v.Visible = v.Name == mode
+			end
+		end
 	end
-	return segs
+	local caption = btn:FindFirstChild("Caption") :: TextLabel?
+	if caption then
+		caption.Text = if mode == "Shift" then "SHIFT" elseif mode == "Aim" then "AIM" else "FREE"
+	end
 end
 
 local function buildMobile()
@@ -365,14 +348,34 @@ local function buildMobile()
 	gui.ScreenInsets = Enum.ScreenInsets.None
 	gui.DisplayOrder = 5
 	gui.Parent = player:WaitForChild("PlayerGui")
-	-- big Throw in the middle, Dodge above it, Catch down-left and Jump underneath, tucked to the right
-	-- Throw lets its touch through, so dragging the finger holding it turns the camera while you aim
+	-- big Throw in the middle, Dodge above it, Catch down-left and Jump underneath, tucked to the right,
+	-- and the camera lock up-left of Throw. Throw lets its touch through, so a finger that taps it
+	-- can carry on dragging to turn the camera.
 	local throw = makeButton(gui, "Throw", 100, UDim2.new(1, -92, 1, -156), true)
 	local dodge = makeButton(gui, "Dodge", 62, UDim2.new(1, -92, 1, -247))
 	local catch = makeButton(gui, "Catch", 80, UDim2.new(1, -176, 1, -68))
 	local jump = makeButton(gui, "Jump", 70, UDim2.new(1, -91, 1, -63))
-	InputController.buttons = { Throw = throw, Catch = catch, Dodge = dodge, Jump = jump }
-	chargeRing = makeChargeRing(throw)
+	local lock = makeButton(gui, "Lock", 54, UDim2.new(1, -182, 1, -186))
+	local caption = Theme.text(lock, 12, {
+		Name = "Caption",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 1, 1),
+		Size = UDim2.fromOffset(60, 14),
+		TextColor3 = GLYPH,
+		ZIndex = 3,
+	})
+	Theme.textStroke(caption, 1.5, RIM)
+	setLockGlyph(lock, LockController.mode)
+	LockController.changed.Event:Connect(function(mode)
+		setLockGlyph(lock, mode)
+	end)
+	lock.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			setInput("Touch")
+			LockController.cycle()
+		end
+	end)
+	InputController.buttons = { Throw = throw, Catch = catch, Dodge = dodge, Jump = jump, Lock = lock }
 	jump.InputBegan:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.Touch then
 			return
@@ -404,9 +407,9 @@ local function buildMobile()
 		end
 	end)
 
-	-- Throw: a touch that starts inside its circle charges, and its release throws. The touch isn't
-	-- held by a button, so Roblox's camera turns with it while you hold (a second finger still works
-	-- too). Touches that land on another button first (gameProcessed) are ignored.
+	-- Throw: a touch that starts inside its circle throws at once. The touch isn't held by a button,
+	-- so Roblox's camera turns with it if the finger keeps dragging. Touches that land on another
+	-- button first (gameProcessed) are ignored.
 	local activeTouch: InputObject? = nil
 	local throwScale = throw:FindFirstChildOfClass("UIScale") :: UIScale
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -424,7 +427,7 @@ local function buildMobile()
 		setInput("Touch")
 		activeTouch = input
 		throwScale.Scale = 0.9
-		throwBegin()
+		AimController.fire()
 	end)
 	UserInputService.InputEnded:Connect(function(input)
 		if input ~= activeTouch then
@@ -432,7 +435,6 @@ local function buildMobile()
 		end
 		activeTouch = nil
 		Theme.tween(throwScale, Theme.Motion.Slow, { Scale = 1 }, Enum.EasingStyle.Back)
-		throwEnd()
 	end)
 	catch.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.Touch then
@@ -490,6 +492,8 @@ function InputController.start()
 		refresh()
 	end)
 	-- cooldown overlays on mobile buttons
+	local cooldownOf: { [GuiObject]: Frame } = setmetatable({}, { __mode = "k" }) :: any
+	local lastFrac: { [GuiObject]: number } = setmetatable({}, { __mode = "k" }) :: any
 	RunService.RenderStepped:Connect(function()
 		local b = InputController.buttons
 		if not b.Throw then
@@ -498,7 +502,17 @@ function InputController.start()
 		local t = Workspace:GetServerTimeNow()
 		local function fill(btn: GuiObject, readyAt: any, duration: number)
 			local frac = if type(readyAt) == "number" then math.clamp((readyAt - t) / duration, 0, 1) else 0
-			(btn:FindFirstChild("Cooldown", true) :: Frame).Size = UDim2.fromScale(frac, frac)
+			-- the overlay is found once per button (a recursive search every frame added up)
+			local overlay = cooldownOf[btn]
+			if not overlay or not overlay.Parent then
+				overlay = btn:FindFirstChild("Cooldown", true) :: Frame
+				cooldownOf[btn] = overlay
+				lastFrac[btn] = nil
+			end
+			if lastFrac[btn] ~= frac then
+				lastFrac[btn] = frac
+				overlay.Size = UDim2.fromScale(frac, frac)
+			end
 		end
 		fill(b.Dodge, player:GetAttribute("DodgeReadyAt"), Config.Player.DodgeCooldown)
 		fill(b.Catch, player:GetAttribute("CatchReadyAt"), Config.Player.CatchCooldown)
@@ -507,11 +521,6 @@ function InputController.start()
 		local hasBall = type(held) == "string" and held ~= ""
 		setDim(b.Throw, if hasBall then 0 else 0.45)
 		setDim(b.Catch, if hasBall then 0.45 else 0)
-		-- the ring round Throw fills with the charge, like the bar under the crosshair
-		local lit = math.floor(AimController.chargeFraction() * #chargeRing + 0.5)
-		for i, seg in chargeRing do
-			seg.Visible = i <= lit
-		end
 	end)
 end
 

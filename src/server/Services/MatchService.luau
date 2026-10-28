@@ -263,6 +263,7 @@ end
 
 function MatchService.moveToLobby(c: any)
 	c.inMatch = false
+	c.hitsTaken = 0
 	S.PlayerStateService.setTeam(c, nil)
 	S.PlayerStateService.setStatus(c, "Lobby")
 	S.PlayerStateService.setAction(c, "Idle")
@@ -400,6 +401,7 @@ function MatchService.onJailHit(thrower: any, target: any)
 		S.PlayerStateService.setStatus(thrower, "Active")
 		S.PlayerStateService.setAction(thrower, "Idle")
 		thrower.immuneUntil = now() + J.ReturnImmunity
+		thrower.hitsTaken = 0 -- back on court with a clean slate
 		thrower.stats.jailEscapes += 1
 		feed(("%s escaped jail!"):format(tag(thrower)))
 		S.AnalyticsService.event(thrower, "JailReturn")
@@ -502,6 +504,7 @@ local function resetCombatant(c: any)
 	c.lastHitBy = nil
 	c.lastHitAt = -math.huge
 	c.immuneUntil = 0
+	c.hitsTaken = 0
 	c.chargeStart = nil
 	c.catchUntil = 0
 	c.dodgeReadyAt = 0

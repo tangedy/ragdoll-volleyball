@@ -118,6 +118,8 @@ function BallGuideController.init()
 end
 
 function BallGuideController.start()
+	local lastCourtFloor: Instance? = nil
+	local lastHubFloor: Instance? = nil
 	RunService.RenderStepped:Connect(function()
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -126,16 +128,23 @@ function BallGuideController.start()
 			hideAll()
 			return
 		end
-		-- floors: the court and jails, plus the hub deck when you're in the hub
-		local floors = {}
-		for _, name in { "Arena", "Lobby" } do
-			local container = Workspace:FindFirstChild(name)
-			local collidable = container and container:FindFirstChild("Collidable")
-			if collidable then
-				table.insert(floors, collidable)
+		-- floors: the court and jails, plus the hub deck when you're in the hub (the filter is only
+		-- re-marshalled when one of them comes or goes)
+		local arena = Workspace:FindFirstChild("Arena")
+		local lobby = Workspace:FindFirstChild("Lobby")
+		local courtFloor = arena and arena:FindFirstChild("Collidable")
+		local hubFloor = lobby and lobby:FindFirstChild("Collidable")
+		if courtFloor ~= lastCourtFloor or hubFloor ~= lastHubFloor then
+			lastCourtFloor, lastHubFloor = courtFloor, hubFloor
+			local floors: { Instance } = {}
+			if courtFloor then
+				table.insert(floors, courtFloor)
 			end
+			if hubFloor then
+				table.insert(floors, hubFloor)
+			end
+			floorParams.FilterDescendantsInstances = floors
 		end
-		floorParams.FilterDescendantsInstances = floors
 		local ball = nearestBall(root.Position)
 		if not ball then
 			hideAll()

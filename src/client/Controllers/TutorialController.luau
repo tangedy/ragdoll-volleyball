@@ -28,11 +28,11 @@ local function text(): (string?, string?)
 		return nil, nil -- floor arrows lead the player to a ball instead of text (BallGuideController)
 	elseif step == 2 then
 		if input == "Touch" then
-			return "Hold THROW to aim. Release to throw.", "Throw"
+			return "Tap THROW to hit your target!", "Throw"
 		elseif input == "Gamepad" then
-			return "Hold RT to aim. Release to throw.", nil
+			return "Press RT to hit your target!", nil
 		end
-		return "Hold to aim. Release to throw.", nil
+		return "Click to hit your target!", nil
 	elseif step == 3 then
 		return if inMatch then "Hit an enemy!" else "Launch the dummy!", nil
 	elseif step == 4 then
