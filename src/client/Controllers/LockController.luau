@@ -3,7 +3,7 @@
 --   Free  : normal Roblox movement, the character turns to face where it walks.
 --   Shift : shift lock. The character always faces where the camera looks, so you can run in any
 --           direction without spinning; the camera sits over the right shoulder and the mouse is
---           held in the center.
+--           held in the center. On touch the camera only turns when you drag it (see classicTouch).
 --   Aim   : the character always faces the nearest enemy, and the auto-aim always picks them.
 -- Works the same on touch, where Roblox has no shift lock of its own.
 
@@ -25,6 +25,21 @@ LockController.changed = Instance.new("BindableEvent")
 
 local BASE_OFFSET = Vector3.new(0, 1.2, 0) -- CharacterController's raised third-person view
 local applied = false -- whether we're currently overriding rotation / camera / mouse
+local savedTouchMode: Enum.DevTouchCameraMovementMode? = nil -- the touch camera mode before Shift
+
+-- Roblox's default touch camera is "Follow": it swings round behind wherever the character moves.
+-- Shift lock turns the character to face the camera, so the two chase each other and strafing
+-- spins the view. While Shift is on, the touch camera is Classic (it only turns when dragged), so
+-- the screen and the character both keep facing where you look.
+local function classicTouch(on: boolean)
+	if on and savedTouchMode == nil then
+		savedTouchMode = player.DevTouchCameraMode
+		player.DevTouchCameraMode = Enum.DevTouchCameraMovementMode.Classic
+	elseif not on and savedTouchMode ~= nil then
+		player.DevTouchCameraMode = savedTouchMode
+		savedTouchMode = nil
+	end
+end
 
 function LockController.set(mode: string)
 	if mode == LockController.mode then
@@ -46,6 +61,7 @@ local function release(humanoid: Humanoid?)
 		return
 	end
 	applied = false
+	classicTouch(false)
 	if humanoid then
 		humanoid.AutoRotate = true
 		humanoid.CameraOffset = BASE_OFFSET
@@ -78,6 +94,7 @@ local function step()
 	end
 	applied = true
 	humanoid.AutoRotate = false
+	classicTouch(mode == "Shift")
 	if mode == "Shift" then
 		face(rootPart, camera.CFrame.LookVector)
 		humanoid.CameraOffset = BASE_OFFSET + Vector3.new(Config.Lock.ShoulderOffset, 0, 0)

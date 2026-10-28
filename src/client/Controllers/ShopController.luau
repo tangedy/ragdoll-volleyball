@@ -176,7 +176,13 @@ local function selectedItem(): Catalog.Item?
 	return if selectedId then Catalog.get(selectedId) else nil
 end
 
--- Buy, equip, or (short on coins) a nudge.
+-- Short on coins: off to the Coins sheet, which says how many more you need.
+local function getCoins(need: number?)
+	local CoinShopController = require(script.Parent.CoinShopController) :: any
+	CoinShopController.open(true, need)
+end
+
+-- Buy, equip, or (short on coins) the Coins sheet.
 local function primaryAction(item: Catalog.Item?)
 	item = item or selectedItem()
 	if not item or isEquipped(item) then
@@ -187,7 +193,7 @@ local function primaryAction(item: Catalog.Item?)
 	elseif (profile.coins or 0) >= item.Price then
 		Net.request(Net.Actions.BuyItem, { id = item.Id })
 	else
-		SoundController.play("UIError")
+		getCoins(item.Price - (profile.coins or 0))
 	end
 end
 
@@ -220,8 +226,8 @@ local function previewAction(item: Catalog.Item)
 	end
 end
 
--- A card's action for the item's state: Equipped (leaf, inert), Equip (sky), Buy (sun), or the
--- price, faded, while you can't afford it yet.
+-- A card's action for the item's state: Equipped (leaf, inert), Equip (sky), Buy (sun), or Buy on
+-- a plain surface while you can't afford it yet (still pressable: it opens the Coins sheet).
 local function renderAction(item: Catalog.Item, b: TextButton)
 	local coins = profile.coins or 0
 	if isEquipped(item) then
@@ -238,9 +244,9 @@ local function renderAction(item: Catalog.Item, b: TextButton)
 		Theme.recolor(b, T.sun)
 		Theme.setEnabled(b, true)
 	else
-		Theme.setText(b, ("%s coins"):format(commas(item.Price)))
+		Theme.setText(b, ("Buy · %s"):format(commas(item.Price)))
 		Theme.recolor(b, "secondary")
-		Theme.setEnabled(b, false)
+		Theme.setEnabled(b, true)
 	end
 end
 
@@ -607,7 +613,8 @@ end
 -- the bottom, a little larger, centred in the free space between the coins chip and the controls
 -- (and shrunk only if that space is too narrow).
 local ACTION_W, ACTION_H = 84, 56 + Theme.Ledge + 26 -- one Theme.roundAction button
-local ROW_W = 4 * ACTION_W + 3 * Theme.Space.L
+local ACTIONS = 5 -- Shop, Spin, Daily, Settings, Coins
+local ROW_W = ACTIONS * ACTION_W + (ACTIONS - 1) * Theme.Space.L
 local TOUCH_SCALE = 1.25 -- relative to the rest of the HUD
 local actionLayout: UIListLayout
 local actionScale: UIScale
@@ -620,7 +627,7 @@ local function layoutActions(gui: ScreenGui)
 		actionRow.AnchorPoint = if touch then Vector2.new(0.5, 1) else Vector2.new(1, 0.5)
 		actionRow.Size = if touch
 			then UDim2.fromOffset(ROW_W, ACTION_H)
-			else UDim2.fromOffset(ACTION_W, 4 * ACTION_H + 3 * Theme.Space.L)
+			else UDim2.fromOffset(ACTION_W, ACTIONS * ACTION_H + (ACTIONS - 1) * Theme.Space.L)
 		if not touch then
 			actionRow.Position = UDim2.new(1, -Theme.Space.L, 0.5, 0)
 			local s = Theme.uiScale() * 0.95
@@ -635,7 +642,7 @@ local function layoutActions(gui: ScreenGui)
 	local profile = pg and pg:FindFirstChild("Profile")
 	local chip = profile and profile:FindFirstChild("Chip") :: GuiObject?
 	local controls = pg and pg:FindFirstChild("MobileControls") :: ScreenGui?
-	local catch = controls and controls.Enabled and controls:FindFirstChild("Catch") :: GuiObject?
+	local catch = controls and controls.Enabled and controls:FindFirstChild("Catch", true) :: GuiObject?
 	local left = if chip then chip.AbsolutePosition.X + chip.AbsoluteSize.X else gui.AbsolutePosition.X
 	local right = if catch then catch.AbsolutePosition.X else gui.AbsolutePosition.X + gui.AbsoluteSize.X
 	local s = math.clamp((right - left - 2 * Theme.Space.M) / ROW_W, 0.3, Theme.uiScale() * TOUCH_SCALE)
@@ -727,6 +734,17 @@ local function buildShop()
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 5,
 	})
+	-- "+" beside the wallet: get more coins
+	local more = Theme.iconButton(shop.header, "plus", T.leaf, 40, {
+		Name = "GetCoins",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -62 - 150 - Theme.Space.S, 0.5, -Theme.Ledge / 2),
+		ZIndex = 4,
+		silent = true, -- the Coins sheet answers with UIOpen
+	})
+	more.Activated:Connect(function()
+		getCoins(nil)
+	end)
 	local body = shop.body :: Frame
 	-- category tabs
 	local items = {}
@@ -1153,7 +1171,7 @@ function ShopController.init()
 		Name = "Actions",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -Theme.Space.L, 0.5, 0),
-		Size = UDim2.fromOffset(ACTION_W, 4 * ACTION_H + 3 * Theme.Space.L),
+		Size = UDim2.fromOffset(ACTION_W, ACTIONS * ACTION_H + (ACTIONS - 1) * Theme.Space.L),
 		BackgroundTransparency = 1,
 		ZIndex = 1,
 	}, gui)

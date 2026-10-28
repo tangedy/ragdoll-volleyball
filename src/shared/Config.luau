@@ -13,7 +13,7 @@ Config.Debug = {
 Config.Match = {
 	MinPlayers = 1, -- Amendment A2: a solo player gets a bot-filled 3v3
 	MaxPlayers = 12,
-	Intermission = 7, -- hub time between matches: talk, practice, shop, change cosmetics
+	Intermission = 15, -- hub time between matches: talk, practice, shop, change cosmetics
 	IntermissionSkipWhenFull = true,
 	RoundCountdown = 3,
 	RoundTime = 75,
@@ -309,6 +309,20 @@ Config.Coins = {
 	MinParticipationActions = 1, -- throws/catches/dodges needed for ANY coins payout (anti-AFK)
 }
 
+-- Coin bundles sold for Robux in the Coins sheet. Each one is a developer product: create it in the
+-- Creator Dashboard (Monetization > Developer Products) and paste its id into ProductId. Robux is only
+-- what the card shows until the real price loads from the product; a bundle whose ProductId is 0
+-- shows "Soon" and can't be bought. Tag is an optional sticker ("Popular", "Best value").
+Config.CoinShop = {
+	Bundles = {
+		{ Id = "Handful", Name = "Handful of coins", Coins = 1000, Robux = 49, ProductId = 0 },
+		{ Id = "Pouch", Name = "Pouch of coins", Coins = 2750, Robux = 99, ProductId = 0 },
+		{ Id = "Sack", Name = "Sack of coins", Coins = 6000, Robux = 199, ProductId = 0, Tag = "Popular" },
+		{ Id = "Chest", Name = "Chest of coins", Coins = 16000, Robux = 499, ProductId = 0 },
+		{ Id = "Vault", Name = "Vault of coins", Coins = 35000, Robux = 999, ProductId = 0, Tag = "Best value" },
+	},
+}
+
 -- 7-day login ladder; day 8 starts the ladder again. A missed day resets to day 1.
 Config.DailyRewards = {
 	Ladder = { 100, 150, 200, 250, 300, 400, 750 },
@@ -446,6 +460,13 @@ Config.Visuals = {
 	BallOutline = Color3.fromRGB(28, 20, 14),
 }
 
+-- The dev room (DevRoomService): ";" in Studio or for the game's owner. A dark hall far above the
+-- map, built while someone is in it, showing work in progress (today the Haunted Wheel).
+Config.DevRoom = {
+	Origin = Vector3.new(0, 420, 900), -- floor centre
+	Size = Vector3.new(44, 26, 48),
+}
+
 -- Halloween event. `Enabled` is the switch servers start with; the live state is the "Halloween"
 -- attribute on ReplicatedStorage (HalloweenService), which the dev toggle flips at runtime: H in
 -- Studio or for the game's owner, or workspace:SetAttribute("RD_Halloween", true/false) from the
@@ -515,7 +536,7 @@ Config.Camera = {
 
 Config.Data = {
 	StoreName = "PlayerData_v1",
-	SchemaVersion = 6,
+	SchemaVersion = 7,
 	AutosaveInterval = 120,
 	MaxRetries = 4,
 	SessionLockTimeout = 300,

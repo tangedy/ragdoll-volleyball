@@ -82,15 +82,23 @@ local function bindDesktopAndGamepad()
 	end, false, Enum.KeyCode.E, Enum.KeyCode.ButtonL1)
 end
 
--- Touch buttons: a smoky see-through disc with a dark rim and a thin white inner ring, a white glyph
--- drawn from plain frames (no uploaded images), a cooldown disc that shrinks away, and a squish on
--- press.
-local DISC = Color3.fromRGB(18, 28, 48)
-local RIM = Color3.fromRGB(8, 14, 26)
-local GLYPH = Color3.new(1, 1, 1)
-local ICON = 0.6 -- glyph box, as a fraction of the button
+-- Touch buttons: the hub's round action buttons (Theme.roundAction) made see-through: a pastel fill
+-- in the toy outline, an ink glyph drawn from plain frames (no uploaded images), a cooldown disc that
+-- shrinks away, and a squish on press. All colours are Toybox tokens, so the Halloween palette swap
+-- reaches them too.
+local T = Theme.Toybox
+local INK = T.onFill
+local FACE_TRANSPARENCY = 0.3 -- see-through, but still clearly the button's tone
+local ICON = 0.56 -- glyph box, as a fraction of the button
+local TONES: { [string]: Color3 } = {
+	Throw = T.leaf, -- the one main action
+	Catch = T.sky,
+	Dodge = T.peach,
+	Jump = T.sun,
+	Lock = T.surface,
+}
 
--- A rounded bar in the glyph box (all units are fractions of the box), white unless `color` is
+-- A rounded bar in the glyph box (all units are fractions of the box), ink unless `color` is
 -- given. `base` is its own transparency.
 local function bar(
 	parent: Instance,
@@ -107,12 +115,12 @@ local function bar(
 		Position = UDim2.fromScale(cx, cy),
 		Size = UDim2.fromScale(w, h),
 		Rotation = rot or 0,
-		BackgroundColor3 = color or GLYPH,
+		BackgroundColor3 = color or INK,
 		BackgroundTransparency = base or 0,
 		BorderSizePixel = 0,
 	}, parent)
 	if not color then
-		f:SetAttribute("Glyph", true) -- white pieces grey out with setDim; seams keep their colour
+		f:SetAttribute("Glyph", true) -- ink pieces fade with setDim; seams keep their colour
 	end
 	Theme.round(f)
 	return f
@@ -159,17 +167,17 @@ local function arc(
 	end
 end
 
--- A dodgeball: a white disc with two curved seams in the button's own colour, end to end on its rim.
-local function ball(parent: Instance, cx: number, cy: number, d: number)
+-- A dodgeball: an ink disc with two curved seams in the button's tone, end to end on its rim.
+local function ball(parent: Instance, cx: number, cy: number, d: number, tone: Color3)
 	local disc = bar(parent, cx, cy, d, d)
-	arc(disc, -0.28, 0.5, 0.62, -35, 35, 0.1, DISC)
-	arc(disc, 1.28, 0.5, 0.62, 145, 215, 0.1, DISC)
+	arc(disc, -0.28, 0.5, 0.62, -35, 35, 0.1, tone)
+	arc(disc, 1.28, 0.5, 0.62, 145, 215, 0.1, tone)
 end
 
 local Glyphs = {}
 
--- ">>" with speed lines; the second chevron trails in grey
-function Glyphs.Dodge(box: Frame)
+-- ">>" with speed lines; the second chevron trails off
+function Glyphs.Dodge(box: Frame, _tone: Color3)
 	bar(box, 0.2, 0.4, 0.15, 0.085)
 	bar(box, 0.16, 0.6, 0.08, 0.085)
 	for i, base in { 0, 0.55 } do
@@ -180,16 +188,16 @@ function Glyphs.Dodge(box: Frame)
 end
 
 -- a ball flying left-to-right with three speed lines
-function Glyphs.Throw(box: Frame)
+function Glyphs.Throw(box: Frame, tone: Color3)
 	for _, l in { { 0.38, 0.27 }, { 0.5, 0.2 }, { 0.62, 0.27 } } do
 		bar(box, 0.38 - l[2] / 2, l[1], l[2], 0.085)
 	end
-	ball(box, 0.68, 0.5, 0.5)
+	ball(box, 0.68, 0.5, 0.5, tone)
 end
 
 -- two cupped hands around a ball, with a "ready" tick above
-function Glyphs.Catch(box: Frame)
-	ball(box, 0.5, 0.55, 0.34)
+function Glyphs.Catch(box: Frame, tone: Color3)
+	ball(box, 0.5, 0.55, 0.34, tone)
 	arc(box, 0.5, 0.52, 0.4, 100, 200, 0.1)
 	arc(box, 0.5, 0.52, 0.4, -20, 80, 0.1)
 	bar(box, 0.5, 0.08, 0.07, 0.12)
@@ -198,7 +206,7 @@ function Glyphs.Catch(box: Frame)
 end
 
 -- an up arrow on a base line
-function Glyphs.Jump(box: Frame)
+function Glyphs.Jump(box: Frame, _tone: Color3)
 	seg(box, 0.5, 0.2, 0.3, 0.42, 0.14)
 	seg(box, 0.5, 0.2, 0.7, 0.42, 0.14)
 	seg(box, 0.5, 0.26, 0.5, 0.68, 0.16)
@@ -207,7 +215,7 @@ end
 
 -- a padlock: open (Free), closed (Shift lock), or closed with a target on it (Aim lock); one
 -- variant per mode, shown by setLockGlyph
-function Glyphs.Lock(box: Frame)
+function Glyphs.Lock(box: Frame, tone: Color3)
 	for _, mode in Config.Lock.Modes do
 		local v = Theme.new("Frame", {
 			Name = mode,
@@ -223,27 +231,31 @@ function Glyphs.Lock(box: Frame)
 		local body = bar(v, 0.5, 0.68, 0.66, 0.46);
 		(body:FindFirstChildOfClass("UICorner") :: UICorner).CornerRadius = UDim.new(0.22, 0)
 		if mode == "Aim" then
-			arc(body, 0.5, 0.5, 0.27, 0, 360, 0.1, DISC)
-			bar(body, 0.5, 0.5, 0.14, 0.2, nil, nil, DISC)
+			arc(body, 0.5, 0.5, 0.27, 0, 360, 0.1, tone)
+			bar(body, 0.5, 0.5, 0.14, 0.2, nil, nil, tone)
 		else
-			bar(body, 0.5, 0.42, 0.14, 0.2, nil, nil, DISC)
-			bar(body, 0.5, 0.62, 0.08, 0.3, nil, nil, DISC)
+			bar(body, 0.5, 0.42, 0.14, 0.2, nil, nil, tone)
+			bar(body, 0.5, 0.62, 0.08, 0.3, nil, nil, tone)
 		end
 	end
 end
 
--- Grey a whole glyph out (0 = white, 1 = the disc colour). It blends colour rather than fading,
--- so overlapping strokes stay solid instead of showing their joins.
+-- Fade a whole button out (0 = full ink, 1 = the glyph melts into the fill). The glyph blends
+-- colour rather than fading, so overlapping strokes stay solid instead of showing their joins; the
+-- fill just turns more see-through.
 local function setDim(btn: GuiObject, dim: number)
 	if btn:GetAttribute("Dim") == dim then
 		return
 	end
 	btn:SetAttribute("Dim", dim)
 	local box = btn:FindFirstChild("Icon", true)
-	if not box then
+	local face = btn:FindFirstChild("Face") :: Frame?
+	if not box or not face then
 		return
 	end
-	local color = GLYPH:Lerp(DISC, dim)
+	face.BackgroundTransparency = FACE_TRANSPARENCY + (1 - FACE_TRANSPARENCY) * dim * 0.6
+	-- the exact ink token at rest, so the Halloween swap still recognises it
+	local color = if dim == 0 then INK else INK:Lerp(face.BackgroundColor3, dim)
 	for _, d in box:GetDescendants() do
 		if d:GetAttribute("Glyph") and d:IsA("GuiObject") then
 			d.BackgroundColor3 = color
@@ -267,40 +279,33 @@ local function makeButton(parent: Instance, name: string, size: number, pos: UDi
 		b.AutoButtonColor = false
 	end
 	local scale = Theme.new("UIScale", { Scale = 1 }, b)
+	local tone = TONES[name]
 	local face = Theme.new("Frame", {
 		Name = "Face",
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = DISC,
-		BackgroundTransparency = 0.3,
+		BackgroundColor3 = tone,
+		BackgroundTransparency = FACE_TRANSPARENCY,
 	}, b)
 	Theme.round(face)
-	Theme.stroke(face, RIM, math.max(3, math.floor(size * 0.05)), 0.35).Name = "Rim"
-	-- cooldown: a dark disc that shrinks to nothing as the move comes back
+	-- the toy outline, a touch heavier on the big buttons; the tutorial pulses it (Outline) and
+	-- restores these Rest values
+	local thickness = math.max(Theme.StrokeToy, math.floor(size * 0.045))
+	local outline = Theme.stroke(face, T.outline, thickness, 0.1)
+	outline.Name = "Outline"
+	outline:SetAttribute("RestColor", T.outline)
+	outline:SetAttribute("RestThickness", thickness)
+	outline:SetAttribute("RestTransparency", 0.1)
+	-- cooldown: an ink disc that shrinks to nothing as the move comes back
 	local cooldown = Theme.new("Frame", {
 		Name = "Cooldown",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		BackgroundColor3 = RIM,
-		BackgroundTransparency = 0.3,
+		BackgroundColor3 = T.outline,
+		BackgroundTransparency = 0.45,
 		Size = UDim2.fromScale(0, 0),
 		BorderSizePixel = 0,
 	}, face)
 	Theme.round(cooldown)
-	-- the thin white inner ring; the tutorial pulses it (Outline) and restores these Rest values
-	local inner = Theme.new("Frame", {
-		Name = "Inner",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(0.86, 0.86),
-		BackgroundTransparency = 1,
-		ZIndex = 2,
-	}, b)
-	Theme.round(inner)
-	local outline = Theme.stroke(inner, GLYPH, 2, 0.3)
-	outline.Name = "Outline"
-	outline:SetAttribute("RestColor", GLYPH)
-	outline:SetAttribute("RestThickness", 2)
-	outline:SetAttribute("RestTransparency", 0.3)
 	local box = Theme.new("Frame", {
 		Name = "Icon",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -309,7 +314,7 @@ local function makeButton(parent: Instance, name: string, size: number, pos: UDi
 		BackgroundTransparency = 1,
 		ZIndex = 3,
 	}, b)
-	Glyphs[name](box)
+	Glyphs[name](box, tone)
 	if passThrough then
 		return b
 	end
@@ -351,23 +356,43 @@ local function buildMobile()
 	gui.ScreenInsets = Enum.ScreenInsets.None
 	gui.DisplayOrder = 5
 	gui.Parent = player:WaitForChild("PlayerGui")
+	-- the whole cluster lives in one bottom-right frame that shrinks on short (phone) screens, so it
+	-- never climbs up into the top-right corner where the Play again toggle and kill feed sit. Its
+	-- frame is inactive: touches between the buttons still reach the game and the camera.
+	local cluster = Theme.new("Frame", {
+		Name = "Cluster",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.fromScale(1, 1),
+		Size = UDim2.fromOffset(240, 290),
+		BackgroundTransparency = 1,
+		Active = false,
+	}, gui)
+	local clusterScale = Theme.new("UIScale", { Scale = 1 }, cluster)
+	local function fit()
+		local vp = Workspace.CurrentCamera.ViewportSize
+		clusterScale.Scale = math.clamp(vp.Y / 440, 0.75, 1)
+	end
+	fit()
+	Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
 	-- big Throw in the middle, Dodge above it, Catch down-left and Jump underneath, tucked to the right,
 	-- and the camera lock up-left of Throw. Throw lets its touch through, so a finger that taps it
 	-- can carry on dragging to turn the camera.
-	local throw = makeButton(gui, "Throw", 100, UDim2.new(1, -92, 1, -156), true)
-	local dodge = makeButton(gui, "Dodge", 62, UDim2.new(1, -92, 1, -247))
-	local catch = makeButton(gui, "Catch", 80, UDim2.new(1, -176, 1, -68))
-	local jump = makeButton(gui, "Jump", 70, UDim2.new(1, -91, 1, -63))
-	local lock = makeButton(gui, "Lock", 54, UDim2.new(1, -182, 1, -186))
-	local caption = Theme.text(lock, 12, {
+	local throw = makeButton(cluster, "Throw", 100, UDim2.new(1, -92, 1, -156), true)
+	local dodge = makeButton(cluster, "Dodge", 62, UDim2.new(1, -92, 1, -247))
+	local catch = makeButton(cluster, "Catch", 80, UDim2.new(1, -176, 1, -68))
+	local jump = makeButton(cluster, "Jump", 70, UDim2.new(1, -91, 1, -63))
+	local lock = makeButton(cluster, "Lock", 54, UDim2.new(1, -182, 1, -186))
+	-- captioned like the hub's round buttons
+	local caption = Theme.text(lock, 13, {
 		Name = "Caption",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 1, 1),
-		Size = UDim2.fromOffset(60, 14),
-		TextColor3 = GLYPH,
+		Position = UDim2.new(0.5, 0, 1, 2),
+		Size = UDim2.fromOffset(60, 16),
+		FontFace = Theme.LabelFace,
+		TextColor3 = T.paper,
 		ZIndex = 3,
 	})
-	Theme.textStroke(caption, 1.5, RIM)
+	Theme.textStroke(caption, 2, T.outline)
 	setLockGlyph(lock, LockController.mode)
 	LockController.changed.Event:Connect(function(mode)
 		setLockGlyph(lock, mode)

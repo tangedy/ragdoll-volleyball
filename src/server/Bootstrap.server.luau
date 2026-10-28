@@ -21,9 +21,11 @@ local ORDER = {
 	"TutorialService",
 	"ShopService",
 	"SpinService",
+	"PurchaseService",
 	"ChestService",
 	"LobbyService",
 	"HalloweenService",
+	"DevRoomService",
 	"TestService",
 }
 

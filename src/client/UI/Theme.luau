@@ -667,7 +667,8 @@ end
 -- Toybox Button. `kind` is "primary" (leaf: the one action a screen is for), "secondary" (surface,
 -- outlined), "quiet" (no outline or ledge), or a fill Color3 for a toned button. Labels are
 -- verb-first and sentence case. Returns the TextButton (the hit area); its "Face" holds the label.
--- props.back = true makes it sound like a back/close action.
+-- props.back = true makes it sound like a back/close action; props.silent = true gives it no press
+-- sound (for buttons that open a sheet, which answers with its own UIOpen).
 local function kindColors(kind: any): (Color3, Color3, boolean)
 	if kind == "primary" then
 		return T.leaf, T.onFill, true
@@ -684,6 +685,7 @@ end
 function Theme.button(parent: Instance?, text: string, kind: any, props: { [string]: any }?): TextButton
 	local fill, textColor, toy = kindColors(kind)
 	local isBack = props ~= nil and props.back == true
+	local silent = props ~= nil and props.silent == true
 	local b = new("TextButton", {
 		Text = "",
 		AutoButtonColor = false,
@@ -693,7 +695,7 @@ function Theme.button(parent: Instance?, text: string, kind: any, props: { [stri
 	}, nil)
 	if props then
 		for k, v in props do
-			if k ~= "back" then
+			if k ~= "back" and k ~= "silent" then
 				(b :: any)[k] = v
 			end
 		end
@@ -744,7 +746,9 @@ function Theme.button(parent: Instance?, text: string, kind: any, props: { [stri
 		end)
 	end
 	b.Activated:Connect(function()
-		sound(if isBack then "UIBack" else "UIClick")
+		if not silent then
+			sound(if isBack then "UIBack" else "UIClick")
+		end
 	end)
 	b:SetAttribute("Kind", if typeof(kind) == "string" then kind else "tone")
 	b.Parent = parent
@@ -771,7 +775,7 @@ function Theme.iconButton(
 	})
 	if props then
 		for k, v in props do
-			if k ~= "back" then
+			if k ~= "back" and k ~= "silent" then
 				(b :: any)[k] = v
 			end
 		end

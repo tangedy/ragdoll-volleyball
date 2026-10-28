@@ -331,6 +331,13 @@ test("void fall -> jail; jail hit -> return; revenge on own eliminator; cap -> s
 		end, Config.Jail.RespawnDelay + 1),
 		"jailee not moved to jail"
 	)
+	-- out for the round: waits in jail with no way back, never in the hub
+	assertTrue(
+		waitUntil(function()
+			return ArenaLayout.inJail("Red", capped.root.Position)
+		end, 1),
+		"capped player not waiting in jail"
+	)
 	S.RagdollService.recover(jailee.character, jailee.root.Position)
 	S.PlayerStateService.setAction(jailee, "Idle")
 	enemy.immuneUntil = 0

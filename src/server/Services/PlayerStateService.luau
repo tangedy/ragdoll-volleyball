@@ -22,6 +22,7 @@ export type Stats = {
 	jailEscapes: number,
 	streakEnds: number,
 	eliminationCoins: number,
+	banked: boolean, -- RewardService has added these to the profile's lifetime totals
 }
 
 export type Combatant = {
@@ -89,6 +90,7 @@ function PlayerStateService.newStats(): Stats
 		jailEscapes = 0,
 		streakEnds = 0,
 		eliminationCoins = 0,
+		banked = false,
 	}
 end
 

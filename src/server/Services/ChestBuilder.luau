@@ -610,6 +610,7 @@ function ChestBuilder.build(index: number, base: CFrame, styleName: string, pare
 		ActionText = ("Open · %d coins"):format(CH.Cost),
 		ObjectText = "Loot Chest",
 		HoldDuration = 0,
+		Style = Enum.ProximityPromptStyle.Custom, -- drawn by PromptController in the Toybox style
 		MaxActivationDistance = CH.PromptDistance,
 		RequiresLineOfSight = false,
 	}, anchor)

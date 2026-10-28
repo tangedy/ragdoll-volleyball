@@ -876,6 +876,7 @@ local function station(def: any, parent: Folder)
 		ActionText = PROMPT_TEXT[def.Id] or "Open",
 		ObjectText = def.Title,
 		HoldDuration = 0,
+		Style = Enum.ProximityPromptStyle.Custom, -- drawn by PromptController in the Toybox style
 		MaxActivationDistance = L.StationPromptDistance,
 		RequiresLineOfSight = false,
 	}, anchor)

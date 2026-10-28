@@ -21,8 +21,9 @@ local HubController = {}
 
 HubController.lobbyHidden = false
 
-local ON_COURT: { [string]: boolean } = { Active = true, Jailed = true, Returning = true }
-local IN_HUB: { [string]: boolean } = { Lobby = true, Spectating = true }
+-- players knocked out for the round (Spectating) wait in their jail, not the hub
+local ON_COURT: { [string]: boolean } = { Active = true, Jailed = true, Returning = true, Spectating = true }
+local IN_HUB: { [string]: boolean } = { Lobby = true }
 
 local lobbyFolder: Instance? = nil
 local hiddenParts: { [BasePart]: boolean } = {}
@@ -75,7 +76,16 @@ local function animateProps(dt: number)
 				wheelHome[m] = home
 			end
 			-- the pivot is the disc, whose axis (local X) points out of the wall
-			m:PivotTo(home * CFrame.Angles(wheelAngle, 0, 0))
+			local rate = m:GetAttribute("SpinRate")
+			m:PivotTo(home * CFrame.Angles(wheelAngle * (if type(rate) == "number" then rate else 1), 0, 0))
+		end
+	end
+	-- firelight (the haunted wheel's pumpkins, candles and braziers) flickers about its Base brightness
+	local now = os.clock()
+	for i, l in taggedList("HubFlicker") do
+		local base = l:GetAttribute("Base")
+		if l:IsA("Light") and type(base) == "number" then
+			l.Brightness = base * (0.8 + 0.45 * math.noise(now * 6, i * 3.1))
 		end
 	end
 	-- beacons only change twice per blink: write them then, not every frame

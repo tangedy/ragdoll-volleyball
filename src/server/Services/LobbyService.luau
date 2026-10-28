@@ -224,7 +224,7 @@ function LobbyService.tick()
 			if c.inMatch and c.status == "Active" then
 				S.MatchService.onCharacterLost(c)
 			end
-			local pos = if c.inMatch and c.status == "Jailed"
+			local pos = if c.inMatch and (c.status == "Jailed" or c.status == "Spectating")
 				then ArenaLayout.jailCenter(c.team) + Vector3.new(0, 3, 0)
 				else ArenaLayout.lobbySpawn(rng)
 			local focus = ArenaLayout.CourtFocus

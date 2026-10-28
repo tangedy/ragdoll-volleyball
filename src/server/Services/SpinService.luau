@@ -8,8 +8,6 @@
 -- uniformly, so the odds are exactly what the wheel shows. A prize the player already owns pays
 -- Config.Spin.DuplicateCoins instead. Everything is decided and saved here; the client only asks.
 
-local MarketplaceService = game:GetService("MarketplaceService")
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -193,31 +191,6 @@ function SpinService.spin(c: any, how: string): (any?, string?)
 		nil
 end
 
--- Robux extra spin (only when Config.Spin.RobuxProductId is set). Receipts are remembered on the
--- profile so a retried receipt never grants twice.
-local function processReceipt(receipt: any): Enum.ProductPurchaseDecision
-	local player = Players:GetPlayerByUserId(receipt.PlayerId)
-	local c = player and S.PlayerStateService.get(player)
-	if not c or not c.profileLoaded or receipt.ProductId ~= SP.RobuxProductId then
-		return Enum.ProductPurchaseDecision.NotProcessedYet
-	end
-	local st = SpinService.state(c)
-	if table.find(st.receipts, receipt.PurchaseId) then
-		return Enum.ProductPurchaseDecision.PurchaseGranted
-	end
-	local result = SpinService.spin(c, "Robux")
-	if not result then
-		return Enum.ProductPurchaseDecision.NotProcessedYet
-	end
-	table.insert(st.receipts, receipt.PurchaseId)
-	while #st.receipts > 50 do
-		table.remove(st.receipts, 1)
-	end
-	S.DataService.save(c, false)
-	S.NetService.send(player :: Player, "SpinResult", result)
-	return Enum.ProductPurchaseDecision.PurchaseGranted
-end
-
 function SpinService.start()
 	S.NetService.on(NetSchema.Actions.Spin, function(player, p)
 		local c = S.PlayerStateService.get(player)
@@ -231,9 +204,18 @@ function SpinService.start()
 			S.NetService.send(player, "SpinResult", { ok = false, message = why })
 		end
 	end)
-	if SP.RobuxProductId > 0 then
-		MarketplaceService.ProcessReceipt = processReceipt
-	end
+	-- Robux extra spin (only once Config.Spin.RobuxProductId is set); PurchaseService handles the
+	-- receipt and its save
+	S.PurchaseService.register(SP.RobuxProductId, function(c: any): boolean
+		local result = SpinService.spin(c, "Robux")
+		if not result then
+			return false
+		end
+		if c.player then
+			S.NetService.send(c.player, "SpinResult", result)
+		end
+		return true
+	end)
 end
 
 return SpinService

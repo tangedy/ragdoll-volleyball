@@ -38,6 +38,8 @@ export type Profile = {
 	Spin: { date: string, freeUsed: boolean, paid: number, total: number, receipts: { string } },
 	-- schema v6: hub loot chests opened (seeds the next chest wheel, ChestService)
 	ChestOpens: number,
+	-- schema v7: Robux receipts already granted (PurchaseService), newest last
+	Receipts: { string },
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -60,6 +62,7 @@ local function default(): Profile
 		BestWinStreak = 0,
 		Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} },
 		ChestOpens = 0,
+		Receipts = {},
 		Lock = nil,
 	}
 end
@@ -102,6 +105,10 @@ function DataService.migrate(old: any): Profile
 		-- v6: loot chests
 		data.ChestOpens = tonumber(data.ChestOpens) or 0
 	end
+	if version < 7 or type(data.Receipts) ~= "table" then
+		-- v7: Robux receipts move to one list for every product
+		data.Receipts = {}
+	end
 	data.SchemaVersion = D.SchemaVersion
 	return data
 end
@@ -118,11 +125,40 @@ local function key(player: Player): string
 	return "u_" .. player.UserId
 end
 
+-- The player list (leaderstats): lifetime wins, eliminations and coins. Eliminations include the
+-- current match's, which only bank into the profile when the match ends.
+local LEADERSTATS = { "Wins", "Eliminations", "Coins" }
+local function leaderstats(c: any, p: Profile)
+	local player = c.player :: Player
+	local folder = player:FindFirstChild("leaderstats")
+	if not folder then
+		local f = Instance.new("Folder")
+		f.Name = "leaderstats"
+		for _, name in LEADERSTATS do
+			local v = Instance.new("IntValue")
+			v.Name = name
+			v.Parent = f
+		end
+		f.Parent = player
+		folder = f
+	end
+	local stats = c.stats
+	local pending = if stats and not stats.banked then stats.knockouts + stats.botKnockouts else 0
+	local values: { [string]: number } = { Wins = p.Wins, Eliminations = p.Knockouts + pending, Coins = p.Coins }
+	for name, value in values do
+		local v = (folder :: Instance):FindFirstChild(name) :: IntValue?
+		if v and v.Value ~= value then
+			v.Value = value
+		end
+	end
+end
+
 local function pushProfile(c: any)
 	local p = c.profile :: Profile
 	if not c.player then
 		return
 	end
+	leaderstats(c, p)
 	S.NetService.send(c.player, "Profile", {
 		coins = p.Coins,
 		owned = p.OwnedCosmetics,
@@ -191,9 +227,10 @@ function DataService.load(c: any)
 	player:SetAttribute("ProfileReady", true) -- the loading screen waits for this
 end
 
-function DataService.save(c: any, release: boolean)
+-- Returns whether the profile reached the DataStore.
+function DataService.save(c: any, release: boolean): boolean
 	if not c.persistent or not store or not c.player then
-		return
+		return false
 	end
 	local player = c.player :: Player
 	local data = table.clone(c.profile)
@@ -209,11 +246,12 @@ function DataService.save(c: any, release: boolean)
 			end)
 		end)
 		if ok then
-			return
+			return true
 		end
 		warn(("[Data] save attempt %d failed for %s: %s"):format(attempt, player.Name, tostring(err)))
 		task.wait(attempt)
 	end
+	return false
 end
 
 function DataService.start()

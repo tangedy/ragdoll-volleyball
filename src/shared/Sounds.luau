@@ -256,13 +256,15 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "victory.wav", volume = 0.5, pitch = 1.3, stopAfter = 0.8 },
 		{ id = S .. "snap.wav", volume = 0.6, pitch = 0.9 },
 	},
-	-- Match flow
+	-- Match flow. 3-2-1 is a scoreboard buzzer, GO is the referee's whistle (Pro Sound Effects audio
+	-- from the Creator Store, free to use: Stadium Buzzer 2 and Referee Whistle 2).
 	CountdownTick = {
-		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.0 },
+		{ id = "rbxassetid://9119561249", volume = 0.7, pitch = 1, stopAfter = 0.5 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.25, pitch = 1.0 },
 	},
 	Go = {
-		{ id = S .. "electronicpingshort.wav", volume = 0.55, pitch = 1.6 },
-		{ id = S .. "bass.wav", volume = 0.6, pitch = 1.6, stopAfter = 0.3, distortion = 0.2 },
+		{ id = "rbxassetid://9118113825", volume = 0.9, pitch = 1, stopAfter = 2 },
+		{ id = S .. "bass.wav", volume = 0.5, pitch = 1.6, stopAfter = 0.3, distortion = 0.2 },
 	},
 	LastPlayer = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 0.75 },

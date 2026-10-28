@@ -61,12 +61,17 @@ local function banner(text: string, color: Color3?, duration: number?, sound: st
 	S.NetService.broadcast("Banner", { text = text, color = color, duration = duration or 1.6, sound = sound })
 end
 
--- A win/lose banner: same text for everyone, but winners and losers hear different stingers.
+-- A win/lose banner: same text for everyone, but winners and losers hear different stingers. It's
+-- the winners' screen, so it rains confetti in the winning team's color.
 local function resultBanner(text: string, winner: string, duration: number)
 	local color = Config.Teams[winner].Color
 	for _, c in S.PlayerStateService.realPlayers() do
 		local sound = if c.inMatch and c.team == winner then "RoundWin" elseif c.inMatch then "RoundLose" else nil
-		S.NetService.send(c.player, "Banner", { text = text, color = color, duration = duration, sound = sound })
+		S.NetService.send(
+			c.player,
+			"Banner",
+			{ text = text, color = color, duration = duration, sound = sound, confetti = true }
+		)
 	end
 end
 
@@ -111,6 +116,9 @@ function MatchService.start()
 		-- the Halloween switch has its own permission (Studio, or the game's owner on a live server)
 		if p.cmd == "ToggleHalloween" then
 			S.HalloweenService.devToggle(player)
+			return
+		elseif p.cmd == "DevRoom" then
+			S.DevRoomService.toggle(player)
 			return
 		end
 		if Config.Debug.DevKeysInStudioOnly and not RunService:IsStudio() then
@@ -239,8 +247,10 @@ end
 function MatchService.queuedPlayers(): { any }
 	local list = {}
 	for _, c in S.PlayerStateService.realPlayers() do
-		-- a player with a hub menu open (shop, spin, daily, settings) is never pulled into a match
-		if c.autoQueue and not c.busy and not c.inMatch and S.PlayerStateService.isAlive(c) and c.profileLoaded then
+		-- a player with a hub menu open (shop, spin, daily, settings) or in the dev room is never
+		-- pulled into a match
+		local away = c.busy or c.player:GetAttribute("InDevRoom") == true
+		if c.autoQueue and not away and not c.inMatch and S.PlayerStateService.isAlive(c) and c.profileLoaded then
 			table.insert(list, c)
 		end
 	end
@@ -361,14 +371,25 @@ local function eliminate(c: any)
 			end
 		end)
 	else
+		-- out for the rest of the round (sudden death, or no returns left): wait it out in your
+		-- team's jail, unable to get back in, never back in the hub. If the round is already over by
+		-- the time you land, you go straight back onto the court for the next one.
 		S.PlayerStateService.setStatus(c, "Spectating")
 		task.delay(J.RespawnDelay, function()
-			if c.status == "Spectating" and not staging and S.PlayerStateService.isAlive(c) then
-				S.CharacterService.placeFacing(c, ArenaLayout.lobbySpawn(rng), ArenaLayout.CourtFocus)
-				S.PlayerStateService.setAction(c, "Idle")
-				if c.player then
-					S.NetService.send(c.player, "Hint", { text = "Next round soon", duration = 3 })
-				end
+			if
+				roundId ~= thisRound
+				or c.status ~= "Spectating"
+				or not c.inMatch
+				or staging
+				or not S.PlayerStateService.isAlive(c)
+			then
+				return
+			end
+			local spot = if state == "RoundActive" then jailSpot(c) else spawnFor(c)
+			S.CharacterService.placeFacing(c, spot, faceCenter(spot))
+			S.PlayerStateService.setAction(c, "Idle")
+			if c.player then
+				S.NetService.send(c.player, "Hint", { text = "Next round soon", duration = 3 })
 			end
 		end)
 	end
@@ -465,7 +486,7 @@ local function courtStep()
 					end
 				end
 			end
-		elseif c.status == "Jailed" and S.PlayerStateService.isAlive(c) then
+		elseif (c.status == "Jailed" or c.status == "Spectating") and S.PlayerStateService.isAlive(c) then
 			local pos = c.root.Position
 			if pos.Y < ArenaLayout.VoidY then
 				S.CharacterService.teleport(c, jailSpot(c))
@@ -924,6 +945,16 @@ local function runMatch(queued: { any })
 			break
 		end
 		local decidesMatch = (result == "Red" or result == "Blue") and wins[result] + 1 >= M.RoundsToWin
+		if not decidesMatch then
+			-- nobody goes back to the hub between rounds: the jailed stay in jail, and anyone knocked
+			-- out for good (sudden death) is put straight back on the court for the next round
+			for _, c in roster do
+				if c.status == "Spectating" and S.PlayerStateService.isAlive(c) then
+					local pos = spawnFor(c)
+					S.CharacterService.teleport(c, pos, faceCenter(pos))
+				end
+			end
+		end
 		if decidesMatch then
 			-- reward tiers read this: who was still on the court when the match was won
 			for _, c in roster do

@@ -1,6 +1,6 @@
 --!strict
 -- Performance mode (client only). On slower machines the expensive extras are switched off locally:
--- global shadows, sun rays, bloom, the court's rising sparkles, and the scenery's dynamic lights
+-- global shadows, sun rays, bloom, the court's rising sparkles, heavy scenery mist, and the scenery's dynamic lights
 -- (neon parts still glow, so the look survives). Nothing on the server changes.
 --
 -- It turns on by itself when the player's Roblox graphics quality is set low, or when the game has
@@ -32,8 +32,9 @@ local function managed(d: Instance): boolean
 	if d:IsA("PointLight") or d:IsA("SurfaceLight") or d:IsA("SpotLight") then
 		return true
 	end
-	-- the court's ambient sparkles; one-shot hit bursts are parented to Terrain and stay
-	return d:IsA("ParticleEmitter") and d.Name == "Sparks"
+	-- the court's ambient sparkles and heavy scenery mist (the "Scenery" attribute); one-shot hit
+	-- bursts are parented to Terrain and stay
+	return d:IsA("ParticleEmitter") and (d.Name == "Sparks" or d:GetAttribute("Scenery") == true)
 end
 
 local function applyTo(d: Instance)

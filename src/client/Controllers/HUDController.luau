@@ -38,6 +38,7 @@ local feedFrame: Frame
 local pips: { Red: { Frame }, Blue: { Frame } } = { Red = {}, Blue = {} }
 local stars: { Red: { Frame }, Blue: { Frame } } = { Red = {}, Blue = {} }
 local queueSetters: { (boolean) -> () } = {}
+local touchLayout: boolean? = nil -- whether update last laid the HUD out for touch
 
 local function tween(
 	inst: Instance,
@@ -416,6 +417,19 @@ local function build()
 		Visible = false,
 	}, reticleGui)
 	refs.reticle = ret
+	refs.reticleGui = reticleGui
+	-- On a locked target the reticle moves into this billboard on the target's root, so the engine
+	-- projects it: centring a screen-space frame on WorldToViewportPoint drifted sideways on phones
+	-- where the gui's layout area and the viewport don't line up (notches, safe-area compatibility).
+	refs.reticleBoard = Theme.new("BillboardGui", {
+		Name = "ReticleBoard",
+		ResetOnSpawn = false,
+		AlwaysOnTop = true,
+		LightInfluence = 0,
+		Size = UDim2.fromOffset(90, 90),
+		ClipsDescendants = false,
+		Active = false,
+	}, player:WaitForChild("PlayerGui"))
 	local ring = Theme.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1 }, ret)
 	Theme.round(ring)
 	Theme.stroke(ring, T.paper, 2.5)
@@ -541,10 +555,29 @@ local function build()
 		Text = "Play again",
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
-	local _, setQueue = Theme.toggle(playAgain, true, function(v)
+	local queueOn = true
+	local toggle, setQueue = Theme.toggle(playAgain, true, function(v)
+		queueOn = v
 		HUDController.applySetting("PlayAgain", v)
 	end, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0) })
-	HUDController.followQueue(setQueue)
+	HUDController.followQueue(function(v)
+		queueOn = v
+		setQueue(v)
+	end)
+	-- the whole pill flips it, not just the small switch (a thumb on a phone rarely lands on that)
+	Theme.new("TextButton", {
+		Name = "Hit",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "",
+		ZIndex = toggle.ZIndex + 2,
+	}, playAgain).Activated
+		:Connect(function()
+			queueOn = not queueOn
+			setQueue(queueOn)
+			Theme.sound(if queueOn then "UIToggleOn" else "UIToggleOff")
+			HUDController.applySetting("PlayAgain", queueOn)
+		end)
 	refs.playAgain = playAgain
 
 	-- Results card (non-blocking): title + tier sticker, coins counting up, three stat wells, level
@@ -747,6 +780,107 @@ function HUDController.flash(color: Color3, intensity: number, duration: number)
 	tween(f, duration, { BackgroundTransparency = 1 })
 end
 
+-- Confetti for the winners' screen: two party cannons in the bottom corners fire paper bits that arc
+-- up, flip and flutter, then rain down and fade. `color` (the winning team) is mixed in with the
+-- Toybox fills. Skipped with reduced motion.
+local CONFETTI_PIECES = 80
+local CONFETTI_LIFE = 4.5
+local confettiGui: ScreenGui? = nil
+function HUDController.confetti(color: Color3?)
+	if HUDController.settings.ReducedMotion then
+		return
+	end
+	local holder = confettiGui
+	if not holder then
+		holder = Theme.new("ScreenGui", {
+			Name = "Confetti",
+			ResetOnSpawn = false,
+			IgnoreGuiInset = true,
+			ScreenInsets = Enum.ScreenInsets.None,
+			DisplayOrder = 7,
+		}, player:WaitForChild("PlayerGui"))
+		confettiGui = holder
+	end
+	local screen = (holder :: ScreenGui).AbsoluteSize
+	local w, h = screen.X, screen.Y
+	local palette = { T.sun, T.candy, T.sky, T.leaf, T.peach, T.joyBlue }
+	if color then
+		table.insert(palette, color)
+		table.insert(palette, color)
+	end
+	local rng = Random.new()
+	local pieces = {}
+	for i = 1, CONFETTI_PIECES do
+		local left = i % 2 == 0
+		local width = rng:NextInteger(8, 12)
+		local f = Theme.new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromOffset(if left then -12 else w + 12, h),
+			Size = UDim2.fromOffset(width, rng:NextInteger(12, 20)),
+			BackgroundColor3 = palette[rng:NextInteger(1, #palette)],
+			BorderSizePixel = 0,
+			Visible = false,
+		}, holder)
+		if rng:NextNumber() < 0.3 then
+			f.Size = UDim2.fromOffset(width + 2, width + 2)
+			Theme.round(f)
+		else
+			Theme.corner(f, 2)
+		end
+		local stroke = Theme.stroke(f, T.outline, 1.5)
+		table.insert(pieces, {
+			frame = f,
+			stroke = stroke,
+			width = f.Size.X.Offset,
+			height = f.Size.Y.Offset,
+			x = if left then -12 else w + 12,
+			y = h * 0.92,
+			vx = (if left then 1 else -1) * rng:NextNumber(0.12, 0.55) * w,
+			vy = -rng:NextNumber(1.3, 1.9) * h,
+			rot = rng:NextNumber(0, 360),
+			spin = rng:NextNumber(-540, 540),
+			flip = rng:NextNumber(5, 11),
+			phase = rng:NextNumber(0, 2 * math.pi),
+			delay = rng:NextNumber(0, 0.3),
+		})
+	end
+	local gravity, terminal = 2.2 * h, 0.24 * h
+	local started = os.clock()
+	local conn: RBXScriptConnection
+	conn = RunService.Heartbeat:Connect(function(dt)
+		local t = os.clock() - started
+		if t >= CONFETTI_LIFE then
+			conn:Disconnect()
+			for _, p in pieces do
+				p.frame:Destroy()
+			end
+			return
+		end
+		local fade = math.clamp((CONFETTI_LIFE - t) / 0.8, 0, 1)
+		for _, p in pieces do
+			local age = t - p.delay
+			if age < 0 then
+				continue
+			end
+			p.vy = math.min(p.vy + gravity * dt, terminal)
+			p.vx *= 1 - math.min(1.4 * dt, 1)
+			-- falling bits drift side to side as they flutter
+			local wob = math.sin(age * p.flip + p.phase)
+			p.x += (p.vx + (if p.vy > 0 then wob * 60 else 0)) * dt
+			p.y += p.vy * dt
+			p.rot += p.spin * dt
+			local f = p.frame
+			f.Visible = true
+			f.Position = UDim2.fromOffset(p.x, p.y)
+			f.Rotation = p.rot
+			-- the flip: the width narrows to an edge and back, like paper turning over
+			f.Size = UDim2.fromOffset(math.max(1, p.width * math.abs(wob)), p.height)
+			f.BackgroundTransparency = 1 - fade
+			p.stroke.Transparency = 1 - fade
+		end
+	end)
+end
+
 function HUDController.vignette(intensity: number, duration: number)
 	local v = refs.vignette :: Frame
 	v.BackgroundTransparency = 1 - intensity
@@ -908,6 +1042,9 @@ local function showResults(data: any, persist: boolean?)
 		end)
 	end
 	SoundController.play(if data.won then "UISuccess" else "UIOpen")
+	if data.won then
+		HUDController.confetti(if data.winner then Config.Teams[data.winner].Color else nil)
+	end
 	if not persist then
 		task.delay(Config.Match.ResultsOverlay + 0.6, function()
 			if token == resultsToken then
@@ -1054,12 +1191,24 @@ local function update()
 	local hub = not live or not inMatch
 	refs.playAgain.Visible = hub
 	-- on touch screens the controls own the bottom-right corner and the hub icons the bottom row:
-	-- Play again moves to the top right
+	-- Play again moves to the top right, a size up so it's an easy thumb target, and the kill feed
+	-- (a little smaller) steps down under it instead of piling on top
 	local touch = AimController.lastInput == "Touch"
+	if touch ~= touchLayout then
+		touchLayout = touch
+		Theme.autoScale(refs.corner, if touch then 1.2 else 0.95)
+		Theme.autoScale(feedFrame, if touch then 0.8 else 0.95)
+	end
 	refs.corner.AnchorPoint = if touch then Vector2.new(1, 0) else Vector2.new(1, 1)
 	refs.corner.Position = if touch
 		then UDim2.new(1, -Theme.Space.M, 0, Theme.Space.M)
 		else UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L)
+	local feedTop = Theme.Space.S
+	if touch and hub then
+		local corner = refs.corner :: Frame
+		feedTop = corner.AbsolutePosition.Y + corner.AbsoluteSize.Y - gui.AbsolutePosition.Y + Theme.Space.S
+	end
+	feedFrame.Position = UDim2.new(1, -Theme.Space.M, 0, feedTop)
 
 	-- reticle: while you hold a ball (or in Aim lock) the crosshair sits on the enemy the auto-aim
 	-- is locked on to, the same player a tap throws at. With no target it follows the mouse.
@@ -1069,17 +1218,27 @@ local function update()
 	local aiming = (holding or AimController.preferNearest)
 		and (model ~= nil or (holding and AimController.lastInput == "Mouse"))
 	ret.Visible = aiming or refs.hitmarker.Visible
+	local board = refs.reticleBoard :: BillboardGui
+	board.Enabled = (refs.reticleGui :: ScreenGui).Enabled -- cutscenes hide the Reticle gui
 	if aiming then
-		local sp = AimController.screenPoint()
-		-- the target's live position (no frame of lag behind the arc)
+		-- on a target: pinned to its live root in 3D (dead centre on every screen, no lag behind the
+		-- arc); otherwise it follows the mouse in screen space
 		local root = model and model:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if root then
-			local v, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(root.Position)
-			if onScreen then
-				sp = Vector2.new(v.X, v.Y)
+			if board.Adornee ~= root then
+				board.Adornee = root
 			end
+			if ret.Parent ~= board then
+				ret.Parent = board
+				ret.Position = UDim2.fromScale(0.5, 0.5)
+			end
+		else
+			if ret.Parent ~= refs.reticleGui then
+				ret.Parent = refs.reticleGui
+			end
+			local sp = AimController.screenPoint()
+			ret.Position = UDim2.fromOffset(sp.X, sp.Y)
 		end
-		ret.Position = UDim2.fromOffset(sp.X, sp.Y)
 	end
 
 	-- held ball
@@ -1122,6 +1281,9 @@ end
 function HUDController.start()
 	Net.on("Banner", function(d)
 		HUDController.banner(d.text, d.color, d.duration, d.sound)
+		if d.confetti then
+			HUDController.confetti(d.color)
+		end
 	end)
 	Net.on("Hint", function(d)
 		HUDController.hint(d.text, d.duration)

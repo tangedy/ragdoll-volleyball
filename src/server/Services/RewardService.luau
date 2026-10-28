@@ -109,6 +109,7 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 				p.Wins += 1
 			end
 			p.Knockouts += c.stats.knockouts + c.stats.botKnockouts
+			c.stats.banked = true
 			-- bot-heavy (casual) matches neither advance nor break streaks
 			if not ctx.casual and not ctx.aborted and ctx.winner then
 				if won then
