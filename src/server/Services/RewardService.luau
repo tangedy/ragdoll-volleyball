@@ -96,6 +96,8 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 		if c.player and c.player.Parent and c.profile and c.rewardedMatch ~= ctx.matchId then
 			c.rewardedMatch = ctx.matchId
 			local coins, tier = RewardService.coins(c, ctx)
+			local boost = S.BoostService.multiplier(c)
+			coins *= boost
 			local xp = RewardService.xp(c, ctx)
 			local won = ctx.winner ~= nil and c.team == ctx.winner and not ctx.aborted
 			local p = c.profile
@@ -109,6 +111,11 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 				p.Wins += 1
 			end
 			p.Knockouts += c.stats.knockouts + c.stats.botKnockouts
+			-- a finished match you played in counts toward today's free chests
+			local s = c.stats
+			if not ctx.aborted and (s.throws + s.catches + s.botCatches + s.dodges) >= P.MinParticipationActions then
+				S.ChestService.matchPlayed(c)
+			end
 			c.stats.banked = true
 			-- bot-heavy (casual) matches neither advance nor break streaks
 			if not ctx.casual and not ctx.aborted and ctx.winner then
@@ -127,6 +134,7 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 				-- everything earned this match: the tier payout plus the instant elimination coins
 				coins = coins + (c.stats.eliminationCoins or 0),
 				tier = tier,
+				boost = boost,
 				xp = xp,
 				level = p.Level,
 				leveledUp = p.Level > oldLevel,

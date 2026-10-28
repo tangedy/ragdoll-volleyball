@@ -111,17 +111,27 @@ function SpinService.wheel(c: any): { string }
 end
 
 -- What the HUD needs: is the free spin ready, paid spins left today, and the next wheel.
-function SpinService.status(c: any): { free: boolean, paidLeft: number, cost: number, slots: { string }, robux: number }
+-- Paid spins are off where paid random items are restricted (the free spin stays).
+function SpinService.status(c: any): {
+	free: boolean,
+	paidLeft: number,
+	cost: number,
+	slots: { string },
+	robux: number,
+	restricted: boolean,
+}
+	local restricted = S.ComplianceService.paidRandomRestricted(c)
 	if not c.profile then
-		return { free = false, paidLeft = 0, cost = SP.ExtraSpinCost, slots = {}, robux = 0 }
+		return { free = false, paidLeft = 0, cost = SP.ExtraSpinCost, slots = {}, robux = 0, restricted = restricted }
 	end
 	local st = SpinService.state(c)
 	return {
 		free = not st.freeUsed,
-		paidLeft = math.max(0, SP.MaxPaidPerDay - st.paid),
+		paidLeft = if restricted then 0 else math.max(0, SP.MaxPaidPerDay - st.paid),
 		cost = SP.ExtraSpinCost,
 		slots = SpinService.wheel(c),
-		robux = SP.RobuxProductId,
+		robux = if restricted then 0 else SP.RobuxProductId,
+		restricted = restricted,
 	}
 end
 
@@ -137,6 +147,9 @@ function SpinService.spin(c: any, how: string): (any?, string?)
 	end
 	if how ~= "Robux" and not inHub(c) then
 		return nil, "Spin in the hub"
+	end
+	if how ~= "Free" and S.ComplianceService.paidRandomRestricted(c) then
+		return nil, "Paid spins aren't available in your region"
 	end
 	local st = SpinService.state(c)
 	if how == "Free" then
@@ -207,6 +220,15 @@ function SpinService.start()
 	-- Robux extra spin (only once Config.Spin.RobuxProductId is set); PurchaseService handles the
 	-- receipt and its save
 	S.PurchaseService.register(SP.RobuxProductId, function(c: any): boolean
+		-- the button is hidden where paid random items are restricted, but if a purchase gets through
+		-- anyway, pay the spin's coin price instead: a receipt that never grants is never resolved
+		if S.ComplianceService.paidRandomRestricted(c) then
+			c.profile.Coins += SP.ExtraSpinCost
+			if c.player then
+				S.NetService.send(c.player, "CoinsBought", { id = "Spin", coins = SP.ExtraSpinCost })
+			end
+			return true
+		end
 		local result = SpinService.spin(c, "Robux")
 		if not result then
 			return false

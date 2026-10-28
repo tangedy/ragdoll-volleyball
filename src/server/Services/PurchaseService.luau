@@ -67,8 +67,40 @@ local function processReceipt(receipt: any): Enum.ProductPurchaseDecision
 	end
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
+PurchaseService.process = processReceipt -- the F9 suite feeds it receipts
+
+-- Robux buttons show only after the tutorial plus Config.CoinShop.RobuxAfterSeconds of play. The
+-- client reads the "RobuxOk" player attribute; purchases themselves are always honoured.
+function PurchaseService.robuxUnlocked(c: any): boolean
+	local p = c.profile
+	if not c.profileLoaded or not p then
+		return false
+	end
+	if RunService:IsStudio() and workspace:GetAttribute("RD_RobuxUnlocked") == true then
+		return true -- Studio testing: workspace:SetAttribute("RD_RobuxUnlocked", true)
+	end
+	return (tonumber(p.TutorialStep) or 0) >= S.TutorialService.Done
+		and (tonumber(p.PlaySeconds) or 0) >= Config.CoinShop.RobuxAfterSeconds
+end
+
+local TICK = 10
+local function playClock()
+	while true do
+		task.wait(TICK)
+		for _, c in S.PlayerStateService.realPlayers() do
+			if c.profileLoaded and c.profile and c.player then
+				c.profile.PlaySeconds = (tonumber(c.profile.PlaySeconds) or 0) + TICK
+				local ok = PurchaseService.robuxUnlocked(c)
+				if c.player:GetAttribute("RobuxOk") ~= ok then
+					c.player:SetAttribute("RobuxOk", ok)
+				end
+			end
+		end
+	end
+end
 
 function PurchaseService.start()
+	task.spawn(playClock)
 	-- coin bundles: the coins land straight in the wallet; the client celebrates on "CoinsBought"
 	for _, bundle in Config.CoinShop.Bundles do
 		PurchaseService.register(bundle.ProductId, function(c: any): boolean

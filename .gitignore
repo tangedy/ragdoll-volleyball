@@ -4,3 +4,5 @@
 /*.rbxlx.lock
 sourcemap.json
 .luau-lsp/
+.env
+.DS_Store

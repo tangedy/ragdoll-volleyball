@@ -5,6 +5,8 @@
 -- Run: press F9 in a Studio play session, or from the server command bar:
 --   workspace:SetAttribute("RD_RunTests", true)
 -- Results print to Output and land in workspace attribute "RD_TestResults".
+-- Soak: workspace:SetAttribute("RD_Soak", 50) plays 50 untouched rounds and checks for build-up
+-- (TestService.soak).
 -- The last test deliberately ends the round (simultaneous final eliminations).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -39,6 +41,13 @@ function TestService.start()
 		if Workspace:GetAttribute("RD_KnockbackProbe") == true then
 			Workspace:SetAttribute("RD_KnockbackProbe", false)
 			task.spawn(TestService.knockbackProbe)
+		end
+	end)
+	Workspace:GetAttributeChangedSignal("RD_Soak"):Connect(function()
+		local rounds = Workspace:GetAttribute("RD_Soak")
+		if type(rounds) == "number" and rounds > 0 then
+			Workspace:SetAttribute("RD_Soak", 0)
+			task.spawn(TestService.soak, rounds)
 		end
 	end)
 	Workspace:GetAttributeChangedSignal("RD_RunTests"):Connect(function()
@@ -446,7 +455,7 @@ test("an elimination pays the eliminator 25 coins instantly", function()
 		"victim not eliminated"
 	)
 	assertTrue(
-		me.profile.Coins == before + Config.Coins.Elimination,
+		me.profile.Coins == before + Config.Coins.Elimination * S.BoostService.multiplier(me),
 		("coins %d -> %d"):format(before, me.profile.Coins)
 	)
 	S.PlayerStateService.setStatus(victim, "Active")
@@ -553,6 +562,28 @@ test("bots: a bot holding a ball always throws (never stalls the round)", functi
 	ready(enemy, point("Red", 0, 20))
 end)
 
+test("bots: two teammates by one ball don't both chase it", function()
+	local red = bots("Red")
+	assertTrue(#red >= 2, "need 2 red bots")
+	local a, b = red[1], red[2]
+	local p = point("Red", -14, 20)
+	ready(a, p + Vector3.new(-2, 0, 0))
+	ready(b, p + Vector3.new(2, 0, 0))
+	task.wait(0.3)
+	clearBallsNear(p, 30)
+	local near = S.BallService.spawn("Standard", p + Vector3.new(0, -1.5, 6), "Match")
+	local far = S.BallService.spawn("Standard", p + Vector3.new(0, -1.5, -14), "Match")
+	near.lockoutUntil, far.lockoutUntil = math.huge, math.huge -- out of reach: watch the plans only
+	a.bot.claim, b.bot.claim = nil, nil
+	S.BotService.tickOne(a)
+	S.BotService.tickOne(b)
+	S.BotService.tickOne(a)
+	local ok = a.bot.claim ~= b.bot.claim or a.bot.claim == nil
+	S.BallService.destroy(near)
+	S.BallService.destroy(far)
+	assertTrue(ok, "both bots went for the same ball")
+end)
+
 test("bots: dodges go toward the middle, never off the edge", function()
 	local bot = bots("Red")[1]
 	ready(bot, point("Red", ArenaLayout.HalfWidth - 6, 24)) -- 6 from the right edge
@@ -645,6 +676,245 @@ test("no constraint, ball or bot build-up", function()
 	)
 end)
 
+-- Signed distance into a team's own half (positive = on its side of the center line).
+local function depthOnOwnHalf(c: any): number
+	return ArenaLayout.teamSign(c.team) * (c.root.Position.Z - O.Z)
+end
+
+test("center line: walking, jumping and dodging at the line never cross it", function()
+	local bot = bots("Red")[1]
+	assertTrue(bot ~= nil, "need a red bot")
+	local across = point("Blue", 0, 12)
+	-- walk straight at the enemy half
+	ready(bot, point("Red", 0, 2))
+	task.wait(0.3)
+	bot.humanoid:MoveTo(across)
+	task.wait(2)
+	assertTrue(depthOnOwnHalf(bot) > -0.5, ("walked across (depth %.1f)"):format(depthOnOwnHalf(bot)))
+	-- jump while walking at it
+	ready(bot, point("Red", 0, 2))
+	task.wait(0.3)
+	bot.humanoid:MoveTo(across)
+	for _ = 1, 3 do
+		bot.humanoid.Jump = true
+		task.wait(0.6)
+	end
+	assertTrue(depthOnOwnHalf(bot) > -0.5, ("jumped across (depth %.1f)"):format(depthOnOwnHalf(bot)))
+	-- dodge straight at it
+	ready(bot, point("Red", 0, 2))
+	task.wait(0.3)
+	local toward = Vector3.new(0, 0, ArenaLayout.teamSign("Blue"))
+	assertTrue(S.CombatService.doDodge(bot, toward), "dodge refused")
+	task.wait(Config.Player.DodgeDuration + 0.5)
+	assertTrue(depthOnOwnHalf(bot) > -0.5, ("dodged across (depth %.1f)"):format(depthOnOwnHalf(bot)))
+	ready(bot, point("Red", 0, 20))
+end)
+
+test("a character removed mid-ragdoll counts as a fall and is rebuilt", function()
+	local me
+	for _, c in S.MatchService.roster() do
+		if c.player and c.status == "Active" then
+			me = c
+		end
+	end
+	assertTrue(me ~= nil, "no active real player in the match")
+	ready(me, point(me.team, 0, 20))
+	task.wait(0.3)
+	me.immuneUntil = 0
+	S.PlayerStateService.setAction(me, "Ragdolled")
+	S.RagdollService.ragdoll(me.character, Vector3.new(0, 20, 0))
+	task.wait(0.2)
+	local old = me.character
+	old:Destroy() -- what the engine does on a reset or a fall past FallenPartsDestroyHeight
+	assertTrue(
+		waitUntil(function()
+			return me.status ~= "Active"
+		end, 3),
+		"still Active with no character"
+	)
+	assertTrue(
+		waitUntil(function()
+			return me.character ~= nil and me.character ~= old and S.PlayerStateService.isAlive(me)
+		end, 10),
+		"character was never rebuilt"
+	)
+	S.PlayerStateService.setStatus(me, "Active")
+	ready(me, point(me.team, 0, 20))
+end)
+
+test("paid random items: restricted players can't open chests or buy spins", function()
+	Workspace:SetAttribute("RD_PaidRandomRestricted", true)
+	local ok, err = pcall(function()
+		local c: any = {
+			id = 900002,
+			player = { UserId = 900002 },
+			profileLoaded = true,
+			inMatch = false,
+			status = "Lobby",
+			profile = {
+				Coins = 100000,
+				OwnedCosmetics = {},
+				Equipped = {},
+				ChestOpens = 0,
+				Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} },
+			},
+		}
+		local chest, why = S.ChestService.open(c, 1)
+		assertTrue(chest == nil and why ~= nil, "chest opened for a restricted player")
+		assertTrue(S.ChestService.status(c).restricted == true, "chest status not marked restricted")
+		local st = S.SpinService.status(c)
+		assertTrue(st.restricted and st.paidLeft == 0 and st.robux == 0, "spin status still offers paid spins")
+		assertTrue(S.SpinService.spin(c, "Coins") == nil, "paid spin for a restricted player")
+		assertTrue(S.SpinService.spin(c, "Robux") == nil, "Robux spin for a restricted player")
+		assertTrue(c.profile.Coins == 100000, "a refused open cost coins")
+		assertTrue(st.free == true, "the free spin should stay open")
+		-- (granting a prize pushes the profile, which needs a real Player, so the successful paths
+		-- are checked through the policy itself)
+		Workspace:SetAttribute("RD_PaidRandomRestricted", false)
+		assertTrue(not S.ComplianceService.paidRandomRestricted(c), "still restricted when the policy allows")
+		assertTrue(S.SpinService.status(c).paidLeft > 0, "paid spins not offered when allowed")
+		c.player = nil
+		assertTrue(not S.ComplianceService.paidRandomRestricted(c), "bots should never be restricted")
+	end)
+	Workspace:SetAttribute("RD_PaidRandomRestricted", nil)
+	assertTrue(ok, tostring(err))
+end)
+
+test("saving: no lock-keeping save goes out after the release save", function()
+	local c: any = { persistent = false, player = nil, profile = {} }
+	S.DataService.save(c, true) -- the leave/shutdown save marks the session released
+	assertTrue(c.released == true, "release save didn't mark the session")
+	c.persistent = true
+	assertTrue(S.DataService.save(c, false) == false, "an autosave ran after the release")
+end)
+
+test("Halloween follows its UTC window", function()
+	local H = Config.Halloween
+	local savedEnabled, savedStart, savedEnd = H.Enabled, H.Start, H.End
+	local function iso(t: number): string
+		return DateTime.fromUnixTimestamp(t):ToIsoDate()
+	end
+	local ok, err = pcall(function()
+		local t = os.time()
+		H.Enabled = true
+		H.Start, H.End = iso(t - 3600), iso(t + 3600)
+		assertTrue(S.HalloweenService.scheduled(), "off inside its window")
+		H.Start, H.End = iso(t - 7200), iso(t - 3600)
+		assertTrue(not S.HalloweenService.scheduled(), "on after its window")
+		H.Start, H.End = iso(t + 3600), iso(t + 7200)
+		assertTrue(not S.HalloweenService.scheduled(), "on before its window")
+		H.Enabled = false
+		H.Start, H.End = iso(t - 3600), iso(t + 3600)
+		assertTrue(not S.HalloweenService.scheduled(), "on while disabled")
+	end)
+	H.Enabled, H.Start, H.End = savedEnabled, savedStart, savedEnd
+	assertTrue(ok, tostring(err))
+end)
+
+test("purchases: every product grants once, retries never double-grant, failures recover", function()
+	local me
+	for _, c in S.PlayerStateService.realPlayers() do
+		if c.profile and c.player then
+			me = c
+		end
+	end
+	assertTrue(me ~= nil, "no real player with a profile")
+	local p = me.profile
+	local saved = {
+		coins = p.Coins,
+		untilTime = p.CoinBoostUntil,
+		forever = p.CoinBoostForever,
+		receipts = table.clone(p.Receipts),
+	}
+	local Granted = Enum.ProductPurchaseDecision.PurchaseGranted
+	local Later = Enum.ProductPurchaseDecision.NotProcessedYet
+	local n = 0
+	local function receipt(productId: number, purchaseId: string?): any
+		n += 1
+		return {
+			PlayerId = me.player.UserId,
+			ProductId = productId,
+			PurchaseId = purchaseId or ("RD_TEST_%d_%d"):format(os.time(), n),
+			CurrencySpent = 0,
+		}
+	end
+	local ok, err = pcall(function()
+		-- every configured product has a handler
+		local CS = Config.CoinShop
+		for _, b in CS.Bundles do
+			assertTrue(b.ProductId > 0, b.Id .. " has no product id")
+		end
+		-- coin bundle: granted once, the same receipt again changes nothing
+		local bundle = CS.Bundles[1]
+		local r = receipt(bundle.ProductId)
+		local before = p.Coins
+		assertTrue(S.PurchaseService.process(r) == Granted, "bundle not granted")
+		assertTrue(p.Coins == before + bundle.Coins, "bundle coins not added")
+		assertTrue(S.PurchaseService.process(r) == Granted, "retried receipt not acknowledged")
+		assertTrue(p.Coins == before + bundle.Coins, "retried receipt granted twice")
+		-- timed boost stacks from its current end; the lifetime boost sets the flag
+		p.CoinBoostUntil, p.CoinBoostForever = 0, false
+		assertTrue(S.BoostService.multiplier(me) == 1, "boost active before buying")
+		local timed, forever = CS.Boosts[1], CS.Boosts[2]
+		assertTrue(S.PurchaseService.process(receipt(timed.ProductId)) == Granted, "timed boost not granted")
+		local first = p.CoinBoostUntil
+		assertTrue(math.abs(first - (os.time() + timed.Minutes * 60)) <= 2, "timed boost has the wrong length")
+		assertTrue(S.BoostService.multiplier(me) == CS.BoostMultiplier, "timed boost not doubling")
+		S.PurchaseService.process(receipt(timed.ProductId))
+		assertTrue(p.CoinBoostUntil == first + timed.Minutes * 60, "a second timed boost didn't extend it")
+		p.CoinBoostUntil = 0
+		assertTrue(S.PurchaseService.process(receipt(forever.ProductId)) == Granted, "lifetime boost not granted")
+		assertTrue(
+			p.CoinBoostForever == true and S.BoostService.multiplier(me) == CS.BoostMultiplier,
+			"lifetime boost off"
+		)
+		-- a grant that throws is retried later and lands then, exactly once
+		local fakeId = 999000111
+		local fail = true
+		S.PurchaseService.register(fakeId, function(c: any): boolean
+			if fail then
+				error("simulated failure mid-grant")
+			end
+			c.profile.Coins += 7
+			return true
+		end)
+		local fr = receipt(fakeId)
+		local coins = p.Coins
+		assertTrue(S.PurchaseService.process(fr) == Later, "failed grant was acknowledged")
+		assertTrue(p.Coins == coins and not table.find(p.Receipts, fr.PurchaseId), "failed grant left a trace")
+		fail = false
+		assertTrue(S.PurchaseService.process(fr) == Granted, "retry after a failure not granted")
+		assertTrue(S.PurchaseService.process(fr) == Granted and p.Coins == coins + 7, "retry granted twice")
+		-- unknown products and absent players wait for a server that can handle them
+		assertTrue(S.PurchaseService.process(receipt(424242)) == Later, "unknown product acknowledged")
+		local away = receipt(bundle.ProductId)
+		away.PlayerId = 1
+		assertTrue(S.PurchaseService.process(away) == Later, "receipt for an absent player acknowledged")
+	end)
+	p.Coins, p.CoinBoostUntil, p.CoinBoostForever, p.Receipts =
+		saved.coins, saved.untilTime, saved.forever, saved.receipts
+	S.DataService.push(me)
+	assertTrue(ok, tostring(err))
+end)
+
+test("Robux buttons stay hidden until the tutorial plus play time", function()
+	local studioUnlock = Workspace:GetAttribute("RD_RobuxUnlocked")
+	Workspace:SetAttribute("RD_RobuxUnlocked", nil)
+	local c: any = {
+		profileLoaded = true,
+		profile = { TutorialStep = 1, PlaySeconds = 0 },
+	}
+	assertTrue(not S.PurchaseService.robuxUnlocked(c), "unlocked for a brand-new player")
+	c.profile.TutorialStep = S.TutorialService.Done
+	assertTrue(not S.PurchaseService.robuxUnlocked(c), "unlocked right after the tutorial")
+	c.profile.PlaySeconds = Config.CoinShop.RobuxAfterSeconds
+	assertTrue(S.PurchaseService.robuxUnlocked(c), "still locked after the tutorial and play time")
+	Workspace:SetAttribute("RD_RobuxUnlocked", studioUnlock)
+	local migrated = S.DataService.migrate({ SchemaVersion = 8, Matches = 5 })
+	assertTrue(migrated.PlaySeconds >= Config.CoinShop.RobuxAfterSeconds, "a returning player waits again")
+	assertTrue(migrated.CoinBoostForever == false and migrated.CoinBoostUntil == 0, "v9 boost fields missing")
+end)
+
 test("simultaneous final eliminations -> draw (ends the round)", function()
 	local red, blue = bots("Red"), bots("Blue")
 	local lastRed, lastBlue = red[1], blue[1]
@@ -671,6 +941,26 @@ test("simultaneous final eliminations -> draw (ends the round)", function()
 		ms:GetAttribute("RedWins") == redWins and ms:GetAttribute("BlueWins") == blueWins,
 		"a team was awarded the round"
 	)
+end)
+
+test("a team with only jailed players loses the round", function()
+	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
+	S.MatchService.debugSetWins(0, 0) -- so this round can't end the match
+	local red = bots("Red")[1]
+	assertTrue(red ~= nil, "need a red bot")
+	ready(red, point("Red", 0, 20))
+	for _, c in S.MatchService.roster() do
+		if c.team == "Blue" then
+			S.PlayerStateService.setStatus(c, "Jailed")
+		end
+	end
+	assertTrue(
+		waitUntil(function()
+			return ms:GetAttribute("State") == "RoundResolution"
+		end, 2),
+		"round didn't end with every Blue player jailed"
+	)
+	assertTrue(ms:GetAttribute("RedWins") == 1, "Red wasn't awarded the round")
 end)
 
 test("coins: highest win tier only; 50 for playing on the losing team", function()
@@ -774,6 +1064,88 @@ test("daily spin: one free spin a day, paid spins cost coins and are capped, dup
 	c.status, c.inMatch = "Active", true
 	c.profile.Spin.date = "2000-01-01"
 	assertTrue(S.SpinService.spin(c, "Free") == nil, "spun during a match")
+end)
+
+test("chests: each tier's wheel only holds its guaranteed rarities", function()
+	local order = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
+	for index, spot in Config.Chest.Spots do
+		local tier = (Config.Chest.Tiers :: any)[spot.Tier]
+		assertTrue(tier ~= nil, "spot " .. index .. " names an unknown tier")
+		local lowest = 4
+		for r, w in tier.RarityWeights do
+			if w > 0 then
+				lowest = math.min(lowest, order[r])
+			end
+		end
+		for i = 1, 60 do
+			local c: any = { id = 700000 + i, profile = { ChestOpens = i } }
+			for _, id in S.ChestService.wheel(c, index) do
+				local r = Catalog.rarity(Catalog.get(id) :: any)
+				assertTrue(order[r] >= lowest, ("%s wheel has a %s prize"):format(spot.Tier, r))
+			end
+		end
+	end
+end)
+
+test("chests: paid opens cost the tier's price; free ones unlock after 1 and 3 matches, once a day", function()
+	local function fresh(): any
+		return {
+			id = 900003,
+			profileLoaded = true,
+			inMatch = false,
+			status = "Lobby",
+			profile = {
+				Coins = 0,
+				OwnedCosmetics = {},
+				Equipped = {},
+				ChestOpens = 0,
+				ChestDaily = { date = "", matches = 0, claimed = {} },
+			},
+		}
+	end
+	local indexOf: { [string]: number } = {}
+	for i, spot in Config.Chest.Spots do
+		indexOf[spot.Tier] = i
+	end
+	local T = Config.Chest.Tiers :: any
+	-- nothing is free before a match, and coins are needed
+	local c = fresh()
+	assertTrue(S.ChestService.open(c, indexOf.Common) == nil, "opened with no coins and no free chest")
+	-- paid: costs exactly the tier price (plus any duplicate refund)
+	c.profile.Coins = T.Epic.Cost
+	local r = S.ChestService.open(c, indexOf.Epic)
+	assertTrue(r and r.ok and not r.free, "paid Epic open refused")
+	assertTrue(c.profile.Coins == r.coins, ("Epic open cost %d"):format(T.Epic.Cost - (c.profile.Coins - r.coins)))
+	-- free Common after 1 match, free Rare after 3, each once a day
+	c = fresh()
+	S.ChestService.matchPlayed(c)
+	assertTrue(S.ChestService.isFree(c, "Common"), "Common not free after 1 match")
+	assertTrue(not S.ChestService.isFree(c, "Rare"), "Rare free after only 1 match")
+	local fc = S.ChestService.open(c, indexOf.Common)
+	assertTrue(fc and fc.free and c.profile.Coins == fc.coins, "free Common cost coins")
+	assertTrue(not S.ChestService.isFree(c, "Common"), "Common free twice in a day")
+	S.ChestService.matchPlayed(c)
+	S.ChestService.matchPlayed(c)
+	assertTrue(S.ChestService.isFree(c, "Rare"), "Rare not free after 3 matches")
+	local fr = S.ChestService.open(c, indexOf.Rare)
+	assertTrue(fr and fr.free, "free Rare refused")
+	S.ChestService.matchPlayed(c)
+	assertTrue(
+		not S.ChestService.isFree(c, "Rare") and not S.ChestService.isFree(c, "Common"),
+		"a second free chest today"
+	)
+	assertTrue(not S.ChestService.isFree(c, "Epic"), "Epic should never be free")
+	-- a new UTC day starts over
+	c.profile.ChestDaily.date = "2000-01-01"
+	assertTrue(not S.ChestService.isFree(c, "Common"), "new day kept yesterday's matches")
+	S.ChestService.matchPlayed(c)
+	assertTrue(S.ChestService.isFree(c, "Common"), "free Common didn't come back the next day")
+	-- free opens are allowed where paid random items are restricted (they aren't paid)
+	Workspace:SetAttribute("RD_PaidRandomRestricted", true)
+	c.player = nil -- bots/fake players are never restricted, so check the rule directly
+	local ok = S.ChestService.isFree(c, "Common")
+	Workspace:SetAttribute("RD_PaidRandomRestricted", nil)
+	assertTrue(ok, "free chest blocked")
 end)
 
 test("daily spin: wheels follow the rarity weights", function()
@@ -974,6 +1346,164 @@ function TestService.knockbackProbe()
 	local out = table.concat(lines, "\n")
 	print("[KnockbackProbe]\n" .. out)
 	Workspace:SetAttribute("RD_KnockbackResults", out)
+end
+
+-- Soak test: let bots play `rounds` real rounds untouched, and watch for build-up and stuck bodies.
+-- Run: workspace:SetAttribute("RD_Soak", 50) with Play again on and every menu closed (about a
+-- minute a round). Progress and the verdict land in workspace attribute "RD_SoakResults".
+--
+-- Per round it records rigs, ball sockets, bot models, balls, workspace instances and server memory.
+-- Throughout, it counts server script errors and stuck combatants: on court and Active but ragdolled
+-- for over 10 s, below the court for over 3 s without being eliminated, or at a NaN position.
+function TestService.soak(rounds: number)
+	if running then
+		return
+	end
+	running = true
+	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
+	local Stats = game:GetService("Stats")
+	local ScriptContext = game:GetService("ScriptContext")
+	local errors: { string } = {}
+	local errConn = ScriptContext.Error:Connect(function(message: string, trace: string)
+		if #errors < 20 then
+			table.insert(errors, message .. " @ " .. (string.split(trace, "\n")[1] or ""))
+		end
+	end)
+	local stuck: { string } = {}
+	local ragdollSince: { [any]: number } = {}
+	local lowSince: { [any]: number } = {}
+	local samples: { { rigs: number, sockets: number, bots: number, balls: number, inst: number, mem: number } } = {}
+	local lines: { string } = {}
+	local function sample()
+		local rigs, sockets = 0, 0
+		local all = Workspace:GetDescendants()
+		for _, d in all do
+			if d:IsA("Humanoid") then
+				rigs += 1
+			elseif d:IsA("BallSocketConstraint") then
+				sockets += 1
+			end
+		end
+		local row = {
+			rigs = rigs,
+			sockets = sockets,
+			bots = #(Workspace:FindFirstChild("Bots") :: Folder):GetChildren(),
+			balls = #(Workspace:FindFirstChild("Balls") :: Folder):GetChildren(),
+			inst = #all,
+			mem = Stats:GetTotalMemoryUsageMb(),
+		}
+		table.insert(samples, row)
+		local line = ("round %d: rigs %d, sockets %d, bots %d, balls %d, instances %d, memory %.0f MB"):format(
+			#samples,
+			row.rigs,
+			row.sockets,
+			row.bots,
+			row.balls,
+			row.inst,
+			row.mem
+		)
+		table.insert(lines, line)
+		print("[Soak] " .. line)
+		Workspace:SetAttribute("RD_SoakResults", ("running: %d/%d rounds\n%s"):format(#samples, rounds, line))
+	end
+	local function checkStuck()
+		local t = os.clock()
+		for _, c in S.MatchService.roster() do
+			local root = c.root :: BasePart?
+			if c.status ~= "Active" or not root or not root.Parent then
+				ragdollSince[c], lowSince[c] = nil, nil
+				continue
+			end
+			local p = root.Position
+			if p.X ~= p.X or p.Y ~= p.Y or p.Z ~= p.Z then
+				table.insert(stuck, c.name .. " at a NaN position")
+				continue
+			end
+			if c.action == "Ragdolled" then
+				ragdollSince[c] = ragdollSince[c] or t
+				if t - ragdollSince[c] > 10 then
+					table.insert(stuck, ("%s ragdolled for 10 s on round %d"):format(c.name, #samples + 1))
+					ragdollSince[c] = math.huge
+				end
+			else
+				ragdollSince[c] = nil
+			end
+			if p.Y < ArenaLayout.SurfaceY - 30 then
+				lowSince[c] = lowSince[c] or t
+				if t - lowSince[c] > 3 then
+					table.insert(stuck, ("%s below the court but not out on round %d"):format(c.name, #samples + 1))
+					lowSince[c] = math.huge
+				end
+			else
+				lowSince[c] = nil
+			end
+		end
+	end
+	S.BotService.setPaused(false)
+	local lastState = ms:GetAttribute("State")
+	local quietSince = os.clock()
+	while #samples < rounds do
+		task.wait(1)
+		checkStuck()
+		local state = ms:GetAttribute("State")
+		if state == "RoundActive" then
+			quietSince = os.clock()
+		end
+		if state ~= lastState and state == "RoundResolution" then
+			sample()
+		end
+		lastState = state
+		-- nothing has played for 3 minutes: matchmaking is stuck (or a menu is holding the player)
+		if os.clock() - quietSince > 180 then
+			table.insert(
+				stuck,
+				("no round went live for 3 minutes after round %d (state %s)"):format(#samples, tostring(state))
+			)
+			break
+		end
+	end
+	errConn:Disconnect()
+	-- verdict: no errors, nothing stuck, caps held, and no steady growth after a warm-up
+	local problems: { string } = {}
+	for _, row in samples do
+		if row.sockets > row.rigs * 14 then
+			table.insert(problems, ("%d sockets for %d rigs"):format(row.sockets, row.rigs))
+			break
+		end
+	end
+	for _, row in samples do
+		if row.bots > Config.Bots.MaxPerServer + 1 then
+			table.insert(problems, ("%d bot models"):format(row.bots))
+			break
+		end
+	end
+	local warm = samples[math.min(5, #samples)]
+	local last = samples[#samples]
+	if warm and last and #samples >= 10 then
+		if last.inst > warm.inst * 1.15 then
+			table.insert(problems, ("instances grew %d -> %d after warm-up"):format(warm.inst, last.inst))
+		end
+		if last.mem > warm.mem * 1.25 then
+			table.insert(problems, ("memory grew %.0f -> %.0f MB after warm-up"):format(warm.mem, last.mem))
+		end
+	end
+	for _, e in errors do
+		table.insert(problems, "error: " .. e)
+	end
+	for _, st in stuck do
+		table.insert(problems, "stuck: " .. st)
+	end
+	local verdict = if #problems == 0 and #samples >= rounds then "PASS" else "FAIL"
+	local summary = ("%s: %d/%d rounds\n%s\n%s"):format(
+		verdict,
+		#samples,
+		rounds,
+		table.concat(problems, "\n"),
+		table.concat(lines, "\n")
+	)
+	print("[Soak]\n" .. summary)
+	Workspace:SetAttribute("RD_SoakResults", summary)
+	running = false
 end
 
 function TestService.runAll()

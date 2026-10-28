@@ -80,3 +80,65 @@ Mark each row with how it was verified: **S** = Studio (state the number of clie
 | Neon shows at half brightness | S: 48 of 48 arena neon parts are exactly 0.5× the server colour |
 | Practice is private | S: the client has its own dummy and 2 balls, the server has none. Launching the dummy wasn't driven |
 | Intro: 2 s per team, then 3-2-1 | S: Intro 4.0 s, countdown 3.1 s (timing only) |
+
+## Beta test pass (to run)
+
+These need a person in Studio or on a device; nothing here has been run yet. Fill in the Result column as you go.
+
+### Automated in the F9 suite (run in Studio, solo plus bots)
+
+| Test | Result |
+| --- | --- |
+| Walking, jumping and dodging at the center line never cross it | |
+| A character removed mid-ragdoll counts as a fall and is rebuilt (the engine-removed half of the reset row) | |
+| A team with only jailed players loses the round | |
+| Restricted players can't open chests or buy spins; the free spin stays | |
+| No lock-keeping save goes out after the release save | |
+| Halloween follows its UTC window | |
+| **Soak:** `workspace:SetAttribute("RD_Soak", 50)`, Play again on, all menus closed. About 50–60 min. Reads PASS in `RD_SoakResults` (no server errors, no stuck bodies, caps held, instances and memory flat after round 5) | |
+
+The power-up despawn row doesn't apply: power-up balls never despawn (they revert to Standard after a throw).
+
+### Multi-client (Test → Local Server, 2–4 players)
+
+| Test | Result |
+| --- | --- |
+| M1: both clients pick up, throw, hit, fall, recover and reset for 10+ rounds with no duplicated balls or broken characters | |
+| A second player joining mid-match waits in the hub, then replaces a bot on the smaller team between rounds | |
+| Two players in the shop at once: buys and equips don't cross over; both stay in the hub until they close it | |
+| Everyone in the match sees the same finisher | |
+| Play again off during a live match: that player goes to the hub after the match and isn't pulled into the next | |
+| A player in the hub can't be hit, and doesn't see on-court players vanish | |
+
+### Saving (Game Settings → Security → Enable Studio Access to API Services, in a test place)
+
+| Test | Result |
+| --- | --- |
+| Join, earn coins, buy and equip a skin, leave, rejoin: coins, the skin and the equip are all kept (M5) | |
+| Leave and rejoin within 5 s: the save loads (the joiner waits for the release, never "Progress not saving") | |
+| Stop the server mid-match (BindToClose): rejoin and the coins earned before the stop are there | |
+
+### Phones (3+ real devices: a small phone, a big phone, a tablet)
+
+| Test | Result |
+| --- | --- |
+| Throw/Dodge/Catch/Jump are reachable with a thumb and don't overlap the hub icons or the coins chip | |
+| Aiming while dragging the camera with a second finger | |
+| The shop, daily, spin and chest sheets fit with nothing cut off; the tip card isn't under the controls | |
+| Headshot plates fit on the narrowest phone | |
+| The finisher and intro cameras look right in portrait-ish aspect ratios | |
+
+### Controller (Xbox or PlayStation pad on PC)
+
+| Test | Result |
+| --- | --- |
+| M3: every action (RT throw, X dodge, LB catch, R3 lock, D-pad spectate) works without touching the mouse | |
+| The shop grid, daily sheet, spin and chest can be moved through and closed with the pad (B closes) | |
+
+### High ping (Studio: `settings().Network.IncomingReplicationLag = 0.2`, then 0.3, from the Client context)
+
+| Test | Result |
+| --- | --- |
+| Throws and the arc stay smooth, and no throws are lost | |
+| Being ragdolled and recovering doesn't rubber-band badly | |
+| Catches feel fair-ish (note how late they feel; the spec accepts some lateness) | |

@@ -327,7 +327,7 @@ local function eliminate(c: any)
 		end
 		-- instant elimination bonus for real players
 		if credit.player and credit.profile then
-			reward = Config.Coins.Elimination
+			reward = Config.Coins.Elimination * S.BoostService.multiplier(credit)
 			credit.profile.Coins += reward
 			credit.stats.eliminationCoins += reward
 			S.DataService.push(credit)

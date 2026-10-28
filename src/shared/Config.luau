@@ -314,12 +314,48 @@ Config.Coins = {
 -- what the card shows until the real price loads from the product; a bundle whose ProductId is 0
 -- shows "Soon" and can't be bought. Tag is an optional sticker ("Popular", "Best value").
 Config.CoinShop = {
+	-- 2x coins boosts (developer products, BoostService): they double the coins you earn from
+	-- matches and eliminations, never bundles, dailies or wheel refunds. The timed one runs in real
+	-- time and buying it again adds Minutes. Boosts don't stack past BoostMultiplier.
+	BoostMultiplier = 2,
+	-- Robux placement (release plan, Stage 2): every Robux button stays hidden until the tutorial is
+	-- done and the player has this much play time; the Coins sheet opens by itself only on the
+	-- AutoOpenAfterFails-th coin purchase you couldn't afford, at most once a session.
+	RobuxAfterSeconds = 600,
+	AutoOpenAfterFails = 3,
+	Boosts = {
+		{
+			Id = "Boost30",
+			Name = "2x Coins",
+			Detail = "30 minutes",
+			Robux = 19,
+			ProductId = 3723376951,
+			Minutes = 30,
+			Forever = false,
+		},
+		{
+			Id = "BoostForever",
+			Name = "2x Coins",
+			Detail = "Forever",
+			Robux = 199,
+			ProductId = 3723376954,
+			Minutes = 0,
+			Forever = true,
+		},
+	},
 	Bundles = {
-		{ Id = "Handful", Name = "Handful of coins", Coins = 1000, Robux = 49, ProductId = 0 },
-		{ Id = "Pouch", Name = "Pouch of coins", Coins = 2750, Robux = 99, ProductId = 0 },
-		{ Id = "Sack", Name = "Sack of coins", Coins = 6000, Robux = 199, ProductId = 0, Tag = "Popular" },
-		{ Id = "Chest", Name = "Chest of coins", Coins = 16000, Robux = 499, ProductId = 0 },
-		{ Id = "Vault", Name = "Vault of coins", Coins = 35000, Robux = 999, ProductId = 0, Tag = "Best value" },
+		{ Id = "Handful", Name = "Handful of coins", Coins = 1000, Robux = 49, ProductId = 3723376190 },
+		{ Id = "Pouch", Name = "Pouch of coins", Coins = 2750, Robux = 99, ProductId = 3723376232 },
+		{ Id = "Sack", Name = "Sack of coins", Coins = 6000, Robux = 199, ProductId = 3723376234, Tag = "Popular" },
+		{ Id = "Chest", Name = "Chest of coins", Coins = 16000, Robux = 499, ProductId = 3723376237 },
+		{
+			Id = "Vault",
+			Name = "Vault of coins",
+			Coins = 35000,
+			Robux = 999,
+			ProductId = 3723376239,
+			Tag = "Best value",
+		},
 	},
 }
 
@@ -341,9 +377,9 @@ Config.Spin = {
 		{ Rarity = "Rare", Min = 1000 },
 	},
 	DuplicateCoins = { Common = 100, Rare = 250, Epic = 500, Legendary = 1000 }, -- already owned
-	ExtraSpinCost = 750, -- coins
+	ExtraSpinCost = 1000, -- coins
 	MaxPaidPerDay = 5,
-	RobuxProductId = 0, -- placeholder developer product for an extra spin (not wired until it exists)
+	RobuxProductId = 3723376241, -- developer product "Extra daily spin" (35 Robux; price set in the Creator Dashboard)
 	SpinDuration = 4.2, -- seconds the wheel spins on the client before the reveal
 	-- Toybox Island fills (the UI's design system): sky, leaf, candy, sun
 	RarityColors = {
@@ -354,21 +390,43 @@ Config.Spin = {
 	},
 }
 
--- Loot chests on the hub deck: pay coins, spin a wheel of any cosmetic. Unlike the daily spin
--- there is no daily cap, and the odds lean a little richer to match the price. Each spot is in the
--- deck frame (X = right, F = toward the court); Yaw turns the chest (0 = facing the court).
+-- Loot chests on the hub deck, in three tiers. Each tier's wheel only holds the rarities in its
+-- RarityWeights, so the Rare chest guarantees Rare or better and the Epic chest Epic or better.
+-- Prices sit a little under the shop value of what they drop (the shop stays the fair way to pick
+-- one item). There's no daily cap on paid opens. Free opens: once per UTC day, a tier with
+-- FreeAfterMatches opens free after that many finished matches that day.
+-- Each spot is in the deck frame (X = right, F = toward the court); Yaw turns the chest (0 = facing
+-- the court); Tier names its entry in Tiers.
 Config.Chest = {
-	Cost = 1000, -- coins per open
+	Tiers = {
+		Common = {
+			Name = "Common Chest",
+			Cost = 1200,
+			RarityWeights = { Common = 60, Rare = 28, Epic = 10, Legendary = 2 },
+			FreeAfterMatches = 1,
+		},
+		Rare = {
+			Name = "Rare Chest",
+			Cost = 2200,
+			RarityWeights = { Common = 0, Rare = 70, Epic = 24, Legendary = 6 },
+			FreeAfterMatches = 3,
+		},
+		Epic = {
+			Name = "Epic Chest",
+			Cost = 3500,
+			RarityWeights = { Common = 0, Rare = 0, Epic = 80, Legendary = 20 },
+			FreeAfterMatches = 0, -- 0 = never free
+		},
+	},
 	Slots = 12,
-	RarityWeights = { Common = 48, Rare = 32, Epic = 15, Legendary = 5 },
 	DuplicateCoins = { Common = 250, Rare = 400, Epic = 700, Legendary = 1200 }, -- already owned
 	SpinDuration = 4.6, -- seconds the wheel spins on the client before the reveal
 	PromptDistance = 11,
 	LidOpenTime = 6, -- seconds the lid stays open after a reveal before it settles shut
 	Spots = {
-		{ X = -10, F = -17, Yaw = 0, Style = "Gold" },
-		{ X = 10, F = -17, Yaw = 0, Style = "Frost" },
-		{ X = 38, F = -4, Yaw = 90, Style = "Royal" },
+		{ X = -10, F = -17, Yaw = 0, Style = "Frost", Tier = "Common" },
+		{ X = 10, F = -17, Yaw = 0, Style = "Gold", Tier = "Rare" },
+		{ X = 38, F = -4, Yaw = 90, Style = "Royal", Tier = "Epic" },
 	},
 	-- wood, banding metal and the treasure glow for each look (all three are the same chest)
 	Styles = {
@@ -490,6 +548,11 @@ Config.DevRoom = {
 -- Haunted Wheel in place of the spin station's booth, the music, the Halloween UI palette, jack-o-lantern balls, and the Halloween cosmetics in the shop.
 Config.Halloween = {
 	Enabled = true,
+	-- UTC window the event runs in (Start inclusive, End exclusive). Servers switch it on and off by
+	-- themselves at these times, so the event ends without a republish. End is Nov 2 00:00 UTC, so
+	-- Halloween night lasts its full evening in the Americas too.
+	Start = "2026-10-01T00:00:00Z",
+	End = "2026-11-02T00:00:00Z",
 	-- looping background music (free DistroKid tracks from the Creator Store), played in turn
 	Music = { "rbxassetid://111631783838916", "rbxassetid://115585877205328" },
 	MusicVolume = { Hub = 0.32, Match = 0.16 }, -- quieter while you're playing
@@ -552,9 +615,10 @@ Config.Camera = {
 
 Config.Data = {
 	StoreName = "PlayerData_v1",
-	SchemaVersion = 8,
+	SchemaVersion = 10,
 	AutosaveInterval = 120,
 	MaxRetries = 4,
+	LockWaitRetries = 10, -- 3 s apart: how long a joiner waits for another server to release their save
 	SessionLockTimeout = 300,
 }
 

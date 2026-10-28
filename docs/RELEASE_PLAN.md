@@ -67,12 +67,12 @@ Starting point: see [STATUS.md](STATUS.md).
 2. **More cosmetics.** KO effects and victory poses join the existing ball skins, trails, titles and finishers (`shared/Catalog.luau` already holds Robux product-id placeholders).
 3. **Cosmetic index.** An INDEX grid grouped by category. Unowned items show a silhouette and how to get them. A completed category grants a title.
 4. **Daily quests.** 3 quests per UTC day from a pool, paid in coins; `PlayersOnly` quests ignore bot actions; finishing all 3 pays a bonus. The daily login ladder already exists from Stage 1.
-5. **Purchases** (`MarketplaceService.ProcessReceipt`):
+5. **Purchases** (`MarketplaceService.ProcessReceipt`). *Oct 28: coin bundles, the extra spin and the 2x coins boosts exist and are wired; game passes, the Starter Bundle and limited stock don't yet. See STATUS.*
    - Receipts are idempotent: purchase ids are stored in the profile, a failed or duplicate receipt never grants twice or loses an item, and the client shows a "Delivering…" state.
    - Products: Starter Bundle (once per account), coins packs, 2x Coins, 2x XP, VIP and Emote Pack game passes, Quest Reroll.
    - Limited items: stock is decremented atomically across servers (DataStore `UpdateAsync` on a stock key, or MemoryStore with a DataStore backstop). Stock never goes below 0.
    - Studio simulation of every product flow, as the amendment asks.
-6. **Placement rules.**
+6. **Placement rules.** *Oct 28: built, except the shared server-side `ShopGate`: prompts are client-side, so the hub-only rule is enforced by the client.*
    - No prompt ever opens during a round, or on its own.
    - All Robux surfaces stay hidden until the tutorial is done plus about 10 minutes.
    - The coin shop opens on the third failed coin purchase, at most once per session.

@@ -185,7 +185,7 @@ local function renderButtons()
 		Theme.recolor(spinButton, "secondary")
 		Theme.setEnabled(spinButton, false)
 	end
-	robuxButton.Visible = (status.robux or 0) > 0 and not status.free
+	robuxButton.Visible = (status.robux or 0) > 0 and not status.free and player:GetAttribute("RobuxOk") == true
 	badge.Visible = status.free == true
 end
 

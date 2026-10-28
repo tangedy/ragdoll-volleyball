@@ -392,6 +392,13 @@ local function build()
 		BackgroundColor3 = T.sky,
 	}, xpBack)
 	Theme.round(refs.xpBar)
+	-- "2x COINS" while a coins boost runs (BoostService), stuck on the chip's top edge
+	refs.boost = Theme.sticker(chip, ("%dx COINS"):format(Config.CoinShop.BoostMultiplier), T.leaf, {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromOffset(16, 0),
+		Visible = false,
+		ZIndex = 10,
+	})
 	refs.saveWarn = Theme.body(gui, {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, Theme.Space.L + 4, 1, -112),
@@ -1094,10 +1101,10 @@ local function update()
 			-- properties every frame
 			local key = ("%s|%s|%s|%s|%s"):format(
 				tostring(MS:GetAttribute(team .. "Roster")),
-				teamSize,
-				active,
-				jailed,
-				wins
+				tostring(teamSize),
+				tostring(active),
+				tostring(jailed),
+				tostring(wins)
 			)
 			if boardKeys[team] == key then
 				continue
@@ -1327,6 +1334,7 @@ function HUDController.start()
 		end
 	end)
 	local lastCoins: number? = nil
+	local boostUntil, boostForever = 0, false
 	Net.on("Profile", function(d)
 		local coins = d.coins or 0
 		local s = tostring(math.floor(coins)):reverse():gsub("(%d%d%d)", "%1,"):reverse()
@@ -1338,6 +1346,17 @@ function HUDController.start()
 		refs.level.Text = ("Lv %d"):format(d.level or 1)
 		tween(refs.xpBar, 0.4, { Size = UDim2.fromScale(math.clamp(d.xp / math.max(d.xpNext, 1), 0, 1), 1) })
 		refs.saveWarn.Text = if d.persistent then "" else "Progress isn't saving in this server"
+		if type(d.boost) == "table" then
+			boostUntil = tonumber(d.boost.untilTime) or 0
+			boostForever = d.boost.forever == true
+		end
+	end)
+	-- the timed boost runs out on its own: re-check the sticker once a second
+	task.spawn(function()
+		while true do
+			refs.boost.Visible = boostForever or boostUntil > Workspace:GetServerTimeNow()
+			task.wait(1)
+		end
 	end)
 	player:GetAttributeChangedSignal("AutoQueue"):Connect(function()
 		local v = player:GetAttribute("AutoQueue") ~= false

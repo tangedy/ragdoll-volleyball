@@ -410,8 +410,8 @@ return {
 				-- they start dim and glow brighter as they close, bleeding toward violet at the end
 				local glow = 0.2 + 0.8 * p ^ 1.6
 				local toViolet = 0.45 * p ^ 3
-				for _, o in { { blue, BLUE }, { red, RED } } do
-					local orb, color = o[1], o[2]
+				for _, o in { { orb = blue, color = BLUE }, { orb = red, color = RED } } do
+					local orb, color = o.orb, o.color
 					local tinted = color:Lerp(VIOLET, toViolet)
 					orb.core.Color = tinted:Lerp(Color3.new(0, 0, 0), 0.55 * (1 - glow))
 					orb.halo.Color = tinted
@@ -466,15 +466,20 @@ return {
 			-- the violet sphere churns in front of the winner, then shrinks away to nothing
 			if at("shrink", SHRINK, t) then
 				-- a whoosh that gets quieter (and rises) as the sphere vanishes
-				for _, layer in { { "swordlunge.wav", 0.9, 0.5 }, { "bass.wav", 0.7, 0.45 } } do
+				for _, layer in
+					{
+						{ file = "swordlunge.wav", volume = 0.9, speed = 0.5 },
+						{ file = "bass.wav", volume = 0.7, speed = 0.45 },
+					}
+				do
 					local snd = Instance.new("Sound")
-					snd.SoundId = "rbxasset://sounds/" .. layer[1]
-					snd.Volume = layer[2]
-					snd.PlaybackSpeed = layer[3]
+					snd.SoundId = "rbxasset://sounds/" .. layer.file
+					snd.Volume = layer.volume
+					snd.PlaybackSpeed = layer.speed
 					snd.Parent = ctx.folder
 					snd:Play()
 					local fadeOut = TweenInfo.new(CUT - SHRINK, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-					TweenService:Create(snd, fadeOut, { Volume = 0, PlaybackSpeed = layer[3] * 1.6 }):Play()
+					TweenService:Create(snd, fadeOut, { Volume = 0, PlaybackSpeed = layer.speed * 1.6 }):Play()
 					task.delay(CUT - SHRINK, function()
 						snd:Destroy()
 					end)

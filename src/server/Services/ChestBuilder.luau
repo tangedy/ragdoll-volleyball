@@ -352,12 +352,18 @@ local function body(base: CFrame, st: any, model: Model, rng: Random)
 			CastShadow = false,
 		}, model)
 	end
-	for _, g in { { -0.9, 0.2, st.Gem }, { 1.1, -0.15, Color3.fromRGB(80, 230, 140) }, { 0.15, 0.35, st.Glow } } do
+	for _, g in
+		{
+			{ x = -0.9, z = 0.2, color = st.Gem :: Color3 },
+			{ x = 1.1, z = -0.15, color = Color3.fromRGB(80, 230, 140) },
+			{ x = 0.15, z = 0.35, color = st.Glow :: Color3 },
+		}
+	do
 		decor({
 			Name = "TreasureGem",
 			Size = Vector3.one * 0.42,
-			CFrame = base * CFrame.new(g[1], TOP + 0.5, g[2]) * CFrame.Angles(math.rad(45), math.rad(35), math.rad(45)),
-			Color = g[3],
+			CFrame = base * CFrame.new(g.x, TOP + 0.5, g.z) * CFrame.Angles(math.rad(45), math.rad(35), math.rad(45)),
+			Color = g.color,
 			Material = Enum.Material.Glass,
 			Transparency = 0.15,
 			Reflectance = 0.2,
@@ -487,7 +493,7 @@ local function floatingGem(base: CFrame, st: any, model: Model)
 end
 
 -- Price sign floating above everything.
-local function sign(base: CFrame, model: Model)
+local function sign(base: CFrame, model: Model, tier: any, guarantee: string)
 	local anchor = decor({
 		Name = "SignAnchor",
 		Size = Vector3.one * 0.2,
@@ -506,8 +512,8 @@ local function sign(base: CFrame, model: Model)
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, bb)
 	local lines: { { any } } = {
-		{ "LOOT CHEST", 0.55, Color3.new(1, 1, 1) },
-		{ ("ANY COSMETIC · %d COINS"):format(CH.Cost), 0.32, Color3.fromRGB(255, 214, 80) },
+		{ string.upper(tier.Name), 0.55, Color3.new(1, 1, 1) },
+		{ ("%s · %d COINS"):format(guarantee, tier.Cost), 0.32, Color3.fromRGB(255, 214, 80) },
 	}
 	for i, line in lines do
 		local t = make("TextLabel", {
@@ -597,7 +603,17 @@ function ChestBuilder.build(index: number, base: CFrame, styleName: string, pare
 	body(base, st, model, rng)
 	lid(base, st, model, rng)
 	floatingGem(base, st, model)
-	sign(base, model)
+	local tierName = (CH.Spots[index] and CH.Spots[index].Tier) or "Common"
+	local tier = (CH.Tiers :: any)[tierName]
+	local lowest = "Common"
+	for _, r in { "Common", "Rare", "Epic", "Legendary" } do
+		if (tier.RarityWeights[r] or 0) > 0 then
+			lowest = r
+			break
+		end
+	end
+	model:SetAttribute("Tier", tierName)
+	sign(base, model, tier, if lowest == "Common" then "ANY COSMETIC" else string.upper(lowest) .. "+")
 	effects(base, st, model)
 	local anchor = decor({
 		Name = "PromptAnchor",
@@ -607,8 +623,8 @@ function ChestBuilder.build(index: number, base: CFrame, styleName: string, pare
 	}, model)
 	local prompt = make("ProximityPrompt", {
 		Name = "ChestPrompt",
-		ActionText = ("Open · %d coins"):format(CH.Cost),
-		ObjectText = "Loot Chest",
+		ActionText = "Open",
+		ObjectText = tier.Name,
 		HoldDuration = 0,
 		Style = Enum.ProximityPromptStyle.Custom, -- drawn by PromptController in the Toybox style
 		MaxActivationDistance = CH.PromptDistance,

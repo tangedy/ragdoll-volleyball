@@ -43,6 +43,13 @@ export type Profile = {
 	Receipts: { string },
 	-- schema v8: shop items this player has already seen (a shop tab says NEW! until they look)
 	ShopSeen: { [string]: boolean },
+	-- schema v9: 2x coins boosts (BoostService): a timed boost's end (unix seconds) and the lifetime one
+	CoinBoostUntil: number,
+	CoinBoostForever: boolean,
+	-- schema v9: seconds played (PurchaseService unlocks Robux buttons after Config.CoinShop.RobuxAfterSeconds)
+	PlaySeconds: number,
+	-- schema v10: today's finished matches and which free chests were opened (ChestService)
+	ChestDaily: { date: string, matches: number, claimed: { [string]: boolean } },
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -67,6 +74,10 @@ local function default(): Profile
 		ChestOpens = 0,
 		Receipts = {},
 		ShopSeen = {}, -- a brand-new player finds every tab NEW!
+		CoinBoostUntil = 0,
+		CoinBoostForever = false,
+		PlaySeconds = 0,
+		ChestDaily = { date = "", matches = 0, claimed = {} },
 		Lock = nil,
 	}
 end
@@ -122,6 +133,17 @@ function DataService.migrate(old: any): Profile
 				data.ShopSeen[item.Id] = true
 			end
 		end
+	end
+	if version < 9 then
+		-- v9: coin boosts; nobody owns one yet
+		data.CoinBoostUntil = tonumber(data.CoinBoostUntil) or 0
+		data.CoinBoostForever = data.CoinBoostForever == true
+		-- returning players who've finished a few matches are past the Robux wait already
+		data.PlaySeconds = if (tonumber(data.Matches) or 0) >= 3 then Config.CoinShop.RobuxAfterSeconds else 0
+	end
+	if version < 10 or type(data.ChestDaily) ~= "table" then
+		-- v10: free daily chests; today's count starts fresh
+		data.ChestDaily = { date = "", matches = 0, claimed = {} }
 	end
 	data.SchemaVersion = D.SchemaVersion
 	return data
@@ -187,6 +209,7 @@ local function pushProfile(c: any)
 		persistent = c.persistent,
 		tutorialStep = p.TutorialStep,
 		seen = p.ShopSeen,
+		boost = S.BoostService.status(c),
 	})
 	S.PlayerStateService.setAttr(c, "Level", p.Level)
 	S.PlayerStateService.setAttr(c, "Streak", p.CurrentWinStreak)
@@ -194,13 +217,51 @@ local function pushProfile(c: any)
 end
 DataService.push = pushProfile
 
+-- Write the profile with UpdateAsync. Returns whether it reached the DataStore: false when every
+-- attempt failed, or when another server has taken the session over (its newer copy is kept).
+local function write(c: any, release: boolean): boolean
+	local player = c.player :: Player
+	local data = table.clone(c.profile)
+	data.Lock = if release then nil else { JobId = game.JobId, Time = os.time() }
+	for attempt = 1, D.MaxRetries do
+		local takenOver = false
+		local ok, err = pcall(function()
+			(store :: DataStore):UpdateAsync(key(player), function(old: any)
+				local lock = type(old) == "table" and old.Lock or nil
+				if lock and lock.JobId ~= game.JobId and os.time() - (lock.Time or 0) < D.SessionLockTimeout then
+					takenOver = true
+					return nil -- session was taken over; never clobber the newer owner
+				end
+				-- a lock-keeping save that lands after the release save mustn't lock the profile again
+				if c.released and not release then
+					takenOver = true
+					return nil
+				end
+				return data
+			end)
+		end)
+		if ok then
+			if takenOver then
+				warn(("[Data] %s's session moved to another server; this copy wasn't saved"):format(player.Name))
+			end
+			return not takenOver
+		end
+		warn(("[Data] save attempt %d failed for %s: %s"):format(attempt, player.Name, tostring(err)))
+		task.wait(attempt)
+	end
+	return false
+end
+
 function DataService.load(c: any)
 	local player = c.player :: Player
 	c.profile = default()
 	c.persistent = false
 	local loaded: Profile? = nil
 	if store then
-		for attempt = 1, D.MaxRetries do
+		-- errors and a lock held by another server have separate budgets: a player who hops servers
+		-- waits for the old server's release save instead of playing the whole session unsaved
+		local failures, lockWaits = 0, 0
+		while failures < D.MaxRetries and lockWaits < D.LockWaitRetries do
 			local lockedByOther = false
 			local ok, err = pcall(function()
 				(store :: DataStore):UpdateAsync(key(player), function(old: any)
@@ -219,18 +280,21 @@ function DataService.load(c: any)
 				break
 			end
 			if not ok then
-				warn(("[Data] load attempt %d failed for %s: %s"):format(attempt, player.Name, tostring(err)))
+				failures += 1
+				warn(("[Data] load attempt %d failed for %s: %s"):format(failures, player.Name, tostring(err)))
 				if string.find(tostring(err), "API access is not enabled", 1, true) then
 					break -- Studio without API access: retrying can't help, play unsaved straight away
 				end
-			end
-			if lockedByOther and attempt == D.MaxRetries then
-				warn(("[Data] %s is still locked by another server; playing unsaved"):format(player.Name))
+			elseif lockedByOther then
+				lockWaits += 1
+				if lockWaits == D.LockWaitRetries then
+					warn(("[Data] %s is still locked by another server; playing unsaved"):format(player.Name))
+				end
 			end
 			if player.Parent ~= Players then
-				return
+				break
 			end
-			task.wait(if lockedByOther then 3 else attempt)
+			task.wait(if lockedByOther then 3 else failures)
 		end
 	end
 	if loaded then
@@ -238,35 +302,30 @@ function DataService.load(c: any)
 		c.persistent = true
 	end
 	c.profileLoaded = true
+	-- left while the save was loading: PlayerRemoving's release save ran before this server held the
+	-- lock, so release it now or the next server would wait out SessionLockTimeout
+	if c.released or player.Parent ~= Players then
+		if c.persistent then
+			write(c, true)
+		end
+		return
+	end
 	pushProfile(c)
 	player:SetAttribute("ProfileReady", true) -- the loading screen waits for this
 end
 
--- Returns whether the profile reached the DataStore.
+-- Returns whether the profile reached the DataStore. `release` drops the session lock (on leave
+-- and shutdown); after that, lock-keeping saves for this player are refused.
 function DataService.save(c: any, release: boolean): boolean
+	if release then
+		c.released = true
+	elseif c.released then
+		return false
+	end
 	if not c.persistent or not store or not c.player then
 		return false
 	end
-	local player = c.player :: Player
-	local data = table.clone(c.profile)
-	data.Lock = if release then nil else { JobId = game.JobId, Time = os.time() }
-	for attempt = 1, D.MaxRetries do
-		local ok, err = pcall(function()
-			(store :: DataStore):UpdateAsync(key(player), function(old: any)
-				local lock = type(old) == "table" and old.Lock or nil
-				if lock and lock.JobId ~= game.JobId and os.time() - (lock.Time or 0) < D.SessionLockTimeout then
-					return nil -- session was taken over; never clobber the newer owner
-				end
-				return data
-			end)
-		end)
-		if ok then
-			return true
-		end
-		warn(("[Data] save attempt %d failed for %s: %s"):format(attempt, player.Name, tostring(err)))
-		task.wait(attempt)
-	end
-	return false
+	return write(c, release)
 end
 
 function DataService.start()

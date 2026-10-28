@@ -15,7 +15,7 @@ This doc covers how to work on the project, what the user likes, what changed in
 - Rojo only syncs into the open Studio place. Publishing is a manual File → Publish from Studio. The published place is "Ragdoll Dodgeball", placeId 101235501560927.
 
 **Checks** (run after every change):
-- Lint: `selene src`. There are 2 known warnings that aren't ours: `BallService.luau:119` unused `ballType`, and `Theme.luau` `UDim2.new(0.5,0,0,0)`.
+- Lint: `selene src` should report 0 errors and 0 warnings. Strict `luau-lsp` should report 0 errors (as of Oct 28).
 - Format: `stylua <files>`.
 - Types: `luau-lsp analyze --sourcemap=sourcemap.json --definitions=.luau-lsp/globalTypes.d.luau src`. Regenerate the sourcemap with `rojo sourcemap default.project.json -o sourcemap.json` after adding files.
 
@@ -132,7 +132,7 @@ From the Nintendo UX audio study: a few short, dry sounds that each mean one thi
 - **;** (same permission as H) teleports you to a hall far above the map and back. It's built on the first visitor and torn down when the last leaves; visitors are kept out of the match queue.
 
 ## Shop NEW! tags
-- Each shop tab wears a red NEW! sticker while it holds something on sale the player hasn't seen and doesn't own. Opening the shop on a tab, or switching to it, marks it seen (`MarkSeen` remote, saved as `ShopSeen` in schema v8; v7 is the Robux receipts list).
+- Each shop tab wears a red NEW! sticker while it holds something on sale the player hasn't seen and doesn't own. Opening the shop on a tab, or switching to it, marks it seen (`MarkSeen` remote, saved as `ShopSeen` in schema v8; v7 is the Robux receipts list; v9 adds the coin boosts and `PlaySeconds`).
 - New players see every tab as NEW!. Saves migrated from v7 or older are pre-marked with the catalog as it stood, so only items added later (and event items while their event runs) light the tag again.
 
 ## Gotchas worth knowing

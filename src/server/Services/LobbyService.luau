@@ -192,6 +192,7 @@ local function onPlayerAdded(player: Player)
 		S.DataService.load(c)
 		loading = false
 	end)
+	task.spawn(S.ComplianceService.load, c)
 	local spawn = ArenaLayout.lobbySpawn(rng)
 	S.CharacterService.spawnPlayer(
 		c,

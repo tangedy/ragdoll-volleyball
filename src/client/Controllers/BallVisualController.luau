@@ -71,11 +71,12 @@ local clockOffset: number? = nil
 local function smoothServerNow(): number
 	local c = os.clock()
 	local target = Workspace:GetServerTimeNow() - c
-	local offset = clockOffset
-	if offset == nil or math.abs(target - offset) > 0.25 then
+	local prev = clockOffset
+	local offset: number
+	if prev == nil or math.abs(target - prev) > 0.25 then
 		offset = target
 	else
-		offset += (target - offset) * 0.05
+		offset = prev + (target - prev) * 0.05
 	end
 	clockOffset = offset
 	return c + offset

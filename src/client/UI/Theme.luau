@@ -1743,7 +1743,7 @@ function Theme.roundAction(
 	local face = new("Frame", {
 		Name = "Face",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 0),
+		Position = UDim2.fromScale(0.5, 0),
 		Size = UDim2.fromOffset(disc, disc),
 		BackgroundColor3 = tone,
 		ZIndex = b.ZIndex + 1,

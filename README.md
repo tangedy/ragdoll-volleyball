@@ -41,10 +41,12 @@ Optional place settings:
   - F8 toggles the debug overlay (leak counters and hit-outcome tuning data).
   - F9 runs the scenario test suite. Results print to Output and go to `workspace.RD_TestResults`. You can also start it from the server command bar with `workspace:SetAttribute("RD_RunTests", true)`.
   - F10 launches your own character with a full-charge hit, to feel the knockback.
+  - Soak test: `workspace:SetAttribute("RD_Soak", 50)` from the server command bar plays 50 untouched rounds and writes PASS/FAIL to `workspace.RD_SoakResults`.
   - H toggles the Halloween event (also works for the game's owner on a live server, for that server only). From the server command bar: `workspace:SetAttribute("RD_Halloween", true)`. `Config.Halloween.Enabled` is what every server starts with.
 - **Knockback escalates:** each hit you take launches you harder than the last (`Config.Knockback.Escalation`). Hits thrown from jail don't raise it. It resets each round and when you return from jail.
-- **Hub (between matches, 7 s):** the SHOP and DAILY buttons, or the kiosks, open the coins shop and locker and the daily reward. Keeping the shop open holds you in the hub.
-- **Loot chests:** three chests stand around the hub plaza. Walk up and press the prompt to see the chest's wheel; opening one costs 1,000 coins and wins any cosmetic (`Config.Chest`). Press G in Studio for dev coins.
+- **Hub (between matches, 15 s):** the SHOP and DAILY buttons, or the kiosks, open the coins shop and locker and the daily reward. Keeping the shop open holds you in the hub.
+- **Robux buttons** (the Coins icon, the shop's "+", the Robux spin) show only after the tutorial plus 10 minutes of play. In Studio, `workspace:SetAttribute("RD_RobuxUnlocked", true)` from the server command bar shows them within 10 s.
+- **Loot chests:** three tiers stand around the hub plaza: Common (1,200 coins, any rarity), Rare (2,200, Rare or better) and Epic (3,500, Epic or better). Each day the Common one is free after 1 match and the Rare one after 3 (`Config.Chest`). Walk up and press the prompt to see the wheel. Press G in Studio for dev coins.
 - **Controls:**
 
 | Action | PC | Mobile | Controller |
@@ -56,6 +58,14 @@ Optional place settings:
 | Spectator: switch player | Z / C | Arrow buttons | D-pad |
 
 ## Checks
+
+Offline tests (server logic, no Studio needed; Lune is pinned in `rokit.toml`):
+
+```bash
+lune run tests/offline/run
+```
+
+They load the real server modules from `src/` with fakes for the engine (an in-memory DataStore, players, PolicyService, time) and cover saving, rewards, chests, spins, boosts, purchases, the shop, daily rewards and the Halloween schedule. Physics, UI and multiplayer still need the F9 suite in Studio.
 
 ```bash
 rojo sourcemap default.project.json -o sourcemap.json

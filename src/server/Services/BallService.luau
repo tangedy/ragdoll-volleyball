@@ -86,9 +86,10 @@ local function sweepParamsFor(ball: Ball): RaycastParams
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Include
 		params.FilterDescendantsInstances = include
-		sweep = { params = params, list = include, frame = sweepFrame }
-		sweeps[key] = sweep
-	elseif not sameList(sweep.list, include) then
+		sweeps[key] = { params = params, list = include, frame = sweepFrame }
+		return params
+	end
+	if not sameList(sweep.list, include) then
 		sweep.params.FilterDescendantsInstances = include
 		sweep.list = include
 	end
@@ -164,7 +165,7 @@ local function applyOwnerLook(ball: Ball, c: any)
 	end
 end
 
-local function makePart(ballType: string): Part
+local function makePart(): Part
 	local p = Instance.new("Part")
 	p.Name = "Ball"
 	p.Shape = Enum.PartType.Ball
@@ -247,7 +248,7 @@ end
 
 function BallService.spawn(ballType: string, pos: Vector3, context: string, isPower: boolean?): Ball
 	nextId += 1
-	local part = makePart(ballType)
+	local part = makePart()
 	local ball: Ball = {
 		id = nextId,
 		part = part,

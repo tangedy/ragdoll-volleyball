@@ -9,6 +9,9 @@
 -- Dev toggle: H in Studio (or for the game's owner on a live server), or
 -- workspace:SetAttribute("RD_Halloween", true/false) from the server command bar. A live toggle only
 -- changes that server; change Config.Halloween.Enabled and publish to switch every server.
+--
+-- Schedule: with Enabled on, every server follows the Start/End window by itself, checked once a
+-- minute. It only acts when the scheduled state changes, so a dev toggle sticks until the next edge.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -277,6 +280,19 @@ function HalloweenService.devToggle(player: Player)
 	end
 end
 
+local function stamp(iso: string): number
+	return DateTime.fromIsoDate(iso).UnixTimestamp
+end
+
+-- Whether the event should be running right now, from Config.Halloween.Enabled and its window.
+function HalloweenService.scheduled(): boolean
+	if not H.Enabled then
+		return false
+	end
+	local now = os.time()
+	return now >= stamp(H.Start) and now < stamp(H.End)
+end
+
 function HalloweenService.start()
 	-- the command bar switch
 	Workspace:GetAttributeChangedSignal("RD_Halloween"):Connect(function()
@@ -286,13 +302,22 @@ function HalloweenService.start()
 		end
 	end)
 	ReplicatedStorage:SetAttribute("Halloween", false)
-	if H.Enabled then
-		task.spawn(function()
+	task.spawn(function()
+		local wanted = HalloweenService.scheduled()
+		if wanted then
 			-- the props need the hub deck to exist first
 			Workspace:WaitForChild("Lobby", 30)
 			HalloweenService.set(true)
-		end)
-	end
+		end
+		while true do
+			task.wait(60)
+			local now = HalloweenService.scheduled()
+			if now ~= wanted then
+				wanted = now
+				HalloweenService.set(now)
+			end
+		end
+	end)
 end
 
 return HalloweenService

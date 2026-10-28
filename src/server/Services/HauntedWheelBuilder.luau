@@ -85,14 +85,14 @@ local function triangle(a: Vector3, b: Vector3, c: Vector3, thick: number, props
 	local back = bc.Unit
 	local height = math.abs(ab:Dot(up))
 	local halves = {
-		{ (a + b) / 2, math.abs(ab:Dot(back)), CFrame.fromMatrix((a + b) / 2, right, up, back) },
-		{ (a + c) / 2, math.abs(ac:Dot(back)), CFrame.fromMatrix((a + c) / 2, -right, up, -back) },
+		{ depth = math.abs(ab:Dot(back)), cf = CFrame.fromMatrix((a + b) / 2, right, up, back) },
+		{ depth = math.abs(ac:Dot(back)), cf = CFrame.fromMatrix((a + c) / 2, -right, up, -back) },
 	}
 	for _, half in halves do
 		local p = table.clone(props)
 		p.Shape = Enum.PartType.Wedge
-		p.Size = Vector3.new(thick, height, half[2])
-		p.CFrame = half[3]
+		p.Size = Vector3.new(thick, height, half.depth)
+		p.CFrame = half.cf
 		p.CastShadow = false
 		decor(p, parent)
 	end
@@ -519,15 +519,18 @@ local function wheel(c: CFrame, parent: Instance): Model
 	end
 	-- the collar round the hub: an iron ring with a glowing edge
 	for _, ring in
-		{ { "HubGlow", 3.5, 0.3, ORANGE, Enum.Material.Neon }, { "Collar", 3.1, 0.36, IRON, Enum.Material.Metal } }
+		{
+			{ name = "HubGlow", d = 3.5, z = 0.3, color = ORANGE, material = Enum.Material.Neon },
+			{ name = "Collar", d = 3.1, z = 0.36, color = IRON, material = Enum.Material.Metal },
+		}
 	do
 		decor({
-			Name = ring[1],
+			Name = ring.name,
 			Shape = Enum.PartType.Cylinder,
-			Size = Vector3.new(0.12, ring[2], ring[2]),
-			CFrame = c * CFrame.new(0, 0, -ring[3]) * CFrame.Angles(0, math.rad(90), 0),
-			Color = ring[4],
-			Material = ring[5],
+			Size = Vector3.new(0.12, ring.d, ring.d),
+			CFrame = c * CFrame.new(0, 0, -ring.z) * CFrame.Angles(0, math.rad(90), 0),
+			Color = ring.color,
+			Material = ring.material,
 		}, model)
 	end
 	model:SetAttribute("SpinRate", -0.7) -- slower than the prize wheel, and the other way round
@@ -630,19 +633,26 @@ function HauntedWheelBuilder.build(base: CFrame, parent: Instance): Model
 	local halo = nil :: Part?
 	for _, ring in
 		{
-			{ "Halo", 11.2, 0.48, ORANGE, Enum.Material.Neon, 0.25 },
-			{ "HaloInner", 10, 0.44, Color3.fromRGB(190, 40, 6), Enum.Material.Neon, 0.15 },
-			{ "HaloCore", 8.6, 0.4, BLACK, Enum.Material.SmoothPlastic, 0 },
+			{ name = "Halo", d = 11.2, z = 0.48, color = ORANGE, material = Enum.Material.Neon, alpha = 0.25 },
+			{
+				name = "HaloInner",
+				d = 10,
+				z = 0.44,
+				color = Color3.fromRGB(190, 40, 6),
+				material = Enum.Material.Neon,
+				alpha = 0.15,
+			},
+			{ name = "HaloCore", d = 8.6, z = 0.4, color = BLACK, material = Enum.Material.SmoothPlastic, alpha = 0 },
 		}
 	do
 		local p = decor({
-			Name = ring[1],
+			Name = ring.name,
 			Shape = Enum.PartType.Cylinder,
-			Size = Vector3.new(0.04, ring[2], ring[2]),
-			CFrame = c * CFrame.new(0, 0, ring[3]) * CFrame.Angles(0, math.rad(90), 0),
-			Color = ring[4],
-			Material = ring[5],
-			Transparency = ring[6],
+			Size = Vector3.new(0.04, ring.d, ring.d),
+			CFrame = c * CFrame.new(0, 0, ring.z) * CFrame.Angles(0, math.rad(90), 0),
+			Color = ring.color,
+			Material = ring.material,
+			Transparency = ring.alpha,
 			CastShadow = false,
 		}, model)
 		halo = halo or p

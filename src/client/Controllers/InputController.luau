@@ -533,8 +533,9 @@ function InputController.start()
 			-- the overlay is found once per button (a recursive search every frame added up)
 			local overlay = cooldownOf[btn]
 			if not overlay or not overlay.Parent then
-				overlay = btn:FindFirstChild("Cooldown", true) :: Frame
-				cooldownOf[btn] = overlay
+				local found = btn:FindFirstChild("Cooldown", true) :: Frame
+				overlay = found
+				cooldownOf[btn] = found
 				lastFrac[btn] = nil
 			end
 			if lastFrac[btn] ~= frac then

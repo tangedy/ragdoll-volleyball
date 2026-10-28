@@ -360,10 +360,28 @@ local function selectedItem(): Catalog.Item?
 	return if selectedId then Catalog.get(selectedId) else nil
 end
 
--- Short on coins: off to the Coins sheet, which says how many more you need.
+-- Short on coins. The "+" by the wallet (need = nil) opens the Coins sheet; a Buy you can't afford
+-- just says so, and only the AutoOpenAfterFails-th one opens the sheet, once a session. Before
+-- Robux unlocks (tutorial plus play time) there's no Coins sheet at all.
+local failedBuys = 0
+local autoOpened = false
 local function getCoins(need: number?)
 	local CoinShopController = require(script.Parent.CoinShopController) :: any
-	CoinShopController.open(true, need)
+	local unlocked = CoinShopController.unlocked()
+	if need == nil then
+		if unlocked then
+			CoinShopController.open(true, nil)
+		end
+		return
+	end
+	failedBuys += 1
+	if unlocked and not autoOpened and failedBuys >= Config.CoinShop.AutoOpenAfterFails then
+		autoOpened = true
+		CoinShopController.open(true, need)
+		return
+	end
+	SoundController.play("UIError")
+	HUDController.hint(("You need %d more coins"):format(need), 1.6)
 end
 
 -- Buy, equip, or (short on coins) the Coins sheet.
@@ -939,6 +957,11 @@ local function buildShop()
 	more.Activated:Connect(function()
 		getCoins(nil)
 	end)
+	local function gateMore()
+		more.Visible = player:GetAttribute("RobuxOk") == true
+	end
+	player:GetAttributeChangedSignal("RobuxOk"):Connect(gateMore)
+	gateMore()
 	local body = shop.body :: Frame
 	-- category tabs
 	local items = {}

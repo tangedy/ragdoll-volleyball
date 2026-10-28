@@ -1,5 +1,95 @@
 # Implementation status (Oct 24, 2026)
 
+## Oct 28 offline tests
+
+`lune run tests/offline/run` runs **37 offline tests** against the real server modules (`tests/offline/`): save migration and session locks (DataStore down, a stale lock, leaving mid-load, a takeover), rewards and streaks, chest tiers and odds, free chests, spins, boosts, policy lookups, every Robux product and receipt edge case, the shop, the daily ladder and the Halloween window. All 37 pass. A deliberate break (free chests never marked used) made the right test fail.
+
+They found one bug, now fixed: a Robux extra spin bought by a player in a restricted region could never be granted, so Roblox would retry the receipt forever. It now pays the spin's coin price (1,000 coins) instead.
+
+## Oct 28 chest tiers and free chests
+
+Not run in Studio yet. `selene` and strict `luau-lsp` are clean; the F9 suite has **41 tests**.
+
+- **Three chest tiers** (`Config.Chest.Tiers`, each spot's `Tier`):
+
+| Chest | Look | Price | Drops |
+| --- | --- | --- | --- |
+| Common Chest | Frost | 1,200 | Any rarity (60/28/10/2) |
+| Rare Chest | Gold | 2,200 | Rare or better (70/24/6) |
+| Epic Chest | Royal | 3,500 | Epic or better (80/20) |
+
+  Each price is a little under the average shop price of what it drops (about 1,060 / 1,930 / 3,140), so the shop stays the fair way to pick one item.
+- **Free chests:** each UTC day, the Common Chest opens free after 1 finished match and the Rare Chest after 3, once each (save schema v10, `ChestDaily`). A match counts if it wasn't aborted and you took an action. A hint says when one is ready. The chest panel shows the progress under the price ("Rare Chest: free after 3 matches (1/3)"), and the button reads "Open for FREE". Free opens work where paid random items are restricted.
+- **Signs and prompts** name the tier and its guarantee ("RARE+ · 2200 COINS").
+- **Paid spins** cost 1,000 coins (was 750).
+
+## Oct 28 money, placement and tests
+
+None of this has been run in Studio yet. `selene` has 0 errors and 0 warnings, and strict `luau-lsp` has 0 errors. The F9 suite has **39 tests**.
+
+- **Developer products** (made through Open Cloud on universe 10773065702; ids in `Config.CoinShop` and `Config.Spin`):
+
+| Product | Robux | Id |
+| --- | --- | --- |
+| Handful of coins (1,000) | 49 | 3723376190 |
+| Pouch of coins (2,750) | 99 | 3723376232 |
+| Sack of coins (6,000) | 199 | 3723376234 |
+| Chest of coins (16,000) | 499 | 3723376237 |
+| Vault of coins (35,000) | 999 | 3723376239 |
+| Extra daily spin | 25 | 3723376241 |
+| 2x Coins (30 min) | 19 | 3723376951 |
+| 2x Coins Forever | 199 | 3723376954 |
+
+- **2x coins boosts** (`BoostService`, `Config.CoinShop.Boosts`, save schema v9):
+  - They double match payouts and elimination coins, not bundles, dailies or wheel refunds.
+  - The 30-minute boost runs in real time; buying it again adds 30 minutes. The lifetime one is a profile flag. They don't stack past 2x.
+  - The Coins sheet has a boosts row (time left, or Owned), and the HUD coin chip shows a "2x COINS" sticker while one runs.
+  - The lifetime boost is a developer product, not a game pass, because no API key could create game passes. Its button hides once owned.
+- **Robux placement rules** (`PurchaseService.robuxUnlocked`, `Config.CoinShop.RobuxAfterSeconds` / `AutoOpenAfterFails`):
+  - Every Robux button (the Coins hub icon, the shop's "+", the Robux spin) stays hidden until the tutorial is done and the player has 10 minutes of play (`PlaySeconds`, saved). Returning players with 3+ matches are already unlocked.
+  - A Buy you can't afford only says how many coins you need; the 3rd one opens the Coins sheet, once a session.
+  - The Coins sheet only opens in the hub, so no prompt can appear in a round.
+- **Purchase tests:** the F9 suite feeds fake receipts through the real `ProcessReceipt`: bundles grant once, a retried receipt never grants twice, boosts stack and set the flag, a grant that throws is retried and lands exactly once, and unknown products or absent players wait.
+- **Bots:** they already leave a ball to a teammate heading for it (`Config.Bots.ClaimRadius`); a new test checks it.
+- **Cleanup:** the 2 selene warnings are fixed, `.DS_Store` is untracked and ignored, and the README's hub time is 15 s.
+
+### Economy check (item 14)
+
+Rough earn rate in a solo bot match, which takes about 4–5 minutes:
+- About 350 coins on a win, 50 on a loss, and about 50 from eliminations. At 50% wins that's about 250 a match, or roughly 3,000–3,750 coins an hour.
+- Dailies add about 300 a day on average (2,150 a week).
+
+| Target | Result |
+| --- | --- |
+| A first skin within 2–3 matches | Met: the cheapest skin is 500 (about 2 matches); a 150 title takes 1 |
+| 2,000–3,000 items within a few days | Met at about 20 minutes a day (12 matches for 3,000) |
+| The whole catalog | 49,350 coins: about 200 matches, or 15 hours |
+
+**The wheels beat the shop.**
+- A new chest prize (1,000 coins) is worth about 1,334 in shop prices. A new paid spin (750 coins) is worth about 1,061. Both run 33–40% better than buying, and early players rarely hit duplicates.
+- That pushes coins toward random rolls over picking an item, which also leans harder on the paid-random-items rules.
+- Fixed the same day: chests now come in three priced tiers and paid spins cost 1,000 (see above).
+
+### Not done here (needs a person)
+
+- **Knockback tuning (15):** needs the F8 overlay and `RD_KnockbackProbe` runs in Studio.
+- **Audio mix (16):**
+  - None of the `rbxasset://sounds` files the game uses are on disk in this machine's player or Studio install (only 11 basic sounds are). Studio still played them, so Roblox serves them some other way.
+  - Listen in a **published** server to confirm every cue plays (hit, catch, splash, jail, sudden death, finishers, UI).
+- **Finisher previews by eye (17):** watch each ▶ preview in the shop at full frame rate.
+
+## Oct 28 beta blockers
+
+None of this has been run in Studio yet. `selene` has 0 errors, and strict `luau-lsp` now has **0 errors** (it was 107).
+
+- **Paid random items** (`ComplianceService`): chest opens and paid spins count as paid random items, since coins can be bought with Robux. Each player's `PolicyService` info loads on join. Where `ArePaidRandomItemsRestricted` is true, the server refuses chests and paid spins, and the UI says they aren't available. The free daily spin stays open. Until the policy loads, or if every lookup fails, the player is treated as restricted. To test in Studio: `workspace:SetAttribute("RD_PaidRandomRestricted", true)`.
+- **Saving:**
+  - A lock-keeping save (an autosave, chest or spin save) that lands after a player's release save no longer locks the profile again.
+  - If a player leaves while their save is still loading, the lock is released.
+  - A joiner whose save is still locked by their old server waits up to 30 s (`Config.Data.LockWaitRetries`) instead of playing the whole session unsaved.
+  - `save()` now returns false when another server has taken the session over, so a Robux purchase isn't reported as granted if it wasn't saved.
+- **Halloween schedule:** `Config.Halloween.Start` / `End` (UTC). Servers switch the event on and off by themselves; it ends at Nov 2 00:00 UTC.
+
 ## Oct 27 stability and performance pass
 
 - **Matchmaking can't get stuck:** if a match throws a script error, `MatchService.recover()` sends everyone back to the hub, clears bots and balls, and the loop starts the next match. Before, one error stopped matches for the rest of the server's life.

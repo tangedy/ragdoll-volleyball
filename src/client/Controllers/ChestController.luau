@@ -80,6 +80,9 @@ local status: any = nil -- profile.chest from the server
 local owned: { [string]: boolean } = {}
 local coins = 0
 local currentChest: number? = nil
+local sheetRef: any -- Theme.Sheet (title and subtitle change with the chest's tier)
+local priceLabel: TextLabel
+local freeLabel: TextLabel
 
 -- the open in progress
 local opening = false
@@ -392,6 +395,49 @@ end
 
 -- Sheet ---------------------------------------------------------------------------------------------
 
+-- This chest's tier: its config, and its part of the server's status.
+local function tierName(): string
+	local spot = currentChest and CH.Spots[currentChest]
+	return if spot then spot.Tier else "Common"
+end
+local function tierStatus(): any?
+	return status and status.tiers and status.tiers[tierName()]
+end
+
+-- "Rare or better", or "Any cosmetic" for a tier that can drop everything.
+local function guarantee(tier: any): string
+	for _, r in { "Common", "Rare", "Epic", "Legendary" } do
+		if (tier.RarityWeights[r] or 0) > 0 then
+			return if r == "Common" then "Any cosmetic can drop" else ("Guaranteed %s or better"):format(r)
+		end
+	end
+	return ""
+end
+
+-- The free-chest lines: "Common Chest: free after 1 match (done)" and so on.
+local function renderFree()
+	local lines = {}
+	local matches = if status then tonumber(status.matches) or 0 else 0
+	for _, f in (if status then status.free else nil) or {} do
+		local line
+		if f.claimed then
+			line = ("%s: opened today ✓"):format(f.name)
+		elseif matches >= f.need then
+			line = ("%s: FREE now!"):format(f.name)
+		else
+			line = ("%s: free after %d match%s (%d/%d)"):format(
+				f.name,
+				f.need,
+				if f.need == 1 then "" else "es",
+				matches,
+				f.need
+			)
+		end
+		table.insert(lines, line)
+	end
+	freeLabel.Text = table.concat(lines, "\n")
+end
+
 local function buildWheel(slots: { string })
 	slotsShown = slots
 	slotFrames = SpinController.drawWheel(rotor, slots, owned, CH.DuplicateCoins)
@@ -399,9 +445,23 @@ local function buildWheel(slots: { string })
 end
 
 local function renderButtons()
-	local cost = if status then status.cost else CH.Cost
+	local tier = (CH.Tiers :: any)[tierName()]
+	local ts = tierStatus()
+	local cost = if ts then ts.cost else tier.Cost
+	sheetRef.title.Text = tier.Name
+	sheetRef.subtitle.Text = guarantee(tier) .. ". Every slot is equally likely."
+	priceLabel.Text = ("%s coins"):format(ShopController.commas(cost))
+	renderFree()
 	if opening then
 		Theme.setText(openButton, "Opening...")
+		Theme.setEnabled(openButton, false)
+	elseif ts and ts.free then
+		Theme.setText(openButton, "Open for FREE")
+		Theme.recolor(openButton, "primary")
+		Theme.setEnabled(openButton, true)
+	elseif status and status.restricted then
+		Theme.setText(openButton, "Not available in your region")
+		Theme.recolor(openButton, "secondary")
 		Theme.setEnabled(openButton, false)
 	elseif coins >= cost then
 		Theme.setText(openButton, ("Open for %s coins"):format(ShopController.commas(cost)))
@@ -428,6 +488,10 @@ function ChestController.open(on: boolean)
 			SoundController.play("UIOpen")
 		end
 		ShopController.closeAll()
+		local ts = tierStatus()
+		if ts then
+			buildWheel(ts.slots or {})
+		end
 		Theme.show(panel, backdrop())
 		renderButtons()
 		Theme.focus(openButton)
@@ -512,8 +576,15 @@ function ChestController.openChest()
 	if opening or not currentChest or not inHub() then
 		return
 	end
-	local cost = if status then status.cost else CH.Cost
-	if coins < cost then
+	local ts = tierStatus()
+	local free = ts ~= nil and ts.free == true
+	if status and status.restricted and not free then
+		SoundController.play("UIError")
+		HUDController.hint("Chests aren't available in your region", 1.5)
+		return
+	end
+	local cost = if ts then ts.cost else (CH.Tiers :: any)[tierName()].Cost
+	if not free and coins < cost then
 		SoundController.play("UIError")
 		HUDController.hint(("Need %s more coins"):format(ShopController.commas(cost - coins)), 1.5)
 		return
@@ -594,8 +665,9 @@ local function onResult(d: any)
 			finishOpen()
 			SpinController.drawReveal(reveal, d, openButton)
 			-- the next wheel (from the profile push) appears once the reveal is up
-			if status then
-				buildWheel(status.slots or {})
+			local ts = tierStatus()
+			if ts then
+				buildWheel(ts.slots or {})
 			end
 		end)
 	end)
@@ -609,6 +681,7 @@ function ChestController.init()
 		"Any cosmetic can drop. Every slot is equally likely.",
 		{ tone = T.sun, glyph = "star" }
 	)
+	sheetRef = sheet
 	panel = sheet.frame
 	sheet.close.Activated:Connect(function()
 		ChestController.open(false)
@@ -641,13 +714,24 @@ function ChestController.init()
 		Position = UDim2.fromScale(0, 0.5),
 		ZIndex = 5,
 	})
-	Theme.label(priceRow, {
+	priceLabel = Theme.label(priceRow, {
 		Position = UDim2.fromOffset(40, 0),
 		Size = UDim2.new(1, -40, 1, 0),
-		Text = ("%s a chest"):format(ShopController.commas(CH.Cost)),
+		Text = "",
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 5,
 	}, 0)
+	-- today's free chests, under the price
+	freeLabel = Theme.body(infoCol, {
+		LayoutOrder = 3,
+		Size = UDim2.new(1, 0, 0, 40),
+		FontFace = Theme.LabelFace,
+		Text = "",
+		TextColor3 = T.success,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		ZIndex = 4,
+	})
 	local oddsWell = Theme.well(infoCol, {
 		LayoutOrder = 2,
 		Size = UDim2.new(1, 0, 0, 4 * 26 + 3 * 6 + 24 + 36),
@@ -719,8 +803,9 @@ function ChestController.start()
 		status = d.chest
 		owned = d.owned or {}
 		coins = tonumber(d.coins) or 0
-		if status and not opening then
-			buildWheel(status.slots or {})
+		local ts = tierStatus()
+		if ts and not opening then
+			buildWheel(ts.slots or {})
 		end
 		renderButtons()
 	end)
