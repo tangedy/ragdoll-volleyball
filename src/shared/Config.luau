@@ -290,6 +290,7 @@ Config.Bots = {
 	VoidAvoid = 6,
 	WanderInterval = { 1.5, 3.5 },
 	ClaimRadius = 10, -- two bots don't chase the same ball unless the other is this much farther
+	JailPickupDelay = 3, -- a jailed bot waits this long after a ball shows up before going for it
 	RewardMultiplier = 0.5,
 	-- bots wear these Roblox users' avatars and display names (in rotation); Names is the fallback
 	-- when a profile can't be fetched

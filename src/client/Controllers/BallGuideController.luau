@@ -1,7 +1,8 @@
 --!strict
 -- Floor arrows from the player to the nearest ball they can pick up (replaces the "Walk over a
--- ball." text for the first tutorial step). A chain of glowing chevrons is laid on the floor and
--- pulses toward the ball, which gets a pulsing ring. Client-only visuals.
+-- ball." text for the first tutorial step, and always on while jailed). A chain of glowing
+-- chevrons is laid on the floor and pulses toward the ball, which gets a pulsing ring. Client-only
+-- visuals.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -124,7 +125,9 @@ function BallGuideController.start()
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
 		local held = player:GetAttribute("HeldBall")
-		if not BallGuideController.enabled or not root or (type(held) == "string" and held ~= "") then
+		-- also shown whenever you're in jail, pointing at the nearest ball you can grab there
+		local jailed = player:GetAttribute("Status") == "Jailed"
+		if not (BallGuideController.enabled or jailed) or not root or (type(held) == "string" and held ~= "") then
 			hideAll()
 			return
 		end

@@ -618,6 +618,17 @@ end
 -- otherwise wander the safe middle of the half.
 local claims: { [number]: any } = {} -- ball id -> the bot chasing it
 
+-- Does this bot's team have no real players? Only then may it go for power balls, so it never
+-- takes the special ball from a human teammate.
+local function allBotTeam(c: any): boolean
+	for _, o in S.MatchService.roster() do
+		if o.team == c.team and not o.isBot then
+			return false
+		end
+	end
+	return true
+end
+
 local function thinkFree(c: any, t: number)
 	local brain = c.bot
 	local prof = profileOf(c)
@@ -626,11 +637,27 @@ local function thinkFree(c: any, t: number)
 		humanoid:MoveTo(inward(c, c.root.Position))
 		return
 	end
+	local jailed = c.status == "Jailed"
+	local allowPower = allBotTeam(c)
+	-- in jail, a ball must have been in reach for JailPickupDelay before the bot goes for it (gives
+	-- jailed players first go); rebuilt every tick so balls that leave are forgotten
+	local seen = brain.jailSeen or {}
+	local nextSeen = if jailed then {} else nil
 	local bestBall, bestDist = nil, math.huge
 	for _, ball in S.BallService.all() do
-		if (ball.state == "Resting" or ball.state == "Spent") and ball.context == "Match" then
+		if
+			(ball.state == "Resting" or ball.state == "Spent")
+			and ball.context == "Match"
+			and (allowPower or not (ball.isPower or ball.type ~= "Standard"))
+		then
 			local pos = ball.part.Position
-			if safeFor(c, pos) and S.CombatService.canPickup(c, ball, pos) then
+			local waiting = false
+			if nextSeen and safeFor(c, pos) then
+				local first = seen[ball.id] or t
+				nextSeen[ball.id] = first
+				waiting = t - first < B.JailPickupDelay
+			end
+			if not waiting and safeFor(c, pos) and S.CombatService.canPickup(c, ball, pos) then
 				local d = (pos - c.root.Position).Magnitude
 				-- leave it to a teammate who's already going for it, unless we're much closer
 				local other = claims[ball.id]
@@ -646,6 +673,7 @@ local function thinkFree(c: any, t: number)
 			end
 		end
 	end
+	brain.jailSeen = nextSeen
 	if brain.claim and claims[brain.claim] == c and (not bestBall or bestBall.id ~= brain.claim) then
 		claims[brain.claim] = nil
 	end
