@@ -112,6 +112,8 @@ while not (player.Character and player:GetAttribute("ProfileReady")) and os.cloc
 end
 task.wait(0.3)
 conn:Disconnect()
+-- ready: SoundController plays the signature sound in time with the fade (local attribute only)
+player:SetAttribute("Booted", true)
 local fade = TweenInfo.new(0.45)
 TweenService:Create(bg, fade, { BackgroundTransparency = 1 }):Play()
 for _, d in bg:GetDescendants() do

@@ -10,6 +10,7 @@ local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Them
 local AimController = require(script.Parent.AimController)
 local InputController = require(script.Parent.InputController)
 local BallGuideController = require(script.Parent.BallGuideController)
+local SoundController = require(script.Parent.SoundController)
 
 local player = Players.LocalPlayer
 
@@ -96,6 +97,10 @@ end
 function TutorialController.start()
 	Net.on("Tutorial", function(d)
 		if type(d.step) == "number" then
+			-- a step just completed (not the first sync on join): a small "got it"
+			if step > 0 and d.step > step then
+				SoundController.play("UIStep")
+			end
 			step = d.step
 			if step == 5 then
 				catchShownAt = os.clock()

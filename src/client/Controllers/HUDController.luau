@@ -907,7 +907,7 @@ local function showResults(data: any, persist: boolean?)
 			Theme.pop(refs.resultLevel, 1.4, 0.4)
 		end)
 	end
-	SoundController.play(if data.won then "Purchase" else "UIOpen")
+	SoundController.play(if data.won then "UISuccess" else "UIOpen")
 	if not persist then
 		task.delay(Config.Match.ResultsOverlay + 0.6, function()
 			if token == resultsToken then

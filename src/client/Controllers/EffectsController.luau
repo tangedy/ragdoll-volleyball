@@ -499,14 +499,6 @@ function EffectsController.start()
 	Net.on("DodgeAccepted", function()
 		SoundController.play("Dodge")
 	end)
-	Net.on("ShopResult", function(d)
-		-- purchases play their sting with the UNLOCKED banner
-		if d.ok and d.equip then
-			SoundController.play("UIClick")
-		elseif not d.ok then
-			SoundController.play("UIError")
-		end
-	end)
 
 	-- state-driven cues: pickups, jail, escapes, court strips dropping
 	local lastHeld = ""
