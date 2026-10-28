@@ -108,7 +108,14 @@ From the Nintendo UX audio study: a few short, dry sounds that each mean one thi
 - Closing a sheet plays Back from whatever closed it (✕, backdrop tap, gamepad B, tapping its hub icon again). Switching straight to another sheet plays only Open. Hub icons have no click of their own.
 - In-match cues (combat, round flow, intro, banners, finishers, cheers) are separate and unchanged.
 
+## Finishers on the 144 × 96 court
+- Launch finishers (`Stage.Launch ~= false`) use `ArenaLayout.finisherLaunch`: the module's `Up` stays, and `Out` becomes at least whatever clears the gap, the jail strip and its wall on the current court size. The server and the shop preview both call it.
+- The real victim flies in the Default collision group (`RagdollService.markFinisherFlight`) and is marked ejected. Ragdoll and Characters collide with the jail's 40-stud `JailBarrier`, which stopped them dead about 78 studs out.
+- Finishers get `ctx.toEdge(pos, dir)` (distance to the back edge on whichever court they play on) and `ctx.courtOrigin`. Dodgeball Rush uses it to put the cart just past the edge.
+- `Config.Visuals.FinisherNeonExempt` lists the finishers spared the extra finisher-neon dimming: Purple Flash, and Pumpkin, whose carved face must glow.
+
 ## Gotchas worth knowing
+- `SoundController` preloads every cue's audio and only starts a layer's `stopAfter` once it's really playing. UI layers are cut to 60–80 ms, so timing them from `Play()` used to let a slow load swallow them.
 - `Theme.autoScale`, `Theme.pop` and `Theme.popIn` share one `UIScale` per element. Its `Base` attribute is the resting scale (the today card uses Base 1.08).
 - `Theme.sheet` returns a `CanvasGroup`, which clips its children. Anything meant to break out of the edge needs to be a sibling outside it.
 - `Workspace.StreamingEnabled` is on. The court and hub stream in fully near spawn (136 arena parts on both sides), but don't assume far content exists on the client.

@@ -439,7 +439,7 @@ Config.Graphics = {
 Config.Visuals = {
 	NeonIntensity = 0.5, -- every neon part, glow panel and scenery light shows at this fraction
 	FinisherNeon = 0.7, -- finisher neon and lights are dimmed further by this (not Purple Flash)
-	FinisherNeonExempt = { PurpleFlash = true },
+	FinisherNeonExempt = { PurpleFlash = true, Pumpkin = true }, -- the jack-o-lantern's carved face must glow
 	-- Outlines so players and balls stand out from the court: each team is outlined in the other
 	-- team's color (blue players stand on a blue floor), and balls get a dark ink outline.
 	TeamOutline = { Red = Color3.fromRGB(60, 120, 235), Blue = Color3.fromRGB(232, 70, 60) },

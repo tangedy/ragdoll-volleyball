@@ -209,8 +209,12 @@ local function unhideAll()
 	table.clear(hidden)
 end
 
+-- Clear of the real court and its 800-stud VoidGlow, but well inside the client's ~1000-stud physics
+-- range from a character in the hub: any farther and the stand-in freezes instead of launching.
+local PREVIEW_OFFSET = Vector3.new(0, 0, 800)
+
 -- Local-only ragdoll for preview stand-ins (the real finisher's victim is launched by the server).
-local function localLaunch(model: Model, velocity: Vector3)
+local function localLaunch(model: Model, velocity: Vector3, maxSpeed: number?)
 	for _, d in model:GetDescendants() do
 		if d:IsA("AnimationConstraint") and d.Name ~= "Root" then
 			d.Enabled = false
@@ -239,8 +243,9 @@ local function localLaunch(model: Model, velocity: Vector3)
 				then Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(-0.3, 1), rng:NextNumber(-1, 1)) * K.LimbFlail
 				else Vector3.zero
 			local v = velocity + flail
-			if v.Magnitude > K.MaxSpeed then
-				v = v.Unit * K.MaxSpeed
+			local cap = maxSpeed or K.MaxSpeed
+			if v.Magnitude > cap then
+				v = v.Unit * cap
 			end
 			d.AssemblyLinearVelocity = v
 			d.AssemblyAngularVelocity = axis * K.TumbleSpin
@@ -369,6 +374,7 @@ local function play(def: any, d: any, preview: boolean)
 	end
 	folder.Parent = Workspace
 	local duration = FinisherController.duration(def)
+	local courtOrigin = if preview then Config.Arena.Origin + PREVIEW_OFFSET else Config.Arena.Origin
 	local ctx = {
 		camera = camera,
 		killer = d.killer,
@@ -378,6 +384,12 @@ local function play(def: any, d: any, preview: boolean)
 		winnerColor = if d.winner and Config.Teams[d.winner] then Config.Teams[d.winner].Color else Color3.new(1, 1, 1),
 		duration = duration,
 		isPreview = preview,
+		-- the court this plays on (the preview has its own copy, PREVIEW_OFFSET away)
+		courtOrigin = courtOrigin,
+		-- horizontal distance from `pos` along `dir` to the court's back edge
+		toEdge = function(pos: Vector3, dir: Vector3): number
+			return ArenaLayout.distanceToBackEdge(pos, dir, courtOrigin)
+		end,
 		-- horizontal direction "off the arena" from the victim (away from the court center, or away
 		-- from you in the preview)
 		outward = (function(): Vector3
@@ -430,14 +442,14 @@ local function play(def: any, d: any, preview: boolean)
 		task.delay(tonumber(stage.LaunchDelay) or 1, function()
 			local kr, vr = rootOf(d.killer), rootOf(d.victim)
 			if vr and vr.Parent then
-				local away = if kr
-					then Vector3.new(vr.Position.X - kr.Position.X, 0, vr.Position.Z - kr.Position.Z)
-					else Vector3.zAxis
-				away = if away.Magnitude > 0.1 then away.Unit else Vector3.zAxis
-				localLaunch(
-					d.victim :: Model,
-					away * (tonumber(stage.Out) or 40) + Vector3.new(0, tonumber(stage.Up) or 60, 0)
+				-- the same launch the server gives a real victim, worked out on the preview's court
+				local launch, cap = ArenaLayout.finisherLaunch(
+					vr.Position,
+					if kr then kr.Position else vr.Position - Vector3.zAxis,
+					stage,
+					courtOrigin
 				)
+				localLaunch(d.victim :: Model, launch, cap)
 			end
 		end)
 	end
@@ -463,10 +475,6 @@ end
 -- the middle of one half, a stand-in dummy in the middle of the other, staged exactly like a match.
 -- Purely local; nobody else sees it, your real character stays in the hub, and nothing on the server
 -- changes.
-
--- Clear of the real court and its 800-stud VoidGlow, but well inside the client's ~1000-stud physics
--- range from a character in the hub: any farther and the stand-in freezes instead of launching.
-local PREVIEW_OFFSET = Vector3.new(0, 0, 800)
 
 -- A local copy of the arena (workspace.Arena), shifted by PREVIEW_OFFSET. Tags are stripped so the
 -- game's effects (rim flashes, neon) never mistake it for the real court.

@@ -785,14 +785,17 @@ local function playFinisher(killer: any, victim: any, winner: string)
 			S.NetService.send(c.player, "Finisher", payload)
 		end
 	end
-	-- launched off the far end for the camera; Stage.Launch = false means the finisher moves the
-	-- victim itself (client-side puppet)
+	-- launched off the far end for the camera, hard enough to clear the jail on any court size
+	-- (ArenaLayout.finisherLaunch); Stage.Launch = false means the finisher moves the victim itself
+	-- (client-side puppet)
 	if stage.Launch ~= false and victim.character and S.PlayerStateService.isAlive(victim) then
-		local outward = Vector3.new(victimAt.X - killerAt.X, 0, victimAt.Z - killerAt.Z).Unit
-		local launch = outward * (tonumber(stage.Out) or 45) + Vector3.new(0, tonumber(stage.Up) or 60, 0)
+		local launch, cap = ArenaLayout.finisherLaunch(victimAt, killerAt, stage)
 		task.delay(tonumber(stage.LaunchDelay) or 0.8, function()
 			if victim.character then
-				S.RagdollService.ragdoll(victim.character, launch)
+				S.RagdollService.ragdoll(victim.character, launch, cap)
+				-- clear the jail barrier, and never get switched to "Ejected" (which collides with it)
+				victim.ejected = true
+				S.RagdollService.markFinisherFlight(victim.character)
 			end
 		end)
 	end

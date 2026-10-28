@@ -474,7 +474,9 @@ return {
 
 		-- Disposal: arc off the court and into the ball cart -------------------------------------------
 		local o = ctx.outward :: Vector3
-		local cartAt = G + o * 30 + side * 4
+		-- just past the back edge, over the void, whatever the court size
+		local pastEdge = if ctx.toEdge then ctx.toEdge(G, o) + 6 else 30
+		local cartAt = G + o * pastEdge + side * 4
 		local lid, lidOpen, lidClosed = ballCart(ctx, cartAt, o, rng)
 		local landAt = cartAt + Vector3.new(0, 4, 0)
 		local launchFrom = vp

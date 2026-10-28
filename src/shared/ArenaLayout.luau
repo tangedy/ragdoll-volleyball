@@ -132,6 +132,51 @@ ArenaLayout.CourtFocus = A.Origin + Vector3.new(0, 2, 0)
 ArenaLayout.LobbyVoidY = A.LobbyOrigin.Y - A.VoidDepth
 local practice = Config.Lobby.Practice
 ArenaLayout.DummyHome = ArenaLayout.lobbyPoint(practice.DummyX, 4, practice.F)
+-- Finishers ---------------------------------------------------------------------------------------
+-- Finishers play on the real court or on the shop preview's copy, so these take the court's origin
+-- (defaults to the real one) and work in court-relative terms.
+
+-- Horizontal distance from `pos` along `dir` to the court's back edge (the end `dir` heads for).
+function ArenaLayout.distanceToBackEdge(pos: Vector3, dir: Vector3, origin: Vector3?): number
+	local o = origin or A.Origin
+	local dz = Vector3.new(dir.X, 0, dir.Z).Unit.Z
+	if math.abs(dz) < 0.2 then
+		return ArenaLayout.HalfWidth -- heading sideways: a side edge is about this far
+	end
+	local rel = pos.Z - o.Z
+	local edge = (if dz > 0 then 1 else -1) * ArenaLayout.HalfLength
+	return math.max((edge - rel) / dz, 0)
+end
+
+-- The launch that sends a finisher's victim off the far end: it keeps the finisher's upward speed
+-- (Stage.Up) and pushes outward at least Stage.Out, more if that's what it takes to clear the
+-- gap, the jail strip and its 4-stud wall behind the court, so it lands in the void whatever the
+-- court size. Returns the velocity and the speed cap to ragdoll it with.
+local JAIL_WALL = 4
+function ArenaLayout.finisherLaunch(
+	victimAt: Vector3,
+	killerAt: Vector3,
+	stage: any,
+	origin: Vector3?
+): (Vector3, number)
+	local outward = Vector3.new(victimAt.X - killerAt.X, 0, victimAt.Z - killerAt.Z)
+	outward = if outward.Magnitude > 0.1 then outward.Unit else Vector3.zAxis
+	local up = tonumber(stage.Up) or 60
+	local out = tonumber(stage.Out) or 45
+	-- clear past the jail's far wall, with the root a body-height above the wall top
+	local clear = ArenaLayout.distanceToBackEdge(victimAt, outward, origin) + J.Gap + J.StripDepth + 3
+	local rise = JAIL_WALL + 4 - (victimAt.Y - (origin or A.Origin).Y) -- height to gain at that point
+	local g = workspace.Gravity
+	local disc = up * up - 2 * g * math.max(rise, 0)
+	if disc > 0 then
+		-- the latest time the arc is still high enough, and the outward speed to be past by then
+		local t = (up + math.sqrt(disc)) / g
+		out = math.max(out, clear / t)
+	end
+	local v = outward * out + Vector3.new(0, up, 0)
+	return v, v.Magnitude + Config.Knockback.LimbFlail
+end
+
 ArenaLayout.PracticeBallHome = ArenaLayout.lobbyPoint(practice.BallX, 2, practice.F)
 -- the dummy faces back into the practice zone (it gets launched off the open end behind it)
 ArenaLayout.DummyFacing = ArenaLayout.lobbyPoint(practice.DummyX + 10, 4, practice.F)

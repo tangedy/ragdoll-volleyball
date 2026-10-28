@@ -189,6 +189,22 @@ function RagdollService.markEjected(character: Model)
 	end
 end
 
+-- A finisher's victim, flung off the far end: fly in the Default group, which (like the preview's
+-- stand-in) ignores the jail barrier and the edge walls, so the arc clears the jail instead of
+-- stopping dead against its 40-stud court-facing wall.
+function RagdollService.markFinisherFlight(character: Model)
+	local rig = rigs[character]
+	if not rig or not rig.active then
+		return
+	end
+	for part in rig.collide do
+		-- the root too: it stays in "Characters", which also collides with the barrier
+		if part.Parent == character and part.Name ~= "HitProxy" then
+			part.CollisionGroup = "Default"
+		end
+	end
+end
+
 -- Restore joints, collision and ownership. `upright` optionally places the root at a valid point.
 function RagdollService.recover(character: Model, upright: Vector3?)
 	local rig = rigs[character]

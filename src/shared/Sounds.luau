@@ -59,7 +59,8 @@ end
 -- UI vocabulary (Nintendo UX audio study): a few short, dry sounds that each mean one thing, so a
 -- menu can be read by ear. Pitch carries the meaning: up = forward / on / success, down = back /
 -- off, dull and toneless = a wall or a refusal. Navigation ticks stay under ~100 ms so fast input
--- becomes a rhythm, and every tick has a little random pitch so repeats don't sound mechanical.
+-- becomes a rhythm. Only sounds that repeat fast (hover ticks, the wheel, coins) get a little random
+-- pitch; deliberate presses (tabs, select, back, open, edge) sound exactly the same every time.
 -- Tones are a pitched ping on one scale (`note` = semitones above the UI root), so every UI
 -- sound is part of one family.
 local UI_ROOT = 1.5
@@ -93,27 +94,24 @@ local uiCues: { [string]: { Layer } } = {
 	-- cursor / hover / selection moving: a soft, short tick
 	UIMove = { { id = DRY_TICK, volume = 0.14, pitch = 1.9, jitter = 0.07, stopAfter = 0.06 } },
 	-- switching tabs or segments: a firmer tick with a faint tone
-	UITab = with(
-		{ { id = DRY_TICK, volume = 0.22, pitch = 1.6, jitter = 0.05, stopAfter = 0.07 } },
-		run({ { 7, 0, 0.1 } }, 0.06)
-	),
+	UITab = with({ { id = DRY_TICK, volume = 0.22, pitch = 1.6, stopAfter = 0.07 } }, run({ { 7, 0, 0.1 } }, 0.06)),
 	-- confirm / select: a click and a quick rising fifth
 	UIClick = with(
-		{ { id = DRY_TICK, volume = 0.3, pitch = 1.35, jitter = 0.03, stopAfter = 0.08 } },
+		{ { id = DRY_TICK, volume = 0.3, pitch = 1.35, stopAfter = 0.08 } },
 		run({ { 0, 0, 0.18 }, { 7, 0.035, 0.2 } }, 0.07)
 	),
 	-- back / close: softer and lower, the same fifth falling
 	UIBack = with(
-		{ { id = DRY_TICK, volume = 0.24, pitch = 0.95, jitter = 0.03, stopAfter = 0.08 } },
-		run({ { 0, 0, 0.13 }, { -5, 0.035, 0.12 } }, 0.07)
+		{ { id = DRY_TICK, volume = 0.3, pitch = 0.95, stopAfter = 0.08 } },
+		run({ { 0, 0, 0.18 }, { -5, 0.035, 0.17 } }, 0.08)
 	),
 	-- a sheet rising into view: a little pop and a three-step climb, in time with the slide-up
 	UIOpen = with(
-		{ { id = S .. "snap.wav", volume = 0.2, pitch = 1.7, jitter = 0.03, stopAfter = 0.08 } },
+		{ { id = S .. "snap.wav", volume = 0.2, pitch = 1.7, stopAfter = 0.08 } },
 		run({ { 0, 0, 0.12 }, { 4, 0.03, 0.12 }, { 7, 0.06, 0.13 } }, 0.07)
 	),
 	-- the end of a list / grid: a dull bump instead of the tick (you hit a wall)
-	UIEdge = { { id = S .. "button.wav", volume = 0.3, pitch = 0.55, jitter = 0.03, eq = DULL, stopAfter = 0.08 } },
+	UIEdge = { { id = S .. "button.wav", volume = 0.3, pitch = 0.55, eq = DULL, stopAfter = 0.08 } },
 	-- refused: a disabled button, too few coins, no spins left. Two dull bumps, stepping down
 	UIError = {
 		{ id = S .. "button.wav", volume = 0.32, pitch = 0.5, eq = DULL, stopAfter = 0.07 },

@@ -1,7 +1,10 @@
 --!strict
 -- Plays layered sound cues from Shared/Sounds.luau, either positional (in the world) or as 2D UI
--- sounds. Each play builds its layers and destroys them when done.
+-- sounds. Each play builds its layers and destroys them when done. Every cue's audio is preloaded at
+-- start, and a layer's stopAfter only starts counting once it is really playing: UI layers are cut
+-- to 60-80 ms, so timing them from Play() let a slow load swallow the whole sound.
 
+local ContentProvider = game:GetService("ContentProvider")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -50,6 +53,19 @@ local function build(layer: Sounds.Layer, parent: Instance, group: SoundGroup): 
 	return s
 end
 
+-- A fresh Sound may still be loading its audio; wait for it (briefly) so it isn't cut before it
+-- starts. Preloaded ids are normally ready at once.
+local LOAD_WAIT = 0.5
+local function waitLoaded(s: Sound)
+	if s.IsLoaded then
+		return
+	end
+	local deadline = os.clock() + LOAD_WAIT
+	while not s.IsLoaded and s.Parent and os.clock() < deadline do
+		task.wait()
+	end
+end
+
 -- Play a cue. With `at`, it is positional; otherwise it plays as a 2D sound.
 function SoundController.play(cue: string, at: Vector3?, volumeScale: number?)
 	local layers = Sounds.Cues[cue]
@@ -74,6 +90,10 @@ function SoundController.play(cue: string, at: Vector3?, volumeScale: number?)
 		local life = delay + (layer.stopAfter or 3)
 		longest = math.max(longest, life)
 		task.delay(delay, function()
+			waitLoaded(s)
+			if not s.Parent then
+				return
+			end
 			s:Play()
 			local curve = layer.gamma
 			if curve and layer.stopAfter then
@@ -93,18 +113,23 @@ function SoundController.play(cue: string, at: Vector3?, volumeScale: number?)
 					s.Volume = full * math.min(g, 1) * math.clamp((length - t) / curve.tail, 0, 1)
 				end)
 			end
-			if layer.stopAfter then
-				task.delay(layer.stopAfter, function()
-					s:Stop()
+			-- timed from the real start, then cleaned up
+			task.delay(layer.stopAfter or 3, function()
+				s:Stop()
+				task.delay(0.1, function()
+					s:Destroy()
 				end)
-			end
+			end)
 		end)
-		task.delay(life + 0.1, function()
-			s:Destroy()
+		-- backstop in case the layer never got to play
+		task.delay(life + LOAD_WAIT + 0.5, function()
+			if s.Parent then
+				s:Destroy()
+			end
 		end)
 	end
 	if at then
-		task.delay(longest + 0.2, function()
+		task.delay(longest + LOAD_WAIT + 0.3, function()
 			holder:Destroy()
 		end)
 	end
@@ -124,6 +149,28 @@ function SoundController.init()
 	comp.Threshold = -12
 	comp.Ratio = 3
 	comp.Parent = sfxGroup
+	-- preload every sound file the cues use, so the first press of anything is heard in full
+	task.spawn(function()
+		local seen: { [string]: boolean } = {}
+		local preload: { Instance } = {}
+		local folder = Instance.new("Folder")
+		folder.Name = "SoundPreload"
+		for _, layers in Sounds.Cues do
+			for _, layer in layers do
+				if not seen[layer.id] then
+					seen[layer.id] = true
+					local snd = Instance.new("Sound")
+					snd.SoundId = layer.id
+					snd.Parent = folder
+					table.insert(preload, snd)
+				end
+			end
+		end
+		folder.Parent = SoundService
+		pcall(function()
+			ContentProvider:PreloadAsync(preload)
+		end)
+	end)
 	-- the signature sound, once, when the loading screen lifts and the game is ready to play
 	local player = Players.LocalPlayer
 	local function booted()
