@@ -496,9 +496,7 @@ function EffectsController.start()
 			SoundController.play("Throw", d.origin, if d.thrower == player then 1 else 0.7)
 		end
 	end)
-	Net.on("DodgeAccepted", function()
-		SoundController.play("Dodge")
-	end)
+	-- the dodge sound plays in CharacterController, on the press when the dodge is predicted
 
 	-- state-driven cues: pickups, jail, escapes, court strips dropping
 	local lastHeld = ""

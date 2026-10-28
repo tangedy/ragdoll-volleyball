@@ -40,8 +40,13 @@ local function now(): number
 	return Workspace:GetServerTimeNow()
 end
 
+-- Counts and rosters are republished five times a second; only real changes go to the engine
+-- (and so to every client).
+local published: { [string]: any } = {}
+
 function MatchService.setAttr(key: string, value: any)
-	if stateFolder then
+	if stateFolder and (published[key] ~= value or value == nil) then
+		published[key] = value
 		stateFolder:SetAttribute(key, value)
 	end
 end

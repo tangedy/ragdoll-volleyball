@@ -1,14 +1,18 @@
 --!strict
--- Local character handling: applies server-approved dodges, mirrors ragdoll state locally, keeps the
--- slightly elevated third-person view, and disables the reset button (resets are server-managed).
+-- Local character handling: predicts dodges (and applies server-approved ones it didn't predict),
+-- mirrors ragdoll state locally, keeps the slightly elevated third-person view, and disables the
+-- reset button (resets are server-managed).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
 local DodgeMotion = require(Shared.DodgeMotion)
 local Net = require(script.Parent.Net)
+local SoundController = require(script.Parent.SoundController)
 
 local player = Players.LocalPlayer
 
@@ -47,6 +51,51 @@ function CharacterController.faceCameraAt(root: BasePart, focus: Vector3)
 	flat = if flat.Magnitude > 0.1 then flat.Unit else root.CFrame.LookVector
 	local camPos = root.Position - flat * 12 + Vector3.new(0, 5, 0)
 	camera.CFrame = CFrame.lookAt(camPos, Vector3.new(focus.X, root.Position.Y + 1, focus.Z))
+end
+
+-- Dodge prediction. You own your character's physics, so waiting for the server's DodgeAccepted
+-- before moving only added a full round trip of input lag (and the server saw you move a round
+-- trip late, so a dodge that looked in time could still get hit). When the server's own rules
+-- (mirrored from CombatService.doDodge) say the dodge will go through, it starts on the press; the
+-- server's acknowledgement is then consumed instead of applied a second time.
+local DODGE_MARGIN = 0.05 -- the local cooldown ends a touch later than the server's, so it never runs ahead
+local ACK_WINDOW = 1 -- an acknowledgement this long after the prediction belongs to it
+local pendingDodges = 0
+local lastPredictAt = 0
+local predictedReadyAt = 0
+
+function CharacterController.predictDodge(dir: Vector3): boolean
+	local character = player.Character
+	local h = character and character:FindFirstChildOfClass("Humanoid")
+	if not character or not h or h.PlatformStand then
+		return false
+	end
+	local t = Workspace:GetServerTimeNow()
+	local readyAt = player:GetAttribute("DodgeReadyAt")
+	if (type(readyAt) == "number" and t < readyAt) or t < predictedReadyAt then
+		return false
+	end
+	local action = player:GetAttribute("Action")
+	if action ~= "Idle" and action ~= "Charging" then
+		return false -- not while catching, ragdolled or in throw recovery
+	end
+	local status = player:GetAttribute("Status")
+	if status ~= "Active" and status ~= "Lobby" and status ~= "Jailed" then
+		return false
+	end
+	local inMatch = (player:GetAttribute("Team") or "") ~= ""
+	if inMatch and Net.MatchState:GetAttribute("State") == "RoundCountdown" then
+		return false -- frozen for the countdown
+	end
+	predictedReadyAt = t + Config.Player.DodgeCooldown + DODGE_MARGIN
+	if os.clock() - lastPredictAt > ACK_WINDOW then
+		pendingDodges = 0 -- an earlier prediction the server never confirmed
+	end
+	pendingDodges += 1
+	lastPredictAt = os.clock()
+	DodgeMotion.apply(character, dir)
+	SoundController.play("Dodge")
+	return true
 end
 
 function CharacterController.init() end
@@ -101,10 +150,16 @@ function CharacterController.start()
 		CharacterController.faceCameraAt(root, d.focus)
 	end)
 	Net.on("DodgeAccepted", function(d)
+		if pendingDodges > 0 and os.clock() - lastPredictAt < ACK_WINDOW then
+			pendingDodges -= 1
+			return -- already moving (and heard) since the press
+		end
+		pendingDodges = 0
 		local character = player.Character
 		if character and typeof(d.dir) == "Vector3" then
 			DodgeMotion.apply(character, d.dir)
 		end
+		SoundController.play("Dodge")
 	end)
 	Net.on("Ragdoll", function(d)
 		local h = humanoid()

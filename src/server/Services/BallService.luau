@@ -220,10 +220,12 @@ end
 
 function BallService.start()
 	RunService.Heartbeat:Connect(BallService.step)
+	-- Pickups are checked every frame: a 20 Hz check added up to 50 ms on top of the round trip
+	-- before a player saw the ball in their hand. It's a few distance checks per ball, so it's cheap.
+	RunService.Heartbeat:Connect(BallService.pickupTick)
 	task.spawn(function()
 		while true do
 			task.wait(0.05)
-			BallService.pickupTick()
 			BallService.settleTick()
 		end
 	end)

@@ -188,8 +188,18 @@ function PlayerStateService.now(): number
 	return Workspace:GetServerTimeNow()
 end
 
+-- Only what other clients read off a character goes on it (outlines, aim targeting, spectating and
+-- hub hiding read Team and Status; bots have no Player, so this is their only copy). Everything else
+-- (Action, HeldBall, cooldowns, Level, Streak) is read off your own Player object, so a character copy
+-- was replicated to every client for nothing.
+local CHARACTER_KEYS: { [string]: boolean } = {
+	[Types.Attr.Team] = true,
+	[Types.Attr.Status] = true,
+	[Types.Attr.IsBot] = true,
+}
+
 local function setAttr(c: Combatant, key: string, value: any)
-	if c.character then
+	if c.character and CHARACTER_KEYS[key] then
 		c.character:SetAttribute(key, value)
 	end
 	if c.player then

@@ -14,6 +14,7 @@ local Net = require(script.Parent.Net)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 local AimController = require(script.Parent.AimController)
 local LockController = require(script.Parent.LockController)
+local CharacterController = require(script.Parent.CharacterController)
 
 local player = Players.LocalPlayer
 
@@ -29,7 +30,9 @@ local function moveDirection(): Vector3
 end
 
 function InputController.dodge()
-	Net.request(Net.Actions.Dodge, { dir = moveDirection() })
+	local dir = moveDirection()
+	CharacterController.predictDodge(dir) -- move now; the server still decides the cooldown and state
+	Net.request(Net.Actions.Dodge, { dir = dir })
 end
 
 function InputController.catch()

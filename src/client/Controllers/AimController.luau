@@ -69,7 +69,14 @@ function AimController.screenPoint(): Vector2
 	return Vector2.new(vp.X / 2, vp.Y / 2)
 end
 
-local function excludeList(): { Instance }
+-- One shared params object for the aim rays. Its exclude list (you, the balls, the preview, your
+-- practice balls) used to be rebuilt into a fresh RaycastParams twice a frame while holding a ball;
+-- now it's only re-marshalled when one of those instances comes or goes.
+local aimParams = RaycastParams.new()
+aimParams.FilterType = Enum.RaycastFilterType.Exclude
+local aimExcluded: { Instance } = {}
+
+local function excludeParams(): RaycastParams
 	local list: { Instance } = { previewFolder }
 	if player.Character then
 		table.insert(list, player.Character)
@@ -83,7 +90,20 @@ local function excludeList(): { Instance }
 	if practice then
 		table.insert(list, practice) -- don't aim at your own practice balls
 	end
-	return list
+	local same = #list == #aimExcluded
+	if same then
+		for i, inst in list do
+			if aimExcluded[i] ~= inst then
+				same = false
+				break
+			end
+		end
+	end
+	if not same then
+		aimExcluded = list
+		aimParams.FilterDescendantsInstances = list
+	end
+	return aimParams
 end
 
 type Candidate = { model: Model, root: BasePart, angle: number, dist: number }
@@ -92,9 +112,7 @@ type Candidate = { model: Model, root: BasePart, angle: number, dist: number }
 local function candidates(ray: Ray): { Candidate }
 	local list: { Candidate } = {}
 	local myTeam = attr("Team")
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = excludeList()
+	local params = excludeParams()
 	local function consider(model: Instance, anyTeam: boolean)
 		if not model:IsA("Model") or model == player.Character then
 			return
@@ -125,13 +143,21 @@ local function candidates(ray: Ray): { Candidate }
 		local dist = if me then (r.Position - me.Position).Magnitude else to.Magnitude
 		table.insert(list, { model = model, root = r, angle = angle, dist = dist })
 	end
-	for _, model in Workspace:GetChildren() do
-		consider(model, false)
-	end
+	-- players' characters and the bots folder, not every child of the Workspace each frame
 	local bots = Workspace:FindFirstChild("Bots")
 	if bots then
+		for _, other in Players:GetPlayers() do
+			local model = other.Character
+			if model and model.Parent == Workspace then
+				consider(model, false)
+			end
+		end
 		for _, model in bots:GetChildren() do
 			consider(model, false)
+		end
+	else
+		for _, model in Workspace:GetChildren() do
+			consider(model, false) -- no bots folder: bots spawn straight into the Workspace
 		end
 	end
 	for _, model in AimController.extraTargets() do
@@ -200,10 +226,7 @@ function AimController.computeDirection(): (Vector3?, Vector3?, number)
 		local tLead = (pos - r.Position).Magnitude / speed
 		point = pos + Vector3.new(vel.X, 0, vel.Z) * tLead * lead
 	else
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = excludeList()
-		local hit = Workspace:Raycast(ray.Origin, ray.Direction * 300, params)
+		local hit = Workspace:Raycast(ray.Origin, ray.Direction * 300, excludeParams())
 		point = if hit then hit.Position else ray.Origin + ray.Direction * 300
 	end
 	AimController.aimPoint = point
