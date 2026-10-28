@@ -2,6 +2,7 @@
 -- Plays layered sound cues from Shared/Sounds.luau, either positional (in the world) or as 2D UI
 -- sounds. Each play builds its layers and destroys them when done.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
@@ -123,6 +124,16 @@ function SoundController.init()
 	comp.Threshold = -12
 	comp.Ratio = 3
 	comp.Parent = sfxGroup
+	-- the signature sound, once, when the loading screen lifts and the game is ready to play
+	local player = Players.LocalPlayer
+	local function booted()
+		if player:GetAttribute("Booted") == true and not player:GetAttribute("BootSoundPlayed") then
+			player:SetAttribute("BootSoundPlayed", true)
+			SoundController.play("Signature")
+		end
+	end
+	player:GetAttributeChangedSignal("Booted"):Connect(booted)
+	task.defer(booted)
 end
 
 return SoundController

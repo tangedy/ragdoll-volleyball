@@ -28,6 +28,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
@@ -488,6 +489,42 @@ RunService.RenderStepped:Connect(function()
 		local b = if reduced() then 0 else (math.sin(os.clock() * math.pi * 2 / Theme.Motion.Pulse) + 1) / 2
 		shownRing.glow.Thickness = 2 + 7 * b
 		shownRing.glow.Transparency = 0.55 + 0.4 * (1 - b)
+	end
+end)
+
+-- Edge cases get their own sounds (UX audio study): pressing a disabled button gives the dull
+-- refusal instead of silence, and a d-pad press that can't move the selection (the end of a row or
+-- list) gives the dull bump instead of the tick.
+local NAV_KEYS = {
+	[Enum.KeyCode.DPadUp] = true,
+	[Enum.KeyCode.DPadDown] = true,
+	[Enum.KeyCode.DPadLeft] = true,
+	[Enum.KeyCode.DPadRight] = true,
+}
+UserInputService.InputBegan:Connect(function(input)
+	local t = input.UserInputType
+	if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
+		local pg = Players.LocalPlayer and Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+		if not pg then
+			return
+		end
+		-- the topmost button under the press; a disabled one doesn't fire Activated, so say so here
+		for _, o in pg:GetGuiObjectsAtPosition(input.Position.X, input.Position.Y) do
+			if o:IsA("GuiButton") then
+				if o:GetAttribute("Disabled") == true then
+					sound("UIError")
+				end
+				return
+			end
+		end
+	elseif NAV_KEYS[input.KeyCode] and GuiService.SelectedObject then
+		local before = GuiService.SelectedObject
+		-- give the engine's own selection move a moment to land first
+		task.delay(0.06, function()
+			if GuiService.SelectedObject == before then
+				sound("UIEdge")
+			end
+		end)
 	end
 end)
 
@@ -1270,7 +1307,10 @@ function Theme.backdrop(parent: Instance, onClose: (() -> ())?): TextButton
 		ZIndex = 0,
 	}, parent)
 	if onClose then
-		b.Activated:Connect(onClose)
+		b.Activated:Connect(function()
+			sound("UIBack")
+			onClose()
+		end)
 	end
 	return b
 end
@@ -1453,7 +1493,7 @@ function Theme.toggle(
 	b.Activated:Connect(function()
 		state = not state
 		render(true)
-		sound("UIClick")
+		sound(if state then "UIToggleOn" else "UIToggleOff")
 		onChange(state)
 	end)
 	b.Parent = parent
@@ -1538,7 +1578,7 @@ function Theme.segmented(
 			if current ~= item.key then
 				current = item.key
 				place(true)
-				sound("UIClick")
+				sound("UITab")
 				onSelect(item.key)
 			end
 		end)
@@ -1713,9 +1753,7 @@ function Theme.roundAction(
 	b.SelectionLost:Connect(function()
 		emphasize(false)
 	end)
-	b.Activated:Connect(function()
-		sound("UIClick")
-	end)
+	-- no press sound of its own: the sheet it opens or closes answers with UIOpen / UIBack
 	local dot = Theme.dot(face)
 	dot.Position = UDim2.new(1, -6, 0, 6)
 	b.Parent = parent

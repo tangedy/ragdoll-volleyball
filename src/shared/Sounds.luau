@@ -55,6 +55,126 @@ local function charge(): { Layer }
 	return layers
 end
 
+-- UI vocabulary (Nintendo UX audio study): a few short, dry sounds that each mean one thing, so a
+-- menu can be read by ear. Pitch carries the meaning: up = forward / on / success, down = back /
+-- off, dull and toneless = a wall or a refusal. Navigation ticks stay under ~100 ms so fast input
+-- becomes a rhythm, and every tick has a little random pitch so repeats don't sound mechanical.
+-- Tones are a pitched ping on one scale (`note` = semitones above the UI root), so every UI
+-- sound is part of one family.
+local UI_ROOT = 1.5
+local function note(semitones: number): number
+	return UI_ROOT * 2 ^ (semitones / 12)
+end
+-- a quick run of pinged notes: { semitones, delay, volume } each, cut to `len` seconds
+local function run(notes: { { number } }, len: number): { Layer }
+	local layers: { Layer } = {}
+	for _, n in notes do
+		table.insert(layers, {
+			id = S .. "electronicpingshort.wav",
+			volume = n[3],
+			pitch = note(n[1]),
+			delay = n[2],
+			stopAfter = len,
+		})
+	end
+	return layers
+end
+local function with(base: { Layer }, extra: { Layer }): { Layer }
+	for _, l in extra do
+		table.insert(base, l)
+	end
+	return base
+end
+local DRY_TICK = S .. "clickfast.wav"
+local DULL = { low = 2, mid = -2, high = -14 } -- EQ that takes the ring out of a click
+
+local uiCues: { [string]: { Layer } } = {
+	-- cursor / hover / selection moving: a soft, short tick
+	UIMove = { { id = DRY_TICK, volume = 0.14, pitch = 1.9, jitter = 0.07, stopAfter = 0.06 } },
+	-- switching tabs or segments: a firmer tick with a faint tone
+	UITab = with(
+		{ { id = DRY_TICK, volume = 0.22, pitch = 1.6, jitter = 0.05, stopAfter = 0.07 } },
+		run({ { 7, 0, 0.1 } }, 0.06)
+	),
+	-- confirm / select: a click and a quick rising fifth
+	UIClick = with(
+		{ { id = DRY_TICK, volume = 0.3, pitch = 1.35, jitter = 0.03, stopAfter = 0.08 } },
+		run({ { 0, 0, 0.18 }, { 7, 0.035, 0.2 } }, 0.07)
+	),
+	-- back / close: softer and lower, the same fifth falling
+	UIBack = with(
+		{ { id = DRY_TICK, volume = 0.24, pitch = 0.95, jitter = 0.03, stopAfter = 0.08 } },
+		run({ { 0, 0, 0.13 }, { -5, 0.035, 0.12 } }, 0.07)
+	),
+	-- a sheet rising into view: a little pop and a three-step climb, in time with the slide-up
+	UIOpen = with(
+		{ { id = S .. "snap.wav", volume = 0.2, pitch = 1.7, jitter = 0.03, stopAfter = 0.08 } },
+		run({ { 0, 0, 0.12 }, { 4, 0.03, 0.12 }, { 7, 0.06, 0.13 } }, 0.07)
+	),
+	-- the end of a list / grid: a dull bump instead of the tick (you hit a wall)
+	UIEdge = { { id = S .. "button.wav", volume = 0.3, pitch = 0.55, jitter = 0.03, eq = DULL, stopAfter = 0.08 } },
+	-- refused: a disabled button, too few coins, no spins left. Two dull bumps, stepping down
+	UIError = {
+		{ id = S .. "button.wav", volume = 0.32, pitch = 0.5, eq = DULL, stopAfter = 0.07 },
+		{ id = S .. "button.wav", volume = 0.3, pitch = 0.42, delay = 0.085, eq = DULL, stopAfter = 0.08 },
+	},
+	-- settings switches: on climbs, off drops, so the new state is heard
+	UIToggleOn = with(
+		{ { id = S .. "switch.wav", volume = 0.28, pitch = 1.25, stopAfter = 0.08 } },
+		run({ { 7, 0.02, 0.14 }, { 12, 0.05, 0.14 } }, 0.06)
+	),
+	UIToggleOff = with(
+		{ { id = S .. "switch.wav", volume = 0.26, pitch = 0.95, stopAfter = 0.08 } },
+		run({ { 0, 0.02, 0.12 }, { -5, 0.05, 0.11 } }, 0.06)
+	),
+	-- the server confirmed an equip: a single soft rising step (the press already clicked)
+	UIEquip = run({ { 4, 0, 0.16 }, { 9, 0.05, 0.16 } }, 0.09),
+	-- a tutorial step done: a small two-note "got it"
+	UIStep = run({ { 7, 0, 0.18 }, { 12, 0.07, 0.2 } }, 0.12),
+	-- success family: rising major arpeggios that grow with the size of the moment
+	UISuccess = run({ { 0, 0, 0.28 }, { 4, 0.06, 0.28 }, { 7, 0.12, 0.3 }, { 12, 0.18, 0.32 } }, 0.16),
+	Purchase = with(
+		{ { id = S .. "button.wav", volume = 0.35, pitch = 1.0, stopAfter = 0.1 } },
+		run({ { 0, 0, 0.3 }, { 4, 0.06, 0.3 }, { 7, 0.12, 0.32 }, { 12, 0.18, 0.34 } }, 0.16)
+	),
+	CoinGain = with(
+		{ { id = DRY_TICK, volume = 0.22, pitch = 1.6, jitter = 0.04, delay = 0.01, stopAfter = 0.06 } },
+		run({ { 7, 0, 0.3 }, { 12, 0.06, 0.28 } }, 0.12)
+	),
+	DailyClaim = with(
+		{ { id = S .. "victory.wav", volume = 0.35, pitch = 1.25, delay = 0.22, stopAfter = 1.1 } },
+		run({ { 0, 0, 0.32 }, { 4, 0.06, 0.32 }, { 7, 0.12, 0.34 }, { 12, 0.18, 0.36 }, { 16, 0.24, 0.3 } }, 0.18)
+	),
+	-- daily spin: the start is a select, the wheel a mechanical tick, the reveal a success
+	SpinStart = with(
+		{ { id = S .. "switch.wav", volume = 0.4, pitch = 0.85, stopAfter = 0.1 } },
+		run({ { 0, 0.02, 0.18 }, { 7, 0.06, 0.2 } }, 0.08)
+	),
+	WheelTick = { { id = DRY_TICK, volume = 0.3, pitch = 1.5, jitter = 0.08, stopAfter = 0.05 } },
+	SpinReveal = with(
+		{ { id = S .. "victory.wav", volume = 0.4, pitch = 1.1, delay = 0.2, stopAfter = 1.2 } },
+		run({ { 0, 0, 0.32 }, { 4, 0.06, 0.32 }, { 7, 0.12, 0.34 }, { 12, 0.18, 0.36 } }, 0.18)
+	),
+	SpinLegendary = with(
+		{ { id = S .. "victory.wav", volume = 0.55, pitch = 0.95, delay = 0.3, stopAfter = 1.8 } },
+		run({
+			{ 0, 0, 0.32 },
+			{ 4, 0.06, 0.32 },
+			{ 7, 0.12, 0.34 },
+			{ 12, 0.18, 0.36 },
+			{ 16, 0.24, 0.36 },
+			{ 19, 0.3, 0.36 },
+			{ 24, 0.36, 0.34 },
+		}, 0.2)
+	),
+	-- the signature: a toy "pop-ding" (snap + an octave ping). Heard when the game is ready to play
+	-- (boot), and the one to reuse in trailers and anything that means "Ragdoll Dodgeball".
+	Signature = with(
+		{ { id = S .. "snap.wav", volume = 0.45, pitch = 1.5, stopAfter = 0.25 } },
+		run({ { 0, 0.01, 0.34 }, { 12, 0.07, 0.32 }, { 19, 0.13, 0.22 } }, 0.35)
+	),
+}
+
 local Cues: { [string]: { Layer } } = {
 	-- Combat
 	Throw = {
@@ -519,59 +639,9 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.8 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.4, delay = 0.08 },
 	},
-	CoinGain = {
-		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.7 },
-		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 2.25, delay = 0.07 },
-		{ id = S .. "clickfast.wav", volume = 0.3, pitch = 1.6, delay = 0.02 },
-	},
-	-- UI
-	UIClick = {
-		{ id = S .. "clickfast.wav", volume = 0.4, pitch = 1.1, jitter = 0.05 },
-	},
-	-- the selection ring moving to something new: a soft tick
-	UIMove = {
-		{ id = S .. "clickfast.wav", volume = 0.16, pitch = 1.9, jitter = 0.04 },
-	},
-	-- back / close: a lower thunk
-	UIBack = {
-		{ id = S .. "clickfast.wav", volume = 0.35, pitch = 0.7, jitter = 0.03 },
-	},
-	UIOpen = {
-		{ id = S .. "switch.wav", volume = 0.4, pitch = 1.2 },
-	},
-	UIError = {
-		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 0.5 },
-	},
-	Purchase = {
-		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 1.3 },
-		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 1.75, delay = 0.09 },
-		{ id = S .. "button.wav", volume = 0.4, pitch = 1.0, delay = 0.02 },
-	},
-	DailyClaim = {
-		{ id = S .. "victory.wav", volume = 0.5, pitch = 1.25 },
-		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 1.8, delay = 0.1 },
-	},
+	-- UI and menu sounds live in uiCues above; Banner is the in-match callout whoosh
 	Banner = {
 		{ id = S .. "swordslash.wav", volume = 0.25, pitch = 1.4, jitter = 0.05 },
-	},
-	-- Daily spin
-	SpinStart = {
-		{ id = S .. "switch.wav", volume = 0.45, pitch = 0.8 },
-		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 1.2, delay = 0.05 },
-	},
-	WheelTick = {
-		{ id = S .. "clickfast.wav", volume = 0.35, pitch = 1.5, jitter = 0.08 },
-	},
-	SpinReveal = {
-		{ id = S .. "victory.wav", volume = 0.5, pitch = 1.1 },
-		{ id = S .. "electronicpingshort.wav", volume = 0.45, pitch = 1.6, delay = 0.08 },
-		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 2.1, delay = 0.18 },
-	},
-	SpinLegendary = {
-		{ id = S .. "victory.wav", volume = 0.6, pitch = 0.95 },
-		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 1.4, delay = 0.06 },
-		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 1.9, delay = 0.16 },
-		{ id = S .. "electronicpingshort.wav", volume = 0.5, pitch = 2.5, delay = 0.28 },
 	},
 	-- Match intro (each team's shot)
 	IntroStinger = {
@@ -579,6 +649,10 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 1.5, delay = 0.05 },
 	},
 }
+
+for name, layers in uiCues do
+	Cues[name] = layers
+end
 
 local Sounds = {}
 

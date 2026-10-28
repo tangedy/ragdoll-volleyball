@@ -99,6 +99,15 @@ Results are in the "Oct 27 verification sweep" table in [ACCEPTANCE_TESTS.md](AC
 - **Gamepad navigation** through the new shop grid and the daily sheet.
 - **Live publish:** the user publishes manually. Remind them that running servers keep old code until restarted ("Restart servers for updates").
 
+## UI sound vocabulary (`uiCues` in `Sounds.luau`)
+From the Nintendo UX audio study: a few short, dry sounds that each mean one thing, pitched on one scale (`note()` = semitones above the UI root).
+- **Move** (tick, under 100 ms, jittered), **Tab**, **Select** (`UIClick`, rising fifth), **Back** (falling), **Open** (rising three-step, played as a sheet starts to rise).
+- **Edge** (dull bump: end of a grid or list, d-pad that can't move), **Error** (two dull bumps: disabled button, too few coins).
+- **Toggle on/off** (up/down), **Equip**, **Step** (tutorial step done), and the success family (`UISuccess`, `Purchase`, `CoinGain`, `DailyClaim`, `SpinReveal`, `SpinLegendary`).
+- **Signature** (pop-ding) plays once when the loading screen lifts (`Booted` attribute). Reuse it in trailers.
+- Closing a sheet plays Back from whatever closed it (✕, backdrop tap, gamepad B, tapping its hub icon again). Switching straight to another sheet plays only Open. Hub icons have no click of their own.
+- In-match cues (combat, round flow, intro, banners, finishers, cheers) are separate and unchanged.
+
 ## Gotchas worth knowing
 - `Theme.autoScale`, `Theme.pop` and `Theme.popIn` share one `UIScale` per element. Its `Base` attribute is the resting scale (the today card uses Base 1.08).
 - `Theme.sheet` returns a `CanvasGroup`, which clips its children. Anything meant to break out of the edge needs to be a sibling outside it.

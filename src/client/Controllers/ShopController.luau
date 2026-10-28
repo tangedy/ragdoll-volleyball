@@ -405,6 +405,8 @@ local function step(delta: number)
 				selectItem(nxt.item.Id)
 				Theme.setHome(nxt.card.button)
 				SoundController.play("UIMove")
+			else
+				SoundController.play("UIEdge") -- the end of the grid: a bump, not a tick
 			end
 			return
 		end
@@ -499,6 +501,7 @@ local function bindShopKeys(on: boolean)
 				elseif input.KeyCode == Enum.KeyCode.Return then
 					primaryAction()
 				elseif input.KeyCode == Enum.KeyCode.ButtonB then
+					SoundController.play("UIBack")
 					ShopController.openShop(false)
 				end
 				return Enum.ContextActionResult.Sink
@@ -636,6 +639,16 @@ local function layoutActions(gui: ScreenGui)
 	actionRow.Position = UDim2.new(0, (left + right) / 2 - gui.AbsolutePosition.X, 1, -Theme.Space.S)
 end
 
+-- Is any hub sheet (shop, daily, settings, spin...) open? Theme.show/hide keep ThemeOpen current.
+local function anySheetOpen(): boolean
+	for _, child in gui:GetChildren() do
+		if child:IsA("GuiObject") and child.Visible and child:GetAttribute("ThemeOpen") == true then
+			return true
+		end
+	end
+	return false
+end
+
 -- A destination in the action column (Shop, Spin, Daily, Settings). Returns its button and dot.
 function ShopController.addAction(
 	label: string,
@@ -645,7 +658,14 @@ function ShopController.addAction(
 	onClick: () -> ()
 ): (TextButton, Frame)
 	local b, dot = Theme.roundAction(actionRow, label, tone, glyph, { LayoutOrder = order })
-	b.Activated:Connect(onClick)
+	b.Activated:Connect(function()
+		-- opening plays the sheet's UIOpen; tapping the icon of the open sheet closes it: UIBack
+		local wasOpen = anySheetOpen()
+		onClick()
+		if wasOpen and not anySheetOpen() then
+			SoundController.play("UIBack")
+		end
+	end)
 	return b, dot
 end
 
@@ -1181,7 +1201,8 @@ function ShopController.start()
 			SoundController.play("UIError")
 		elseif d.ok then
 			-- the bought/equipped card pops in place; after a purchase its button becomes "Equip"
-			SoundController.play(if d.equip then "UIClick" else "Purchase")
+			-- the press already clicked: an equip gets a soft confirm, a purchase the success run
+			SoundController.play(if d.equip then "UIEquip" else "Purchase")
 			task.defer(function()
 				for _, e in tiles do
 					if e.item.Id == d.id then
