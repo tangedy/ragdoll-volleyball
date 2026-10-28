@@ -38,7 +38,7 @@ Mark each row with how it was verified: **S** = Studio (state the number of clie
 | A solo player starts a bot-filled 3v3 within 15 s of joining | S: about 12 s |
 | Real players joining between rounds replace bots, starting with the smaller team | |
 | Jail respawn, return after a jail hit, the 2-return cap, and jail closed in sudden death (F7) | A |
-| A team with only jailed players loses the round | |
+| A team with only jailed players loses the round | A (Oct 28) |
 | Revenge counts only for a hit on the player's own eliminator | A (positive case) |
 | XP and quest rewards respect the per-match caps; bot actions don't count for players-only quests | XP cap implemented, untested; quests are Stage 2 |
 | A bot-heavy match neither advances nor breaks win streaks | |
@@ -83,18 +83,18 @@ Mark each row with how it was verified: **S** = Studio (state the number of clie
 
 ## Beta test pass (to run)
 
-These need a person in Studio or on a device; nothing here has been run yet. Fill in the Result column as you go.
+These need a person in Studio or on a device. The F9 rows passed on Oct 28 (41/41, after fixing two flaky test setups); the rest hasn't been run yet. Fill in the Result column as you go.
 
 ### Automated in the F9 suite (run in Studio, solo plus bots)
 
 | Test | Result |
 | --- | --- |
-| Walking, jumping and dodging at the center line never cross it | |
-| A character removed mid-ragdoll counts as a fall and is rebuilt (the engine-removed half of the reset row) | |
-| A team with only jailed players loses the round | |
-| Restricted players can't open chests or buy spins; the free spin stays | |
-| No lock-keeping save goes out after the release save | |
-| Halloween follows its UTC window | |
+| Walking, jumping and dodging at the center line never cross it | Pass (F9, Oct 28, 41/41) |
+| A character removed mid-ragdoll counts as a fall and is rebuilt (the engine-removed half of the reset row) | Pass (F9, Oct 28, 41/41) |
+| A team with only jailed players loses the round | Pass (F9, Oct 28, 41/41) |
+| Restricted players can't open chests or buy spins; the free spin stays | Pass (F9, Oct 28, 41/41) |
+| No lock-keeping save goes out after the release save | Pass (F9, Oct 28, 41/41) |
+| Halloween follows its UTC window | Pass (F9, Oct 28, 41/41) |
 | **Soak:** `workspace:SetAttribute("RD_Soak", 50)`, Play again on, all menus closed. About 50–60 min. Reads PASS in `RD_SoakResults` (no server errors, no stuck bodies, caps held, instances and memory flat after round 5) | |
 
 The power-up despawn row doesn't apply: power-up balls never despawn (they revert to Standard after a throw).

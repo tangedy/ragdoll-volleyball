@@ -31,6 +31,7 @@ local overtime = false
 local teamSize = 3
 local devSkip = false
 local devOvertime = false
+local clockHeld = false -- TestService: round timer can't run out while the suite runs
 local devFinisherBy: any? = nil -- Studio T key: end the match with this player's finisher
 -- the most recent void elimination this round: who fell and who (if anyone) gets the credit
 local lastElim: { victim: any, credit: any? }? = nil
@@ -174,6 +175,11 @@ end
 -- Studio test hooks (TestService only).
 function MatchService.debugForceSuddenDeath()
 	devOvertime = true
+end
+
+-- While held, the round timer never runs out (so the suite can't drift into sudden death).
+function MatchService.debugHoldClock(on: boolean)
+	clockHeld = on
 end
 
 function MatchService.debugSetWins(red: number, blue: number)
@@ -722,6 +728,9 @@ local function playRound(): (string, boolean)
 		if t >= nextPower then
 			nextPower = t + Config.PowerUps.DispenserInterval
 			spawnPowerUps()
+		end
+		if clockHeld and not overtime then
+			endsAt = math.max(endsAt, t + 1)
 		end
 		if devOvertime and not overtime then
 			devOvertime = false

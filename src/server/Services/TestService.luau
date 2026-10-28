@@ -527,9 +527,12 @@ test("bots: a smart bot targets the enemy at the edge over a closer one in the m
 			S.PlayerStateService.setStatus(c, "Spectating")
 		end
 	end
-	ready(bot, point("Red", 0, 12))
-	ready(blue[1], point("Blue", 0, 14)) -- closest, safe in the middle
-	ready(blue[2], point("Blue", ArenaLayout.HalfWidth - 4, 20)) -- farther, 4 studs from the side edge
+	ready(bot, point("Red", 20, 12))
+	ready(blue[1], point("Blue", 20, 10)) -- closest (22 studs), well clear of every edge
+	ready(blue[2], point("Blue", ArenaLayout.HalfWidth - 4, 14)) -- farther (~35), 4 studs from the side edge
+	-- both hold a ball, so the could-catch penalty (which hinges on exact facing) applies to neither
+	giveBall(blue[1])
+	giveBall(blue[2])
 	task.wait(0.3)
 	local smart = S.BotService.pickTarget(bot, true, false)
 	local naive = S.BotService.pickTarget(bot, false, false)
@@ -538,6 +541,7 @@ test("bots: a smart bot targets the enemy at the edge over a closer one in the m
 			S.PlayerStateService.setStatus(c, "Active")
 		end
 	end
+	ready(blue[1], point("Blue", 0, 14))
 	ready(blue[2], point("Blue", 0, 20))
 	assertTrue(naive == blue[1], "naive pick isn't the nearest enemy")
 	assertTrue(smart == blue[2], "smart pick ignored the enemy at the edge")
@@ -1513,13 +1517,15 @@ function TestService.runAll()
 	running = true
 	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
 	local results = {}
+	-- start in a normal live round (not sudden death), then keep its timer from running out
 	if not waitUntil(function()
-		return ms:GetAttribute("State") == "RoundActive"
-	end, 30) then
+		return ms:GetAttribute("State") == "RoundActive" and ms:GetAttribute("Overtime") ~= true
+	end, 90) then
 		running = false
-		Workspace:SetAttribute("RD_TestResults", "SKIPPED: no live round within 30 s")
+		Workspace:SetAttribute("RD_TestResults", "SKIPPED: no live round (outside sudden death) within 90 s")
 		return
 	end
+	S.MatchService.debugHoldClock(true)
 	S.BotService.setPaused(true)
 	local pass = 0
 	for _, t in tests do
@@ -1542,6 +1548,7 @@ function TestService.runAll()
 		task.wait(0.3)
 	end
 	S.BotService.setPaused(false)
+	S.MatchService.debugHoldClock(false)
 	local summary = ("%d/%d passed\n%s"):format(pass, #tests, table.concat(results, "\n"))
 	print("[Tests]\n" .. summary)
 	Workspace:SetAttribute("RD_TestResults", summary)
