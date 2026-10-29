@@ -178,6 +178,7 @@ function BotService.create(team: string, roster: { any }, difficulty: string?): 
 	c.bot = {
 		plan = nil, -- the current throw plan while holding a ball
 		claim = nil, -- id of the ball this bot is going for
+		thrownAt = nil, -- when it last threw (it waits PickupAfterThrow before chasing a ball)
 		nextWanderAt = 0,
 		wander = nil,
 		nextThinkAt = 0, -- next decision step (see tick)
@@ -590,6 +591,7 @@ local function thinkHolding(c: any, t: number)
 		local hold = if c.chargeStart then now() - c.chargeStart else 0
 		S.CombatService.doThrow(c, aimDirection(c, target, hold), 0)
 		brain.plan = nil
+		brain.thrownAt = t
 		setStrafePace(c, nil)
 	end
 end
@@ -619,6 +621,7 @@ local function thinkFree(c: any, t: number)
 	end
 	local jailed = c.status == "Jailed"
 	local allowPower = allBotTeam(c)
+	local resting = brain.thrownAt ~= nil and t - brain.thrownAt < B.PickupAfterThrow
 	-- in jail, a ball must have been in reach for JailPickupDelay before the bot goes for it (gives
 	-- jailed players first go); rebuilt every tick so balls that leave are forgotten
 	local seen = brain.jailSeen or {}
@@ -626,7 +629,8 @@ local function thinkFree(c: any, t: number)
 	local bestBall, bestDist = nil, math.huge
 	for _, ball in S.BallService.all() do
 		if
-			(ball.state == "Resting" or ball.state == "Spent")
+			not resting
+			and (ball.state == "Resting" or ball.state == "Spent")
 			and ball.context == "Match"
 			and (allowPower or not (ball.isPower or ball.type ~= "Standard"))
 		then

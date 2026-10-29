@@ -235,34 +235,34 @@ Config.Bots = {
 	--   instead of simply the nearest · Strafe: sidestep speed factor while aiming
 	Profiles = {
 		Easy = {
-			AimErrorDeg = 9,
+			AimErrorDeg = 11,
 			ReactionTime = { 0.34, 0.55 },
 			DodgeChance = 0.25,
-			AimDelay = { 0.9, 1.7 },
+			AimDelay = { 1.2, 2.1 },
 			ChargeHold = { 0, 0.4 },
-			QuickThrowChance = 0.05,
+			QuickThrowChance = 0.03,
 			EdgeCaution = 11,
 			TargetSmarts = 0.25,
 			Strafe = 0.3,
 		},
 		Normal = {
-			AimErrorDeg = 5,
+			AimErrorDeg = 6.5,
 			ReactionTime = { 0.24, 0.4 },
 			DodgeChance = 0.4,
-			AimDelay = { 0.6, 1.3 },
+			AimDelay = { 0.9, 1.7 },
 			ChargeHold = { 0.1, 0.65 },
-			QuickThrowChance = 0.12,
+			QuickThrowChance = 0.08,
 			EdgeCaution = 13,
 			TargetSmarts = 0.6,
 			Strafe = 0.6,
 		},
 		Hard = {
-			AimErrorDeg = 3,
+			AimErrorDeg = 4,
 			ReactionTime = { 0.17, 0.3 },
 			DodgeChance = 0.5,
-			AimDelay = { 0.45, 1.0 },
+			AimDelay = { 0.7, 1.3 },
 			ChargeHold = { 0.25, 0.65 },
-			QuickThrowChance = 0.18,
+			QuickThrowChance = 0.12,
 			EdgeCaution = 15,
 			TargetSmarts = 0.85,
 			Strafe = 1,
@@ -287,6 +287,7 @@ Config.Bots = {
 	WanderInterval = { 1.5, 3.5 },
 	ClaimRadius = 10, -- two bots don't chase the same ball unless the other is this much farther
 	JailPickupDelay = 3, -- a jailed bot waits this long after a ball shows up before going for it
+	PickupAfterThrow = 2, -- after throwing, a bot wanders this long before going for another ball
 	RewardMultiplier = 0.5,
 	-- bots wear these Roblox users' avatars and display names (in rotation); Names is the fallback
 	-- when a profile can't be fetched

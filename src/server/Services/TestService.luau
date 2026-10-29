@@ -586,6 +586,7 @@ test("bots: two teammates by one ball don't both chase it", function()
 	local far = S.BallService.spawn("Standard", p + Vector3.new(0, -1.5, -14), "Match")
 	near.lockoutUntil, far.lockoutUntil = math.huge, math.huge -- out of reach: watch the plans only
 	a.bot.claim, b.bot.claim = nil, nil
+	a.bot.thrownAt, b.bot.thrownAt = nil, nil
 	S.BotService.tickOne(a)
 	S.BotService.tickOne(b)
 	S.BotService.tickOne(a)
@@ -593,6 +594,26 @@ test("bots: two teammates by one ball don't both chase it", function()
 	S.BallService.destroy(near)
 	S.BallService.destroy(far)
 	assertTrue(ok, "both bots went for the same ball")
+end)
+
+test("bots: wait PickupAfterThrow after a throw before chasing a ball", function()
+	local bot = bots("Red")[1]
+	local p = point("Red", 0, 20)
+	ready(bot, p)
+	task.wait(0.3)
+	clearBallsNear(p, 30)
+	local ball = S.BallService.spawn("Standard", p + Vector3.new(0, -1.5, 6), "Match")
+	bot.bot.claim = nil
+	bot.bot.thrownAt = Workspace:GetServerTimeNow()
+	S.BotService.tickOne(bot)
+	local waited = bot.bot.claim == nil
+	bot.bot.thrownAt = Workspace:GetServerTimeNow() - Config.Bots.PickupAfterThrow - 0.1
+	S.BotService.tickOne(bot)
+	local chased = bot.bot.claim == ball.id
+	bot.bot.claim, bot.bot.thrownAt = nil, nil
+	S.BallService.destroy(ball)
+	assertTrue(waited, "bot went for a ball right after throwing")
+	assertTrue(chased, "bot still ignores balls after the wait")
 end)
 
 test("bots: dodges go toward the middle, never off the edge", function()
