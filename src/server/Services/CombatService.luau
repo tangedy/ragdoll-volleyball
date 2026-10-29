@@ -458,8 +458,8 @@ end
 
 function CombatService.doCatch(c: any): boolean
 	local t = now()
-	if c.heldBall or t < c.catchReadyAt or ragdolled(c) or not alive(c) then
-		return false
+	if c.isBot or c.heldBall or t < c.catchReadyAt or ragdolled(c) or not alive(c) then
+		return false -- bots never catch
 	end
 	if c.action ~= "Idle" and c.action ~= "Dodging" then
 		return false

@@ -354,12 +354,7 @@ function LobbyService.tick()
 		if c.spawning then
 			continue -- a character is already being built (avatar download in flight)
 		elseif not S.PlayerStateService.isAlive(c) then
-			if c.inMatch and c.status == "Active" then
-				S.MatchService.onCharacterLost(c)
-			end
-			local pos = if c.inMatch and (c.status == "Jailed" or c.status == "Spectating")
-				then ArenaLayout.jailCenter(c.team) + Vector3.new(0, 3, 0)
-				else ArenaLayout.lobbySpawn(rng)
+			local pos = S.MatchService.onCharacterLost(c) or ArenaLayout.lobbySpawn(rng)
 			local focus = ArenaLayout.CourtFocus
 			S.CharacterService.spawnPlayer(c, CFrame.lookAt(pos, Vector3.new(focus.X, pos.Y, focus.Z)))
 			S.CharacterService.faceCamera(c, focus)

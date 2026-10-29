@@ -159,7 +159,9 @@ function CharacterService.spawn(c: any, desc: HumanoidDescription, cf: CFrame)
 	normalize(desc)
 	local model = Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
 	model.Name = c.name
-	model:PivotTo(cf)
+	-- building yields: a spawnPlayer call meanwhile (a match starting) moved the pending spawn, so a
+	-- hub respawn that began just before a match lands on the court, not back in the hub
+	model:PivotTo(if c.spawning and c.spawnCF then c.spawnCF else cf)
 	CharacterService.prepare(model, c)
 	local old = c.character
 	if c.player then

@@ -2,9 +2,9 @@
 -- Fill-in bots (Amendment A2). They act only through CombatService's do* functions, so they follow
 -- the same rules, projectile pipeline and knockback as players. Each bot has a difficulty profile
 -- (Config.Bots.Profiles): it picks targets (edge-standers, players who just got up), times its
--- charge and release, sidesteps while aiming, dodges and tries catches after a human-ish reaction
--- time (catches can be mistimed), shares balls with teammates and backs away from edges. Every
--- profile misses and mistimes, so bots stay beatable, and a held ball is always thrown within
+-- charge and release, sidesteps while aiming, dodges after a human-ish reaction time (bots never
+-- catch), shares balls with teammates and backs away from edges. Every profile misses and
+-- mistimes, so bots stay beatable, and a held ball is always thrown within
 -- StallThrow seconds so a round can never stall on a bot.
 
 local Players = game:GetService("Players")
@@ -361,20 +361,6 @@ local function updateFacing(c: any, t: number)
 	setFaceGoal(c, ao, brain.facePoint)
 end
 
--- One immediate turn (used only when a catch is pressed while still facing well away from the ball,
--- so smoothing never changes whether a bot's catch can succeed).
-local function snapFace(c: any, point: Vector3)
-	local root = c.root :: BasePart?
-	if not root then
-		return
-	end
-	local pos = root.Position
-	local flat = Vector3.new(point.X, pos.Y, point.Z)
-	if (flat - pos).Magnitude > 0.1 then
-		root.CFrame = CFrame.lookAt(pos, flat)
-	end
-end
-
 local function profileOf(c: any): any
 	return c.bot.profile or B.Profiles.Easy
 end
@@ -434,7 +420,7 @@ local function visible(from: Vector3, to: Vector3): boolean
 end
 
 -- Lower is better. Smart picks favour enemies near an edge (a hit can knock them off), enemies who
--- just got up, and avoid empty-handed enemies facing us (they might catch it).
+-- just got up, and avoid empty-handed players facing us (they might catch it; bots never do).
 function BotService.targetScore(c: any, o: any, smart: boolean): number
 	local d = (o.root.Position - c.root.Position).Magnitude
 	if not smart then
@@ -446,7 +432,7 @@ function BotService.targetScore(c: any, o: any, smart: boolean): number
 	if o.recoveredAt and now() - o.recoveredAt < 1.5 then
 		score -= B.TargetGotUpBonus
 	end
-	if not o.heldBall then
+	if not o.heldBall and not o.isBot then
 		local toUs = c.root.Position - o.root.Position
 		local look = o.root.CFrame.LookVector
 		if toUs.Magnitude > 0.1 and look:Dot(toUs.Unit) > 0.6 then
@@ -740,8 +726,8 @@ function BotService.tick()
 end
 
 -- Per-frame reactions to incoming balls. Each throw gets one decision per bot, made after the
--- bot's reaction time: dodge sideways (toward the middle), try a catch (pressed with a timing
--- error, so it can fail), or do nothing. A ball that arrives before the bot reacts just hits.
+-- bot's reaction time: dodge sideways (toward the middle) or do nothing. Bots never catch. A ball
+-- that arrives before the bot reacts just hits.
 local flying: { any } = {} -- reused every frame: the in-flight balls
 function BotService.react()
 	if not S.MatchService.isRoundLive() then
@@ -778,11 +764,7 @@ function BotService.react()
 								local roll = rng:NextNumber()
 								r = {
 									at = t + between(prof.ReactionTime),
-									choice = if roll < prof.DodgeChance
-										then "Dodge"
-										elseif roll < prof.DodgeChance + prof.CatchChance then "Catch"
-										else "None",
-									catchAt = 0,
+									choice = if roll < prof.DodgeChance then "Dodge" else "None",
 								}
 								brain.reacted[ball.launchSeq] = r
 							end
@@ -802,29 +784,6 @@ function BotService.react()
 									if safeFor(c, c.root.Position + side * 8) then
 										S.CombatService.doDodge(c, side)
 									end
-								end
-							elseif t >= r.at and r.choice == "Catch" and not c.heldBall then
-								face(c, ball.pos)
-								if r.catchAt == 0 then
-									-- aim to have the arrival in the middle of the catch window, give or take
-									local err = rng:NextNumber() + rng:NextNumber() + rng:NextNumber() - 1.5 -- ~N(0, 0.5)
-									r.catchAt = t + tc - Config.Player.CatchWindow / 2 + err * 2 * prof.CatchTimingError
-								end
-								if t >= r.catchAt then
-									-- the smooth turn is nearly always done by now; if it isn't, finish it
-									-- so the catch is decided by timing, exactly as before
-									local look = c.root.CFrame.LookVector
-									local flatIn = Vector3.new(-v.X, 0, -v.Z)
-									local flatLook = Vector3.new(look.X, 0, look.Z)
-									if
-										flatIn.Magnitude > 1e-3
-										and flatLook.Magnitude > 1e-3
-										and flatLook.Unit:Dot(flatIn.Unit) < 0.94
-									then
-										snapFace(c, ball.pos)
-									end
-									S.CombatService.doCatch(c)
-									r.choice = "Done"
 								end
 							end
 						end

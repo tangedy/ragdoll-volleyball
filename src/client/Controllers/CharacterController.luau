@@ -133,7 +133,9 @@ function CharacterController.start()
 		task.wait(0.15) -- let the spawn teleport replicate
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if root then
+		-- turning the body writes its CFrame, so only once the teleport is really here: writing it at a
+		-- stale spot (still in the hub) would undo the server's move onto the court
+		if root and ArenaLayout.onHalf(team, root.Position, 0, -2) then
 			local towardEnemy = Vector3.zAxis * -ArenaLayout.teamSign(team)
 			CharacterController.faceCameraAt(root, root.Position + towardEnemy * 20, true)
 		end

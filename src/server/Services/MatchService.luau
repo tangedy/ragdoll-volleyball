@@ -681,6 +681,26 @@ local function waitPhase(seconds: number, abortCheck: (() -> boolean)?): boolean
 	return true
 end
 
+-- Before a round goes live (intro, countdown) everyone belongs on their own half, and the void check
+-- isn't running yet. Anyone who isn't there (a respawn that landed in the hub, a teleport their
+-- client undid, a fall) goes back to their spawn instead of falling into jail when the round starts.
+local function holdOnSpawn()
+	local steps = S.ArenaService.getOvertimeSteps()
+	for _, c in roster do
+		if c.status == "Active" and not c.spawning and S.PlayerStateService.isAlive(c) then
+			local pos = c.root.Position
+			if pos.Y < ArenaLayout.SurfaceY - 2 or not ArenaLayout.onHalf(c.team, pos, steps, -2) then
+				local spot = spawnFor(c)
+				S.CharacterService.placeFacing(c, spot, faceCenter(spot))
+				if c.humanoid then
+					c.humanoid.WalkSpeed = 0
+					c.humanoid.JumpPower = 0
+				end
+			end
+		end
+	end
+end
+
 local function startSuddenDeath()
 	overtime = true
 	MatchService.setAttr("Overtime", true)
@@ -918,7 +938,10 @@ local function playIntro()
 			cinematic = c.inMatch, -- only players in the match get the camera
 		})
 	end
-	waitPhase(total, nil)
+	waitPhase(total, function()
+		holdOnSpawn()
+		return false
+	end)
 end
 
 local function runMatch(queued: { any })
@@ -963,7 +986,10 @@ local function runMatch(queued: { any })
 					S.NetService.send(c.player, "Countdown", { n = n })
 				end
 			end
-			if not waitPhase(1, shouldAbort) then
+			if not waitPhase(1, function()
+				holdOnSpawn()
+				return shouldAbort()
+			end) then
 				ok = false
 				break
 			end
@@ -1161,11 +1187,23 @@ function MatchService.onLeave(c: any)
 	publishCounts()
 end
 
-function MatchService.onCharacterLost(c: any)
-	-- a player's character vanished (e.g. destroyed by the engine); treat it as a fall if active
-	if c.inMatch and c.status == "Active" then
+-- A player's character vanished (e.g. destroyed by the engine). During a live round an active
+-- player's loss counts as a fall; before it (intro, countdown) it doesn't, and they're rebuilt on
+-- their spawn. Returns where to rebuild them, or nil for the hub.
+function MatchService.onCharacterLost(c: any): Vector3?
+	if not c.inMatch then
+		return nil
+	end
+	if c.status == "Active" then
+		if not MatchService.isRoundLive() then
+			return spawnFor(c)
+		end
 		eliminate(c)
 	end
+	if c.status == "Jailed" or c.status == "Spectating" or c.status == "Returning" then
+		return ArenaLayout.jailCenter(c.team) + Vector3.new(0, 3, 0)
+	end
+	return spawnFor(c)
 end
 
 return MatchService

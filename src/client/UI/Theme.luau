@@ -829,7 +829,7 @@ end
 
 -- Glyphs ---------------------------------------------------------------------------------------------
 -- Simple, neutral glyphs (round caps, solid shapes). Text glyphs for the shapes a font draws well;
--- frames for the bag and gear.
+-- frames for the rest (bag, gear, gift, clock, tag, hand, burst).
 
 local TEXT_GLYPHS = {
 	star = "★",
@@ -952,6 +952,110 @@ function Theme.glyph(parent: Instance, name: string, color: Color3, props: { [st
 			Theme.round(bow)
 			new("UIStroke", { Color = color, Thickness = 2.5 }, bow)
 		end
+	elseif name == "clock" then
+		-- a ring with an hour hand pointing right and a minute hand pointing up
+		local face = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.86, 0.86),
+			BackgroundTransparency = 1,
+			ZIndex = z,
+		}, holder)
+		Theme.round(face)
+		new("UIStroke", { Color = color, Thickness = 2.5 }, face)
+		for _, h in
+			{
+				{ anchor = Vector2.new(0.5, 1), pos = UDim2.fromScale(0.5, 0.56), size = UDim2.fromScale(0.13, 0.4) },
+				{ anchor = Vector2.new(0, 0.5), pos = UDim2.fromScale(0.44, 0.5), size = UDim2.fromScale(0.3, 0.13) },
+			}
+		do
+			local hand = new("Frame", {
+				AnchorPoint = h.anchor,
+				Position = h.pos,
+				Size = h.size,
+				BackgroundColor3 = color,
+				ZIndex = z,
+			}, holder)
+			Theme.round(hand)
+		end
+	elseif name == "tag" then
+		-- a name tag (titles): a rounded card with a punched hole and two lines of "text"
+		local mark = Theme.textOn(color)
+		local card = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(1, 0.66),
+			BackgroundColor3 = color,
+			ZIndex = z,
+		}, holder)
+		Theme.corner(card, 4)
+		local hole = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.16, 0.5),
+			Size = UDim2.fromScale(0.15, 0.15),
+			BackgroundColor3 = mark,
+			ZIndex = z + 1,
+		}, holder)
+		Theme.round(hole)
+		for i, w in { 0.52, 0.36 } do
+			local line = new("Frame", {
+				Position = UDim2.fromScale(0.32, 0.33 + (i - 1) * 0.22),
+				Size = UDim2.fromScale(w, 0.11),
+				BackgroundColor3 = mark,
+				ZIndex = z + 1,
+			}, holder)
+			Theme.round(line)
+		end
+	elseif name == "hand" then
+		-- an open, waving hand (gestures): palm, four fingers and a thumb
+		local palm = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.fromScale(0.54, 0.98),
+			Size = UDim2.fromScale(0.54, 0.48),
+			BackgroundColor3 = color,
+			ZIndex = z,
+		}, holder)
+		Theme.corner(palm, 5)
+		for i, h in { 0.4, 0.5, 0.47, 0.36 } do
+			local finger = new("Frame", {
+				AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.fromScale(0.34 + (i - 1) * 0.135, 0.6),
+				Size = UDim2.fromScale(0.13, h),
+				BackgroundColor3 = color,
+				ZIndex = z,
+			}, holder)
+			Theme.round(finger)
+		end
+		local thumb = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.2, 0.64),
+			Size = UDim2.fromScale(0.13, 0.36),
+			Rotation = -48,
+			BackgroundColor3 = color,
+			ZIndex = z,
+		}, holder)
+		Theme.round(thumb)
+	elseif name == "burst" then
+		-- an impact burst (finishers): long and short spikes round a solid core
+		for i = 0, 7 do
+			local spike = new("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromScale(0.17, if i % 2 == 0 then 1.04 else 0.72),
+				Rotation = i * 22.5,
+				BackgroundColor3 = color,
+				ZIndex = z,
+			}, holder)
+			Theme.round(spike)
+		end
+		local core = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.52, 0.52),
+			BackgroundColor3 = color,
+			ZIndex = z,
+		}, holder)
+		Theme.round(core)
 	end
 	holder.Parent = parent
 	return holder

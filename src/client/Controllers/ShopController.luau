@@ -34,6 +34,7 @@ local new = Theme.new
 
 local ShopController = {}
 ShopController.onOpenSpin = nil :: (() -> ())? -- set by SpinController: a claimed bonus spin opens its sheet
+ShopController.holdBusy = false -- set by QuestController while a quest chest opens: keeps you out of matches
 
 local SHOP_SIZE = Vector2.new(880, 600)
 local DAILY_SIZE = Vector2.new(760, 438)
@@ -1774,12 +1775,13 @@ function ShopController.start()
 		end
 	end)
 	-- any open sheet (shop, daily, spin, settings) shares the backdrop: while it's up the server
-	-- won't pull you into a match, so you're never teleported mid-purchase or mid-spin
+	-- won't pull you into a match, so you're never teleported mid-purchase or mid-spin (the quest
+	-- chest opening screen holds it too, through ShopController.holdBusy)
 	local sentBusy = false
 	RunService.RenderStepped:Connect(function()
 		local hub = inHub()
 		gui.Enabled = hub and not HUDController.cinematic
-		local busy = hub and backdrop.Visible
+		local busy = hub and (backdrop.Visible or ShopController.holdBusy)
 		if busy ~= sentBusy then
 			sentBusy = busy
 			Net.request(Net.Actions.SetBusy, { value = busy })

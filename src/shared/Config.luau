@@ -225,13 +225,11 @@ Config.Bots = {
 	-- that tier at random. Shape 2, scale 0.6 gives roughly 50% Common, 35% Rare, 11% Epic, 4%
 	-- Legendary: mostly plain, with the odd showy bot.
 	FinisherGamma = { Shape = 2, Scale = 0.6 },
-	-- Difficulty profiles. Every bot gets one when it spawns (see Mix). All of them miss, mistime
-	-- catches and fall for good throws; Hard is sharper, never perfect.
+	-- Difficulty profiles. Every bot gets one when it spawns (see Mix). All of them miss and fall for
+	-- good throws, and none of them ever catch; Hard is sharper, never perfect.
 	--   AimErrorDeg: random cone around a perfect throw · ReactionTime: seconds before reacting to
-	--   an incoming ball · DodgeChance / CatchChance: what it tries once it has reacted ·
-	--   CatchTimingError: std-dev (s) of when it presses catch vs. the ball's arrival (the catch
-	--   window is Player.CatchWindow, so a big error fails) · AimDelay: aim time before release ·
-	--   ChargeHold: how long it charges (FullChargeTime = full power) · QuickThrowChance: snap
+	--   an incoming ball · DodgeChance: how often it dodges once it has reacted · AimDelay: aim
+	--   time before release · ChargeHold: how long it charges (FullChargeTime = full power) · QuickThrowChance: snap
 	--   throws with no aim time · EdgeCaution: studs from the edge where it starts backing off ·
 	--   TargetSmarts: chance it picks the best target (near an edge, just got up, can't catch)
 	--   instead of simply the nearest · Strafe: sidestep speed factor while aiming
@@ -240,8 +238,6 @@ Config.Bots = {
 			AimErrorDeg = 9,
 			ReactionTime = { 0.34, 0.55 },
 			DodgeChance = 0.25,
-			CatchChance = 0.12,
-			CatchTimingError = 0.16,
 			AimDelay = { 0.9, 1.7 },
 			ChargeHold = { 0, 0.4 },
 			QuickThrowChance = 0.05,
@@ -253,8 +249,6 @@ Config.Bots = {
 			AimErrorDeg = 5,
 			ReactionTime = { 0.24, 0.4 },
 			DodgeChance = 0.4,
-			CatchChance = 0.2,
-			CatchTimingError = 0.11,
 			AimDelay = { 0.6, 1.3 },
 			ChargeHold = { 0.1, 0.65 },
 			QuickThrowChance = 0.12,
@@ -266,8 +260,6 @@ Config.Bots = {
 			AimErrorDeg = 3,
 			ReactionTime = { 0.17, 0.3 },
 			DodgeChance = 0.5,
-			CatchChance = 0.28,
-			CatchTimingError = 0.08,
 			AimDelay = { 0.45, 1.0 },
 			ChargeHold = { 0.25, 0.65 },
 			QuickThrowChance = 0.18,

@@ -212,7 +212,7 @@ None of this has been run in Studio yet. It passes `selene` (0 errors, the same 
 2. **Zones:** walk to each station. The prompts should open SHOP, SPIN and DAILY. Check the leaderboard fills in within 5 s and the floor labels read the right way round.
 3. **Beside the court:** from the bleachers you should watch the match across the gap. Once you're in a match, the hub, the dummy and lobby players should be gone. When you're eliminated for the round, they should come back. In a two-client test, check that someone in the hub can't be hit and doesn't see on-court players vanish.
 4. **UI:** resize the window and use the device emulator (phone landscape) on the HUD, results card (`RD_Gallery` `ResultsFinalKnockout`), shop, daily, spin and the ⚙ settings.
-5. **Bots:** watch a few matches. They should dodge some throws, sometimes whiff catches, avoid edges, focus players near edges, and vary their throws. Check the `BotDifficulty` attributes on bot models.
+5. **Bots:** watch a few matches. They should dodge some throws, never catch, avoid edges, focus players near edges, and vary their throws. Check the `BotDifficulty` attributes on bot models.
 6. **Spin:** spin free, then a paid spin with G dev coins. The wheel should land on the revealed prize. Owning everything should pay coins.
 7. **Facing:** join, fall off the hub, get eliminated twice in sudden death, and finish a match. Each time the camera should face the court.
 8. **Victory:** win a match (or press T). After the finisher you should see the line-up, the poses and the camera move, then the results card. Try each pose with TRY.

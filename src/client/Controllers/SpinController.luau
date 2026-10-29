@@ -270,8 +270,8 @@ local function confetti(parent: GuiObject, color: Color3)
 end
 
 -- Fill the prize card `reveal` for a spin/chest result and show it; its buttons hand focus back to
--- `back`. Shared with the quest chests (QuestController).
-function SpinController.drawReveal(reveal: Frame, result: any, back: GuiObject)
+-- `back` and call `onDone` once the card is dismissed. Shared with the quest chests (QuestController).
+function SpinController.drawReveal(reveal: Frame, result: any, back: GuiObject, onDone: (() -> ())?)
 	local item = Catalog.get(result.id)
 	if not item then
 		return
@@ -379,6 +379,9 @@ function SpinController.drawReveal(reveal: Frame, result: any, back: GuiObject)
 			Net.request(Net.Actions.EquipItem, { id = item.Id })
 			Theme.hide(reveal)
 			Theme.focus(back)
+			if onDone then
+				onDone()
+			end
 		end)
 		focusOn = equip
 	end
@@ -390,6 +393,9 @@ function SpinController.drawReveal(reveal: Frame, result: any, back: GuiObject)
 	ok.Activated:Connect(function()
 		Theme.hide(reveal)
 		Theme.focus(back)
+		if onDone then
+			onDone()
+		end
 	end)
 	Theme.show(reveal)
 	Theme.focus(focusOn or ok)
