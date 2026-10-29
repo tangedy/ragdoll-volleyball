@@ -19,7 +19,8 @@ export type Pose = {
 	Frames: { { frame: string, hold: number } }, -- played in order, then looped
 	Blend: number, -- seconds to blend into each frame
 	-- a one-shot effect replayed each time the sequence loops (IntroController): "Confetti" = a gold
-	-- and white particle burst above the head
+	-- and white particle burst above the head; "Aura" = a golden energy flare around the whole body
+	-- (sparks bursting off it and a ring of light at the feet)
 	Fx: string?,
 	-- something worn for the whole pose (IntroController, and the shop portrait): "PumpkinHead" = a
 	-- jack-o-lantern over the head (the head and its hats hidden inside)
@@ -68,6 +69,16 @@ local trophyPump: Segment = { upper = Vector3.new(0.3, 0.8, -0.2), fore = Vector
 local zombieHigh: Segment = { upper = Vector3.new(0.14, 0.05, -1), fore = Vector3.new(0.08, 0.06, -1) }
 local zombieLow: Segment = { upper = Vector3.new(0.18, -0.12, -1), fore = Vector3.new(0.1, -0.08, -1) }
 
+-- the floss: both arms straight, swung together to one side, one in front of the hips and one behind
+local flossFront: Segment = { upper = Vector3.new(-0.35, -0.9, -0.3), fore = Vector3.new(-0.45, -0.85, -0.3) }
+local flossBack: Segment = { upper = Vector3.new(-0.35, -0.9, 0.3), fore = Vector3.new(-0.45, -0.85, 0.3) }
+-- heart hands over the head: elbows out, fingertips meeting above the crown
+local heartHigh: Segment = { upper = Vector3.new(0.8, 0.55, -0.2), fore = Vector3.new(-0.6, 0.75, -0.1) }
+local heartLow: Segment = { upper = Vector3.new(0.75, 0.35, -0.5), fore = Vector3.new(-0.6, 0.6, -0.5) }
+-- power up: fists clenched low at the sides, then arms flung wide as the aura flares
+local chargeLow: Segment = { upper = Vector3.new(0.55, -0.8, 0.15), fore = Vector3.new(0.2, -0.3, -0.95) }
+local chargeWide: Segment = { upper = Vector3.new(0.9, -0.3, -0.1), fore = Vector3.new(0.9, 0.2, -0.3) }
+
 local IntroPoses = {}
 
 IntroPoses.Frames = {
@@ -107,6 +118,12 @@ IntroPoses.Frames = {
 	RobotB = { Right = robotDown, Left = mirror(robotUp), neck = 0, twist = -15 },
 	TrophyHigh = { Right = trophyHigh, Left = mirror(trophyHigh), neck = 25, waist = 6 },
 	TrophyPump = { Right = trophyPump, Left = mirror(trophyPump), neck = 18, waist = 2 },
+	FlossLeft = { Right = flossBack, Left = flossFront, neck = 0, twist = 20 },
+	FlossRight = { Right = mirror(flossFront), Left = mirror(flossBack), neck = 0, twist = -20 },
+	HeartHigh = { Right = heartHigh, Left = mirror(heartHigh), neck = 6, waist = 2 },
+	HeartLow = { Right = heartLow, Left = mirror(heartLow), neck = -4, waist = -2 },
+	ChargeLow = { Right = chargeLow, Left = mirror(chargeLow), neck = -18, waist = -8 },
+	ChargeWide = { Right = chargeWide, Left = mirror(chargeWide), neck = 28, waist = 12 },
 	FrankLeft = { Right = zombieLow, Left = mirror(zombieHigh), neck = -6, waist = -4, twist = 12 },
 	FrankRight = { Right = zombieHigh, Left = mirror(zombieLow), neck = -6, waist = -4, twist = -12 },
 } :: { [string]: Frame }
@@ -170,6 +187,24 @@ IntroPoses.Poses = {
 		Blend = 0.2,
 		Fx = "Confetti",
 		Frames = { { frame = "TrophyHigh", hold = 0.8 }, { frame = "TrophyPump", hold = 0.45 } },
+	},
+	-- quick, swinging blends: arms flick from side to side while the hips twist the other way
+	Floss = {
+		Name = "The Floss",
+		Blend = 0.1,
+		Frames = { { frame = "FlossLeft", hold = 0.2 }, { frame = "FlossRight", hold = 0.2 } },
+	},
+	HeartHands = {
+		Name = "Heart Hands",
+		Blend = 0.3,
+		Frames = { { frame = "HeartHigh", hold = 0.9 }, { frame = "HeartLow", hold = 0.6 } },
+	},
+	-- crouch and charge, then throw the arms wide and roar as the golden aura flares
+	PowerUp = {
+		Name = "Power Up",
+		Blend = 0.22,
+		Fx = "Aura",
+		Frames = { { frame = "ChargeLow", hold = 0.8 }, { frame = "ChargeWide", hold = 0.9 } },
 	},
 	-- slow, stiff blends: a lumbering monster with a jack-o-lantern for a head
 	PumpkinHead = {

@@ -22,6 +22,7 @@ local AimController = require(script.Parent.AimController)
 local EffectsController = require(script.Parent.EffectsController)
 local HUDController = require(script.Parent.HUDController)
 local SoundController = require(script.Parent.SoundController)
+local BallSkinController = require(script.Parent.BallSkinController)
 
 local player = Players.LocalPlayer
 local PR = Config.Practice
@@ -67,6 +68,8 @@ end
 
 local equipped: { [string]: string } = {} -- from the server's Profile
 
+local form: string? = nil -- the Legendary skin form your last practice pickup showed
+
 -- Your skin while the ball is yours (held or in flight), the plain Standard look otherwise.
 local function applySkin(b: PBall)
 	local def = BallDefinitions.get("Standard")
@@ -74,11 +77,24 @@ local function applySkin(b: PBall)
 	local mine = b.state == "Held" or b.state == "InFlight"
 	b.part.Color = if mine and typeof(skin.Color) == "Color3" then skin.Color else def.Color
 	b.part.Material = if mine and typeof(skin.Material) == "EnumItem" then skin.Material :: any else def.Material
-	b.part:SetAttribute("Pumpkin", if mine and skin.Pumpkin then true else nil) -- HalloweenController
+	b.part.Reflectance = if mine and type(skin.Reflectance) == "number" then skin.Reflectance else 0
+	b.part:SetAttribute("SkinPattern", if mine then skin.Pattern else nil) -- BallSkinController
+	b.part:SetAttribute("SkinModel", if mine then skin.Model else nil) -- BallSkinController
+	b.part:SetAttribute("SkinVariant", if mine then form else nil) -- a Legendary skin's form
 end
 
 local function setState(b: PBall, state: string)
 	b.state = state
+	if state == "Held" then
+		-- a Legendary skin shows a fresh form on every pickup, as in a match (ShopService.pickForm)
+		local variants = Catalog.equipped(equipped, "BallSkin").Data.Variants
+		if type(variants) == "table" and #variants > 0 then
+			form = BallSkinController.pickForm(variants, form)
+			BallSkinController.flourish(form)
+		else
+			form = nil
+		end
+	end
 	applySkin(b)
 	b.part:SetAttribute(
 		"BallState",

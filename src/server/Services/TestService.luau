@@ -1226,6 +1226,51 @@ test("quests: a new UTC day clears progress and claims", function()
 	assertTrue(resetsAt - os.time() <= 86400, "reset more than a day away")
 end)
 
+test("quests: the first claim of a quest comes back after the short cooldown, later ones wait for the reset", function()
+	local c = questTester(900033)
+	local d = S.QuestService.daily(c)
+	d.progress.Won = 1
+	assertTrue(S.QuestService.claim(c, "Won") ~= nil, "first claim refused")
+	local st = questStatus(c, "Won")
+	local wait = st.nextAt - os.time()
+	assertTrue(st.claimed and math.abs(wait - Config.Quests.FirstCooldown) <= 1, "first claim's cooldown is wrong")
+	assertTrue(S.QuestService.claim(c, "Won") == nil, "claimed again during the cooldown")
+	assert(d.backAt, "no cooldown recorded")
+	d.backAt.Won = os.time() - 1 -- the cooldown has run out
+	st = questStatus(c, "Won")
+	assertTrue(not st.claimed and st.progress == 0, "quest didn't come back fresh")
+	d.progress.Won = 1
+	assertTrue(S.QuestService.claim(c, "Won") ~= nil, "second claim refused")
+	st = questStatus(c, "Won")
+	assertTrue(st.nextAt == S.QuestService.status(c).resetsAt, "second claim didn't wait for the reset")
+end)
+
+test("exclusives: Robux-exclusive cosmetics never come out of a spin or chest and aren't sold for coins", function()
+	local exclusive: { [string]: boolean } = {}
+	local any = false
+	for _, item in Catalog.Items do
+		if item.Exclusive then
+			any = true
+			exclusive[item.Id] = true
+			assertTrue(not Catalog.isOffered(item), item.Id .. " is offered for coins")
+			assertTrue(Catalog.robuxPrice(item) ~= nil, item.Id .. " has no Robux price for its rarity")
+		end
+	end
+	assertTrue(any, "no Exclusive item to check")
+	for r, list in S.SpinService.pool() do
+		for _, it in list do
+			assertTrue(not exclusive[it.Id], it.Id .. " is in the " .. r .. " spin pool")
+		end
+	end
+	for chest in Config.Quests.Chests do
+		for r, list in S.RewardService.chestPool(chest) do
+			for _, it in list do
+				assertTrue(not exclusive[it.Id], it.Id .. " is in the " .. chest .. " chest's " .. r .. " pool")
+			end
+		end
+	end
+end)
+
 test("quests: a chest is claimed once, only when done and only in the hub", function()
 	local c = questTester(900033)
 	assertTrue(S.QuestService.claim(c, "Played") == nil, "claimed an unfinished quest")

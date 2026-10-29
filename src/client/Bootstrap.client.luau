@@ -13,6 +13,8 @@ local ORDER = {
 	"SoundController",
 	"BallVisualController",
 	"HalloweenController",
+	"BallSkinController",
+	"TitleFxController",
 	"AimController",
 	"LockController",
 	"OutlineController",

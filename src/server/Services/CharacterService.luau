@@ -2,14 +2,18 @@
 -- Builds standardized R15 characters for players, bots and the dummy (spec §11: consistent avatar
 -- scaling so body size and accessories never decide competitive outcomes).
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local TitleStyle = require(Shared.TitleStyle)
 
 local CharacterService = {}
+
+local ANIMATED_TITLE = TitleStyle.Tag
 
 local S: any
 
@@ -144,13 +148,23 @@ function CharacterService.setTeamVisual(c: any)
 	end
 end
 
-function CharacterService.setBadge(c: any, text: string)
+-- `animated`: an animated gradient title (TitleFxController shimmers it on each client from these
+-- attributes: what comes before the title, the title's Catalog id and its frame).
+function CharacterService.setBadge(c: any, text: string, animated: { prefix: string, item: string, frame: string }?)
 	local character = c.character
 	local head = character and character:FindFirstChild("Head")
 	local tag = head and head:FindFirstChild("NameTag")
 	local badge = tag and tag:FindFirstChild("Badge") :: TextLabel?
 	if badge then
 		badge.Text = text
+		badge:SetAttribute("TitlePrefix", if animated then animated.prefix else nil)
+		badge:SetAttribute("TitleItem", if animated then animated.item else nil)
+		badge:SetAttribute("TitleFrame", if animated then animated.frame else nil)
+		if animated then
+			CollectionService:AddTag(badge, ANIMATED_TITLE)
+		else
+			CollectionService:RemoveTag(badge, ANIMATED_TITLE)
+		end
 	end
 end
 

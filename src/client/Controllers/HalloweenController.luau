@@ -8,9 +8,9 @@
 --  * Jack-o-lantern balls: every Standard ball (match, in flight, practice) wears a carved pumpkin a
 --    little bigger than the ball, so the sphere stays hidden inside. It's a look only: the ball's
 --    size, physics and hit checks never change, and power-up balls keep their own colors. A ball
---    wearing a skin (held or thrown by someone with one equipped) turns its pumpkin that color.
---    The Jack-o'-Lantern skin (Haunted Bundle) keeps the classic pumpkin on its owner's balls all
---    year, event or not.
+--    wearing a skin (held or thrown by someone with one equipped) turns its pumpkin that color. A
+--    ball wearing a model skin (Catalog Data.Model, the Jack-o'-Lantern skin among them) shows that
+--    model instead (BallSkinController), event or not. The pumpkin comes from BallModels.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,7 +21,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local BallDefinitions = require(Shared:WaitForChild("BallDefinitions"))
 local Config = require(Shared:WaitForChild("Config"))
-local JackOLantern = require(Shared:WaitForChild("JackOLantern"))
+local BallModels = require(Shared:WaitForChild("BallModels"))
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
 local H = Config.Halloween
@@ -171,8 +171,8 @@ local B = H.Ball
 
 -- A carved pumpkin around `ball` (face on its -Z side), welded to it so it follows every move.
 local function makePumpkin(ball: BasePart): Model
-	local model = JackOLantern.build(ball.CFrame, ball.Size.X / 2 * B.Scale, PUMPKIN)
-	JackOLantern.weld(model, ball)
+	local model = BallModels.build("Pumpkin", ball.CFrame, ball.Size.X / 2, PUMPKIN) :: Model
+	BallModels.weld(model, ball)
 	model.Parent = ball
 	return model
 end
@@ -184,8 +184,7 @@ local decorated: { [BasePart]: { model: Model, conns: { RBXScriptConnection } } 
 -- matte body so the carved face still glows brighter than the shell.
 local STANDARD = BallDefinitions.get("Standard")
 local function tint(model: Model, ball: BasePart)
-	local skinned = ball:GetAttribute("Pumpkin") ~= true -- the Jack-o'-Lantern skin is the classic pumpkin
-		and (ball.Color:ToHex() ~= STANDARD.Color:ToHex() or ball.Material ~= STANDARD.Material)
+	local skinned = ball.Color:ToHex() ~= STANDARD.Color:ToHex() or ball.Material ~= STANDARD.Material
 	local color = if skinned then ball.Color else B.Body
 	local material = if skinned and ball.Material ~= Enum.Material.Neon
 		then ball.Material
@@ -257,11 +256,10 @@ local function decorate(ball: BasePart)
 	}
 end
 
--- Does this ball wear a pumpkin now? Every Standard ball while the event is on, and all year a
--- Standard ball whose owner has the Jack-o'-Lantern skin (the "Pumpkin" attribute: BallService on
--- server balls, BallVisualController on flying visuals, PracticeController on practice balls).
+-- Does this ball wear the event pumpkin now? Every Standard ball while the event is on, unless it
+-- wears a model skin (the "SkinModel" attribute: BallSkinController draws that one).
 local function wantsPumpkin(ball: BasePart): boolean
-	return isStandard(ball) and (HalloweenController.on or ball:GetAttribute("Pumpkin") == true)
+	return isStandard(ball) and HalloweenController.on and ball:GetAttribute("SkinModel") == nil
 end
 
 local function refresh(ball: BasePart)
@@ -288,7 +286,7 @@ local function track(ball: Instance)
 		end
 		local conns = {
 			ball:GetAttributeChangedSignal("BallType"):Connect(changed),
-			ball:GetAttributeChangedSignal("Pumpkin"):Connect(changed),
+			ball:GetAttributeChangedSignal("SkinModel"):Connect(changed),
 		}
 		tracked[ball] = conns
 		table.insert(
@@ -333,7 +331,7 @@ local function setBalls(on: boolean)
 		end
 	else
 		for ball in decorated do
-			refresh(ball) -- a Jack-o'-Lantern skin keeps its pumpkin
+			refresh(ball)
 		end
 	end
 end
@@ -355,7 +353,6 @@ function HalloweenController.init() end
 
 function HalloweenController.start()
 	-- new balls: match balls, the flying visuals, and practice balls (the hub can stream in late)
-	-- (tracked whether or not the event is on: a Jack-o'-Lantern skin wears its pumpkin all year)
 	local function follow(folder: Instance, filter: ((Instance) -> boolean)?)
 		local function add(b: Instance)
 			if not filter or filter(b) then

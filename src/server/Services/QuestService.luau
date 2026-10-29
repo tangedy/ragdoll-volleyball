@@ -8,7 +8,8 @@
 -- RewardService records a played and a won match where it banks the match (finished, not aborted,
 -- with the anti-AFK minimum of actions; bot-filled matches count, as they do for coins and wins).
 --
--- Claiming is hub-only and once per quest per day. The chest opens through RewardService.grant
+-- Claiming is hub-only and once per quest per day, except a player's very first claim of each
+-- quest: that quest comes back with fresh progress Config.Quests.FirstCooldown later. The chest opens through RewardService.grant
 -- (Kind = "Chest"), which rolls the prize on the server. The claim is marked in the same step as the
 -- grant, so a repeated request never pays twice, and the profile saves right after. Quest chests
 -- are free, so they're allowed where paid random items are restricted.
@@ -24,7 +25,12 @@ local QuestService = {}
 local S: any
 local Q = Config.Quests
 
-export type Daily = { date: string, progress: { [string]: number }, claimed: { [string]: boolean } }
+export type Daily = {
+	date: string,
+	progress: { [string]: number },
+	claimed: { [string]: boolean },
+	backAt: { [string]: number }?, -- quests on their first-claim cooldown: when they come back
+}
 
 function QuestService.init(services: any)
 	S = services
@@ -43,7 +49,8 @@ local function questOf(id: string): any?
 	return nil
 end
 
--- Today's quest state on the profile (rolled over to a fresh day when the UTC date changes).
+-- Today's quest state on the profile (rolled over to a fresh day when the UTC date changes). A
+-- quest on its first-claim cooldown (d.backAt) comes back with fresh progress once that has passed.
 function QuestService.daily(c: any): Daily
 	local p = c.profile
 	local d = p.DailyQuests
@@ -55,8 +62,27 @@ function QuestService.daily(c: any): Daily
 		d.date = today()
 		d.progress = {}
 		d.claimed = {}
+		d.backAt = nil
+	end
+	if type(d.backAt) == "table" then
+		for id, at in d.backAt do
+			if os.time() >= (tonumber(at) or 0) then
+				d.backAt[id] = nil
+				d.progress[id] = nil
+				d.claimed[id] = nil
+			end
+		end
 	end
 	return d
+end
+
+-- Quests this player has claimed at least once ever (unix time of that first claim).
+local function firstClaims(c: any): { [string]: number }
+	local p = c.profile
+	if type(p.QuestFirstClaims) ~= "table" then
+		p.QuestFirstClaims = {}
+	end
+	return p.QuestFirstClaims
 end
 
 -- Count `amount` (default 1) of `event` ("Knockout" | "Played" | "Won") toward today's quests, up to
@@ -77,6 +103,7 @@ end
 -- odds of each rarity, and when today's quests reset (unix seconds).
 function QuestService.status(c: any): any
 	local d: any = if c.profile then QuestService.daily(c) else { progress = {}, claimed = {} }
+	local resetsAt = (os.time() // 86400 + 1) * 86400
 	local quests = {}
 	for _, q in Q.List do
 		local drops: { [string]: { string } } = {}
@@ -93,6 +120,8 @@ function QuestService.status(c: any): any
 			goal = q.Goal,
 			progress = progress,
 			claimed = d.claimed[q.Id] == true,
+			-- a claimed quest comes back then (unix seconds): its first-claim cooldown, else the reset
+			nextAt = if d.claimed[q.Id] then (d.backAt and d.backAt[q.Id]) or resetsAt else nil,
 			ready = progress >= q.Goal and d.claimed[q.Id] ~= true,
 			chest = q.Chest,
 			chestName = (Q.Chests :: any)[q.Chest].Name,
@@ -100,7 +129,7 @@ function QuestService.status(c: any): any
 			drops = drops,
 		})
 	end
-	return { quests = quests, resetsAt = (os.time() // 86400 + 1) * 86400, featured = S.ShopService.featuredBall() }
+	return { quests = quests, resetsAt = resetsAt, featured = S.ShopService.featuredBall() }
 end
 
 local function inHub(c: any): boolean
@@ -122,7 +151,7 @@ function QuestService.claim(c: any, id: string): ({ [string]: any }?, string?)
 	end
 	local d = QuestService.daily(c)
 	if d.claimed[q.Id] then
-		return nil, "Already claimed today"
+		return nil, "Already claimed"
 	end
 	local progress = tonumber(d.progress[q.Id]) or 0
 	if progress < q.Goal then
@@ -133,6 +162,12 @@ function QuestService.claim(c: any, id: string): ({ [string]: any }?, string?)
 		return nil, why
 	end
 	d.claimed[q.Id] = true
+	local first = firstClaims(c)
+	if not first[q.Id] then
+		first[q.Id] = os.time()
+		d.backAt = d.backAt or {}
+		d.backAt[q.Id] = os.time() + Q.FirstCooldown
+	end
 	result.ok = true
 	result.quest = q.Id
 	S.AnalyticsService.event(c, "QuestClaim_" .. q.Id, result.coins or 0)

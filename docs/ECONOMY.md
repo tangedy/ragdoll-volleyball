@@ -36,6 +36,46 @@ Already decided (not open for discussion here): the lobby chests are removed, an
 
 Bundle-only items (`Item.Bundle`) are never sold for coins and never appear on the wheels, so they're left out of the cosmetics table and the chest pools below.
 
+| Robux-exclusive cosmetic (`Item.Exclusive`) | 1 cosmetic | Ball skins and trails 79 R (Epic) or 199 R (Legendary), `Config.Economy.RobuxPriceByRarity`; titles and gestures 39 R or 99 R, `RobuxPriceByCategory`. One developer product per item (`Item.RobuxProductId`). |
+
+Robux-exclusive items are also never sold for coins and never appear on the wheels or in the chest pools (`Catalog.isOffered`, `SpinService.pool`). Unlike bundle items, they're always on the shelf, with an EXCLUSIVE tag and a Robux button that prompts the item's own product, once Robux buttons are unlocked (the same `RobuxOk` rule as the Coins sheet). `PurchaseService` registers one handler per exclusive, which adds the item to `OwnedCosmetics` the same way bundles do. Exclusives are Epic or Legendary only. Their `Price` is only their value. The F9 suite checks that no exclusive can come out of a spin or chest. Each exclusive is a clear step above the coin items of its tier:
+- **Ball skins** have their own light and particles. The two Legendaries also shift between the Nice, Evil and Glitched forms on every pickup, like the Verity set.
+- **Trails** last longer, draw wider and glow (`Data.Lifetime`, `Width`, `Glow`), and shed sparkles along the throw (`Data.Sparkle`, client only, fewer in performance mode).
+- **Titles** color each letter along a gradient on the name tag (`Data.Gradient`, `TitleStyle`). The Legendary ones shimmer: each client re-draws them about 10 times a second (`TitleFxController`), skipping tags too far away to be seen.
+
+### Robux-exclusive products
+
+Every product id is still the placeholder 0, so none is registered or on sale yet. Create each developer product at its price, then put its id in that item's `RobuxProductId` in `Catalog.luau`.
+
+| Item id | Name | Category | Rarity | Price | Developer product id |
+| --- | --- | --- | --- | --- | --- |
+| `Skin_Galaxy` | Galaxy | Ball skin | Epic | 79 R | 0 (to create) |
+| `Skin_StormCore` | Storm Core | Ball skin | Epic | 79 R | 0 (to create) |
+| `Skin_Sovereign` | Sovereign (shifting forms) | Ball skin | Legendary | 199 R | 0 (to create) |
+| `Skin_Phoenix` | Phoenix (shifting forms) | Ball skin | Legendary | 199 R | 0 (to create) |
+| `Trail_Aurora` | Aurora | Trail | Epic | 79 R | 0 (to create) |
+| `Trail_NeonPulse` | Neon Pulse | Trail | Epic | 79 R | 0 (to create) |
+| `Trail_Stardust` | Stardust | Trail | Legendary | 199 R | 0 (to create) |
+| `Trail_VoidRift` | Void Rift | Trail | Legendary | 199 R | 0 (to create) |
+| `Title_NeonAce` | Neon Ace | Title | Epic | 39 R | 0 (to create) |
+| `Title_MidnightMenace` | Midnight Menace | Title | Epic | 39 R | 0 (to create) |
+| `Title_TheChosenOne` | The Chosen One (shimmering) | Title | Legendary | 99 R | 0 (to create) |
+| `Title_MainCharacter` | Main Character (shimmering) | Title | Legendary | 99 R | 0 (to create) |
+| `Finisher_Meteor` | Meteor Strike (was coins) | Finisher | Epic | 79 R | 0 (to create) |
+| `Finisher_BlackHole` | Black Hole (was coins) | Finisher | Epic | 79 R | 0 (to create) |
+| `Finisher_DestinyArrives` | Destiny Arrives (was coins) | Finisher | Legendary | 199 R | 0 (to create) |
+| `Finisher_OutOfThePark` | Out of the Park! (was coins) | Finisher | Legendary | 199 R | 0 (to create) |
+| `Pose_Robot` | Robot (was coins) | Gesture | Epic | 39 R | 0 (to create) |
+| `Pose_Dab` | Dab (was coins) | Gesture | Epic | 39 R | 0 (to create) |
+| `Pose_TrophyLift` | Trophy Lift (was coins) | Gesture | Legendary | 99 R | 0 (to create) |
+
+The placeholder Prism skin these replace was never on sale, so no one owns it.
+
+**Finishers and gestures moved to Robux (Oct 29).** The two showiest Epic finishers (Meteor Strike, Black Hole), both Legendary finishers (Destiny Arrives, Out of the Park!), two Epic gestures (Robot, Dab) and the only Legendary gesture (Trophy Lift) are now Robux exclusives, so there's one Legendary gesture, not two. Players who already own them keep them. They're no longer sold for coins, spun or rolled, and bots don't use the finishers. New coin items refill the quest chests, so each one again has every rarity and rolls its configured weights:
+- **Supernova** (Legendary finisher, 12,000 coins). The world goes dark, sparks spiral into a star over the winner's raised hands, and the star bursts on the victim as a white-gold supernova. It's the Finisher Chest's Legendary (11 items).
+- **Power Up** (Legendary gesture, 12,000 coins). The winner crouches and charges, then throws their arms wide as a golden aura flares (IntroPoses `Fx = "Aura"`). It's the Gesture Chest's Legendary.
+- **The Floss** and **Heart Hands** (Epic gestures, 5,000 coins each) bring the Gesture Chest back to 3 Epics and 12 items.
+
 ### Coin sinks
 
 | Sink | Cost | Cap |
@@ -52,10 +92,12 @@ Rarity is **derived from price** (`Config.Spin.RarityByPrice`): Legendary is ≥
 
 | Category | Item | Price | Rarity |
 | --- | --- | --- | --- |
-| Ball Skin | Bubblegum | 500 | Common |
-| Ball Skin | Lime | 500 | Common |
-| Ball Skin | Ice | 1,200 | Rare |
-| Ball Skin | Gold | 2,500 | Epic |
+| Ball Skin | Classic (red, default) | 0 | Free |
+| Ball Skin | Orange, Yellow, Green, Blue, Purple, Dark Gray, White, Bubblegum, Lime | 500 | Common |
+| Ball Skin | Ice, Zebra (black bands), Rainbow (cycles through the hues), Silver (shiny metal), Gold (shiny metal) | 1,750 | Rare |
+| Ball Skin | Basketball, Soccer Ball, Tennis Ball, Eight Ball (model skins) | 5,000 | Epic |
+| Ball Skin | Meteor (lava seams, embers), Disco Ball (mirror tiles, sparkles), Planet (glowing ring), Bomb (sparking fuse) (effect skins) | 5,000 | Epic |
+| Ball Skin | Verity (white and gold), Falsity (masks), Lovity (pink hearts), Cruelty (jagged red): the Legendary set, a new form each pickup | 12,000 | Legendary |
 | Trail | Sparkle | 400 | Common |
 | Trail | Flame | 800 | Common |
 | Trail | Rainbow | 1,500 | Rare |
@@ -77,7 +119,7 @@ Rarity is **derived from price** (`Config.Spin.RarityByPrice`): Legendary is ≥
 | Intro Pose | Take a Bow | 2,500 | Epic |
 | Intro Pose | Dab | 3,000 | Epic |
 
-Without Pumpkin Reaper there are 23 prize items (6 Common, 7 Rare, 5 Epic, 5 Legendary), worth 49,350 coins.
+The ball skin rows are the Oct 29 lineup at the flat `Config.Economy.PriceByRarity` prices (Gold moved from Epic to Rare then, and owners kept it); the other rows are the original audit. Model skins (`Data.Model`) swap the ball's look for a model built from parts in `BallModels.luau`; the ball itself keeps its size and physics. Effect skins add a light, embers or sparkles, which follow the neon setting and performance mode. Beach Ball was left out because its tapered stripes don't build well from parts. The Legendary set shows one of three forms each time you pick a ball up: **Nice** (brighter colors, a glowing halo, a soft light and gentle sparkles), **Evil** (a dark palette, black spikes, glowing red cracks and smoke) or **Glitched** (the skin's colors with flickering red and cyan copies, stray pixels and a scanline). The server picks the form (`ShopService.pickForm`, never the same one twice in a row) and sets it as the ball's `SkinVariant` attribute. A thrown ball keeps its form, practice balls pick theirs on the client, and the holder's screen glows briefly in the form's color on each swap. Without Pumpkin Reaper there were 23 prize items (6 Common, 7 Rare, 5 Epic, 5 Legendary), worth 49,350 coins.
 
 **Category gaps for the quest chests:**
 - **Titles** exist, but only 4 are for sale. That's too thin for a daily chest: you'd own them all in about a week.
@@ -105,10 +147,10 @@ Without Pumpkin Reaper there are 23 prize items (6 Common, 7 Rare, 5 Epic, 5 Leg
 
 | Rarity | Items |
 | --- | --- |
-| Common | Bubblegum, Lime, Sparkle, Flame, Rookie, Big Wave |
-| Rare | Ice, Rainbow, Dodge Master, Sky Launcher, Spotlight, Flex, You're Next |
-| Epic | Gold, Untouchable, Meteor Strike, Purple Flash, Black Hole, Dodgeball Rush, Take a Bow, Dab, (Pumpkin Reaper) |
-| Legendary | Destiny Arrives, Out of the Park! |
+| Common | Orange, Yellow, Green, Blue, Purple, Dark Gray, White, Bubblegum, Lime, Sparkle, Flame, Rookie, Big Wave |
+| Rare | Ice, Zebra, Rainbow skin, Silver, Gold, Rainbow trail, Dodge Master, Sky Launcher, Spotlight, Flex, You're Next |
+| Epic | Basketball, Soccer Ball, Tennis Ball, Eight Ball, Meteor, Disco Ball, Planet, Bomb, Untouchable, Meteor Strike, Purple Flash, Black Hole, Dodgeball Rush, Take a Bow, Dab, The Floss, Heart Hands, (Pumpkin Reaper) |
+| Legendary | Verity, Falsity, Lovity, Cruelty, Supernova, Power Up (Destiny Arrives and Out of the Park! are Robux exclusives now) |
 
 Legendary should stay rare, so only the two showpiece finishers stay there. The catalog becomes 79,250 coins (before the starter sets), about 45 days of normal play.
 
@@ -229,10 +271,10 @@ The §4 starter sets are in the Catalog, plus a few extras so every rarity has i
 | Chest | Common | Rare | Epic | Legendary |
 | --- | --- | --- | --- | --- |
 | Title (19) | Rookie, Bonk, Wobbly, Benchwarmer, Butterfingers, Ball Hog, Noodle Arms | Dodge Master, Sky Launcher, Catch King, Jailbreaker, Bullseye, Comeback Kid | Untouchable, Void Walker, Showstopper, Iron Wall | Ragdoll Royalty, The Final Boss |
-| Gesture (12) | Big Wave, Thumbs Up, Shrug, Clap | Flex, You're Next, Salute, Air Guitar | Take a Bow, Dab, Robot | Trophy Lift (confetti burst) |
-| Finisher (13) | Confetti Pop, Air Horn, Sad Trombone, BONK! | Spotlight, Slow-Mo Replay, Paparazzi | Meteor Strike, Purple Flash, Black Hole, Dodgeball Rush | Destiny Arrives, Out of the Park! |
+| Gesture (12) | Big Wave, Thumbs Up, Shrug, Clap | Flex, You're Next, Salute, Air Guitar | Take a Bow, The Floss, Heart Hands | Power Up (golden aura) |
+| Finisher (11) | Confetti Pop, Air Horn, Sad Trombone, BONK! | Spotlight, Slow-Mo Replay, Paparazzi | Purple Flash, Dodgeball Rush, Bubble Trouble | Supernova |
 
-With items in every rarity, each chest rolls its configured weights as they are (no renormalizing).
+With items in every rarity, each chest rolls its configured weights as they are (no renormalizing). Robux-exclusive items are never in the chests. Supernova, Power Up, The Floss and Heart Hands keep the chests full after the Oct 29 exclusives.
 
 **Power Ball Mastery** gives power balls a long-term point. Each credited knockout with a Heavy, Rocket or Pop ball (bot victims included, as with the KO quest) counts toward earn-only cosmetics. These are never sold, spun or rolled, so they sit outside every pool and price table above:
 

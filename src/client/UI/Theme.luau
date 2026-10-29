@@ -829,7 +829,7 @@ end
 
 -- Glyphs ---------------------------------------------------------------------------------------------
 -- Simple, neutral glyphs (round caps, solid shapes). Text glyphs for the shapes a font draws well;
--- frames for the rest (bag, gear, gift, clock, tag, hand, burst).
+-- frames for the rest (bag, gear, gift, clock, tag, hand, burst, pumpkin).
 
 local TEXT_GLYPHS = {
 	star = "★",
@@ -1056,6 +1056,27 @@ function Theme.glyph(parent: Instance, name: string, color: Color3, props: { [st
 			ZIndex = z,
 		}, holder)
 		Theme.round(core)
+	elseif name == "pumpkin" then
+		-- a pumpkin (Halloween bundles): three overlapping lobes under a short leaning stem
+		for _, lobe in { { 0.3, 0.6 }, { 0.7, 0.6 }, { 0.5, 0.68 } } do
+			local l = new("Frame", {
+				AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.fromScale(lobe[1], 1),
+				Size = UDim2.fromScale(lobe[2], 0.78),
+				BackgroundColor3 = color,
+				ZIndex = z,
+			}, holder)
+			Theme.round(l)
+		end
+		local stem = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.fromScale(0.54, 0.3),
+			Size = UDim2.fromScale(0.16, 0.3),
+			Rotation = 14,
+			BackgroundColor3 = color,
+			ZIndex = z,
+		}, holder)
+		Theme.corner(stem, 2)
 	end
 	holder.Parent = parent
 	return holder

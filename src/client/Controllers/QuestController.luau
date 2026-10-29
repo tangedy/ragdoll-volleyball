@@ -1,9 +1,10 @@
 --!strict
 -- Daily quests in the hub (presentation only; QuestService decides and saves everything).
 --
---  * Panel (left edge of the hub): the countdown to the UTC reset beside its title, then each quest
---    with an icon for what its chest gives (titles, gestures, finishers), its progress bar and a
---    Claim button. A claimed quest turns into a countdown to the next quests. The header folds it.
+--  * Panel (left edge of the hub, small): one line per quest with an icon for what its chest gives
+--    (titles, gestures, finishers), the goal, its count and a thin progress bar. Claim appears once
+--    the goal is reached; a claimed quest shows the time until it comes back (15 minutes after a
+--    player's first claim of it, otherwise the UTC reset).
 --  * Tap a quest's icon: the chest sheet shows every item it can drop, the chance of each rarity
 --    and the coins a rarity pays once you own all of it.
 --  * Claim: a full-screen opening plays the treasure chest rattling while the server rolls the
@@ -13,7 +14,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
@@ -40,11 +40,11 @@ local RARITIES = { "Common", "Rare", "Epic", "Legendary" }
 -- each chest's disc colour and the glyph for what it gives
 local CHEST_TONE: { [string]: Color3 } = { Title = T.sky, Gesture = T.candy, Finisher = T.sun }
 local CHEST_GLYPH: { [string]: string } = { Title = "tag", Gesture = "hand", Finisher = "burst" }
-local PANEL_W = 340
-local ROW_H = 68
-local DISC = 44
-local TEXT_X = 54 -- right of a row's disc
-local CLAIM_W = 84
+local PANEL_W = 270
+local ROW_H = 38
+local DISC = 32
+local TEXT_X = 40 -- right of a row's disc
+local RIGHT_W = 64 -- the count, the Claim button or the cooldown, at a row's right
 local TIMEOUT = 7 -- seconds without an answer before a claim gives up
 
 type Row = {
@@ -53,7 +53,8 @@ type Row = {
 	count: TextLabel,
 	fill: Frame,
 	claim: TextButton,
-	done: Frame, -- once claimed: the countdown to the next quests
+	done: Frame, -- once claimed: the time until the quest comes back
+	doneName: TextLabel,
 	doneTime: TextLabel,
 }
 
@@ -64,10 +65,7 @@ local owned: { [string]: boolean } = {}
 local panel: Frame
 local list: Frame
 local resetLabel: TextLabel
-local readySticker: Frame
-local foldGlyph: GuiObject
 local rows: { [string]: Row } = {}
-local folded = false
 
 -- chest sheet (drops and odds)
 local sheetRef: any
@@ -85,22 +83,44 @@ local function inHub(): boolean
 	return player:GetAttribute("Status") == "Lobby" and (player:GetAttribute("Team") or "") == ""
 end
 
+-- `q` as it stands now: a claimed quest whose cooldown has run out is a fresh one again (the server
+-- agrees the next time it looks at the quest).
+local function current(q: any): any
+	if not q.claimed or os.time() < (tonumber(q.nextAt) or math.huge) then
+		return q
+	end
+	local fresh = table.clone(q)
+	fresh.claimed = false
+	fresh.ready = false
+	fresh.progress = 0
+	fresh.nextAt = nil
+	return fresh
+end
+
 local function questOf(id: string?): any?
 	for _, q in (if status then status.quests else nil) or {} do
 		if q.id == id then
-			return q
+			return current(q)
 		end
 	end
 	return nil
 end
 
--- "05:12:33" until the server's reset time (the next UTC midnight).
+-- "14:05" under an hour, "5:12:33" above.
+local function clock(seconds: number): string
+	local left = math.max(0, seconds)
+	if left < 3600 then
+		return ("%d:%02d"):format(left // 60, left % 60)
+	end
+	return ("%d:%02d:%02d"):format(left // 3600, (left // 60) % 60, left % 60)
+end
+
+-- Time until the server's reset (the next UTC midnight).
 local function untilReset(): string
 	if not status or not status.resetsAt then
 		return WheelSheet.untilReset()
 	end
-	local left = math.max(0, (tonumber(status.resetsAt) or 0) - os.time())
-	return ("%02d:%02d:%02d"):format(left // 3600, (left // 60) % 60, left % 60)
+	return clock((tonumber(status.resetsAt) or 0) - os.time())
 end
 
 -- Every item the quest's chest can drop, Common first, repeated round the wheel's slots.
@@ -122,13 +142,16 @@ local function dropsWheel(q: any): { string }
 end
 
 -- Panel -----------------------------------------------------------------------------------------------
+-- One line per quest: its chest icon, the goal and its count over a thin progress bar. A Claim
+-- button takes the count's place once the goal is reached; a claimed quest shows a check and the
+-- time until it comes back.
 
 local function renderPanel()
 	if not status then
 		return
 	end
-	local ready = 0
-	for _, q in status.quests do
+	for _, raw in status.quests do
+		local q = current(raw)
 		local row = rows[q.id]
 		if not row then
 			continue
@@ -138,39 +161,36 @@ local function renderPanel()
 		row.live.Visible = not q.claimed
 		row.done.Visible = q.claimed == true
 		row.name.Text = q.name
+		row.doneName.Text = q.name
 		row.count.Text = ("%d/%d"):format(progress, goal)
+		row.count.Visible = not q.ready
 		row.fill.Size = UDim2.fromScale(progress / goal, 1)
 		row.fill.BackgroundColor3 = if progress >= goal then T.leaf else T.sky
+		row.claim.Visible = q.ready == true
 		if q.ready then
-			ready += 1
 			Theme.setText(row.claim, if claiming and currentQuest == q.id then "..." else "Claim")
-			Theme.recolor(row.claim, "primary")
 			Theme.setEnabled(row.claim, not claiming)
-		else
-			Theme.setText(row.claim, "Claim")
-			Theme.recolor(row.claim, "secondary")
-			Theme.setEnabled(row.claim, false)
 		end
-	end
-	readySticker.Visible = ready > 0
-	local label = readySticker:FindFirstChild("Label") :: TextLabel?
-	if label then
-		label.Text = string.upper(("%d ready"):format(ready))
 	end
 end
 
 local function renderTimers()
-	local left = untilReset()
-	resetLabel.Text = left
-	for _, row in rows do
-		row.doneTime.Text = left
+	resetLabel.Text = untilReset()
+	if not status then
+		return
 	end
-end
-
-local function setFolded(on: boolean)
-	folded = on
-	list.Visible = not on
-	foldGlyph.Rotation = if on then 0 else 90
+	local now = os.time()
+	for _, q in status.quests do
+		local row = rows[q.id]
+		if row and row.done.Visible then
+			local left = (tonumber(q.nextAt) or 0) - now
+			if left <= 0 then
+				renderPanel() -- its cooldown is over: back to a fresh quest
+				return
+			end
+			row.doneTime.Text = clock(left)
+		end
+	end
 end
 
 -- A round disc in the toy outline holding `glyph`.
@@ -199,13 +219,13 @@ local function disc(parent: Instance, tone: Color3, glyph: string, glyphColor: C
 end
 
 local function buildRow(q: any, order: number): Row
-	local frame = Theme.well(list, {
+	local frame = new("Frame", {
 		Name = q.Id,
 		LayoutOrder = order,
 		Size = UDim2.new(1, 0, 0, ROW_H),
+		BackgroundTransparency = 1,
 		ZIndex = 3,
-	}, Theme.Radius.M)
-	Theme.padding(frame, SPACE.S)
+	}, list)
 	local function layer(name: string): Frame
 		return new(
 			"Frame",
@@ -213,42 +233,23 @@ local function buildRow(q: any, order: number): Row
 			frame
 		)
 	end
+	local textW = -(TEXT_X + RIGHT_W + SPACE.S)
 
-	-- the quest: its icon (tap it for the drops and odds), name, chest, progress and Claim
+	-- the quest: its icon (tap it for the drops and odds), the goal, its count and progress, Claim
 	local live = layer("Live")
 	local icon = disc(live, CHEST_TONE[q.Chest] or T.sun, CHEST_GLYPH[q.Chest] or "gift", T.onFill, true)
-	local textW = -(TEXT_X + CLAIM_W + SPACE.S)
 	local name = Theme.text(live, SIZE.Label, {
 		Name = "Name",
 		Position = UDim2.fromOffset(TEXT_X, 2),
-		Size = UDim2.new(1, textW - 40, 0, 18),
+		Size = UDim2.new(1, textW, 0, 18),
 		Text = q.Name,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		ZIndex = 4,
-	})
-	local count = Theme.text(live, SIZE.Label, {
-		Name = "Count",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -(CLAIM_W + SPACE.S), 0, 2),
-		Size = UDim2.fromOffset(40, 18),
-		TextXAlignment = Enum.TextXAlignment.Right,
-		ZIndex = 4,
-	})
-	Theme.text(live, SIZE.Micro, {
-		Name = "ChestName",
-		Position = UDim2.fromOffset(TEXT_X, 21),
-		Size = UDim2.new(1, textW, 0, 14),
-		FontFace = Theme.TextFace,
-		Text = (Q.Chests :: any)[q.Chest].Name,
-		TextColor3 = T.inkMuted,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
 	})
 	local track = new("Frame", {
 		Name = "Progress",
-		Position = UDim2.fromOffset(TEXT_X, 40),
-		Size = UDim2.new(1, textW, 0, 8),
+		Position = UDim2.fromOffset(TEXT_X, 24),
+		Size = UDim2.new(1, textW, 0, 6),
 		BackgroundColor3 = T.line,
 		ZIndex = 4,
 	}, live)
@@ -256,14 +257,23 @@ local function buildRow(q: any, order: number): Row
 	local fill =
 		new("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.sky, ZIndex = 5 }, track)
 	Theme.round(fill)
-	local claim = Theme.button(live, "Claim", "secondary", {
+	local count = Theme.text(live, SIZE.Label, {
+		Name = "Count",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.fromScale(1, 0.5),
+		Size = UDim2.fromOffset(RIGHT_W, 20),
+		FontFace = Theme.DisplayFace,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 4,
+	})
+	local claim = Theme.button(live, "Claim", "primary", {
 		Name = "Claim",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.fromScale(1, 0.5),
-		Size = UDim2.fromOffset(CLAIM_W, 44),
+		Size = UDim2.fromOffset(RIGHT_W, 32),
+		Visible = false,
 		ZIndex = 4,
 	})
-	Theme.setEnabled(claim, false)
 	icon.Activated:Connect(function()
 		QuestController.open(q.Id, true)
 	end)
@@ -271,32 +281,28 @@ local function buildRow(q: any, order: number): Row
 		QuestController.claim(q.Id)
 	end)
 
-	-- claimed: a check and the countdown to tomorrow's quests
+	-- claimed: a check, the goal greyed out and the time until it comes back
 	local done = layer("Done")
 	done.Visible = false
 	disc(done, T.leaf, "check", T.onFill, false)
-	Theme.text(done, SIZE.Caption, {
-		Name = "Caption",
-		Position = UDim2.fromOffset(TEXT_X, 2),
-		Size = UDim2.new(1, -TEXT_X, 0, 16),
-		FontFace = Theme.TextFace,
-		Text = "Claimed! New quest in",
+	local doneName = Theme.text(done, SIZE.Label, {
+		Name = "Name",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, TEXT_X, 0.5, 0),
+		Size = UDim2.new(1, textW, 0, 18),
+		Text = q.Name,
 		TextColor3 = T.inkMuted,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
 	})
-	Theme.glyph(done, "clock", T.ink, {
-		Position = UDim2.fromOffset(TEXT_X, 24),
-		Size = UDim2.fromOffset(22, 22),
-		ZIndex = 4,
-	})
-	local doneTime = Theme.text(done, SIZE.Title, {
+	local doneTime = Theme.text(done, SIZE.Label, {
 		Name = "Time",
-		Position = UDim2.fromOffset(TEXT_X + 28, 20),
-		Size = UDim2.new(1, -(TEXT_X + 28), 0, 30),
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.fromScale(1, 0.5),
+		Size = UDim2.fromOffset(RIGHT_W, 20),
 		FontFace = Theme.DisplayFace,
-		Text = untilReset(),
-		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = T.inkMuted,
+		TextXAlignment = Enum.TextXAlignment.Right,
 		ZIndex = 4,
 	})
 	return {
@@ -306,6 +312,7 @@ local function buildRow(q: any, order: number): Row
 		fill = fill,
 		claim = claim,
 		done = done,
+		doneName = doneName,
 		doneTime = doneTime,
 	}
 end
@@ -314,95 +321,41 @@ local function buildPanel()
 	panel = Theme.panel(ShopController.gui, {
 		Name = "Quests",
 		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, SPACE.L, 0.45, 0),
+		Position = UDim2.new(0, SPACE.M, 0.4, 0),
 		Size = UDim2.fromOffset(PANEL_W, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Visible = false,
 		ZIndex = 2,
-	}, Theme.Radius.L)
-	Theme.padding(panel, SPACE.M)
-	Theme.autoScale(panel, 0.85)
-	new("UIListLayout", { Padding = UDim.new(0, SPACE.S), SortOrder = Enum.SortOrder.LayoutOrder }, panel)
-	-- header: the title with the reset countdown beside it; tapping it folds the list away
-	local header = new("TextButton", {
+	}, Theme.Radius.M)
+	Theme.padding(panel, SPACE.S + 2)
+	Theme.autoScale(panel, 0.8)
+	new("UIListLayout", { Padding = UDim.new(0, SPACE.XS), SortOrder = Enum.SortOrder.LayoutOrder }, panel)
+	-- header: the title and, on the right, the time until the daily reset
+	local header = new("Frame", {
 		Name = "Header",
-		Text = "",
-		AutoButtonColor = false,
 		LayoutOrder = 0,
-		Size = UDim2.new(1, 0, 0, 36),
+		Size = UDim2.new(1, 0, 0, 20),
 		BackgroundTransparency = 1,
 		ZIndex = 3,
 	}, panel)
-	foldGlyph = Theme.glyph(header, "next", T.inkMuted, {
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.fromScale(0, 0.5),
-		Size = UDim2.fromOffset(18, 18),
-		Rotation = 90,
-		ZIndex = 4,
-	})
-	local titleRow = new("Frame", {
-		Name = "TitleRow",
-		Position = UDim2.fromOffset(24, 0),
-		Size = UDim2.new(1, -24, 1, 0),
-		BackgroundTransparency = 1,
-		ZIndex = 3,
-	}, header)
-	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
-		VerticalAlignment = Enum.VerticalAlignment.Center,
-		Padding = UDim.new(0, SPACE.S),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	}, titleRow)
-	Theme.text(titleRow, SIZE.Heading, {
+	Theme.text(header, SIZE.Label, {
 		Name = "Title",
-		LayoutOrder = 1,
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromOffset(0, 28),
+		Size = UDim2.fromScale(0.6, 1),
 		FontFace = Theme.DisplayFace,
 		Text = "Daily quests",
+		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
 	})
-	-- the countdown: a filled pill in the toy outline, like the level chip
-	local timer = new("Frame", {
+	resetLabel = Theme.text(header, SIZE.Caption, {
 		Name = "Reset",
-		LayoutOrder = 2,
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromOffset(0, 34),
-		BackgroundColor3 = T.sky,
-		ZIndex = 4,
-	}, titleRow)
-	Theme.round(timer)
-	Theme.stroke(timer, T.outline, Theme.StrokeToy)
-	new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 12) }, timer)
-	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
-		VerticalAlignment = Enum.VerticalAlignment.Center,
-		Padding = UDim.new(0, 6),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	}, timer)
-	Theme.glyph(timer, "clock", T.onFill, { LayoutOrder = 1, Size = UDim2.fromOffset(18, 18), ZIndex = 5 })
-	resetLabel = Theme.text(timer, SIZE.Heading, {
-		Name = "Time",
-		LayoutOrder = 2,
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromScale(0, 1),
-		FontFace = Theme.DisplayFace,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.fromScale(0.4, 1),
 		Text = untilReset(),
-		TextColor3 = T.onFill,
-		ZIndex = 5,
+		TextColor3 = T.inkMuted,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 4,
 	})
-	-- "2 READY", stuck on the panel's top-right corner
-	readySticker = Theme.sticker(header, "0 ready", T.sun, {
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, SPACE.M + 6, 0, -SPACE.M),
-		Rotation = 6,
-		Visible = false,
-		ZIndex = 6,
-	})
-	header.Activated:Connect(function()
-		SoundController.play(if folded then "UIOpen" else "UIBack")
-		setFolded(not folded)
-	end)
 	list = new("Frame", {
 		Name = "List",
 		LayoutOrder = 1,
@@ -411,12 +364,10 @@ local function buildPanel()
 		BackgroundTransparency = 1,
 		ZIndex = 2,
 	}, panel)
-	new("UIListLayout", { Padding = UDim.new(0, SPACE.S), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+	new("UIListLayout", { Padding = UDim.new(0, SPACE.XS), SortOrder = Enum.SortOrder.LayoutOrder }, list)
 	for i, q in Q.List do
 		rows[q.Id] = buildRow(q, i)
 	end
-	-- on touch screens the left side is the thumbstick's, so the panel starts folded there
-	setFolded(UserInputService.TouchEnabled and not UserInputService.MouseEnabled)
 end
 
 -- Chest sheet -----------------------------------------------------------------------------------------
@@ -434,8 +385,8 @@ local function renderSheet()
 		WheelSheet.setStatus(info, {
 			fill = T.leaf,
 			glyph = "check",
-			title = "Claimed today",
-			detail = ("New quests in %s"):format(untilReset()),
+			title = "Claimed",
+			detail = ("Back in %s"):format(clock((tonumber(q.nextAt) or 0) - os.time())),
 		})
 	elseif q.ready then
 		WheelSheet.setStatus(info, {
@@ -467,7 +418,7 @@ local function renderSheet()
 		Theme.recolor(primary, "primary")
 		Theme.setEnabled(primary, true)
 	else
-		Theme.setText(primary, if q.claimed then "Claimed today" else ("%d of %d done"):format(progress, goal))
+		Theme.setText(primary, if q.claimed then "Claimed" else ("%d of %d done"):format(progress, goal))
 		Theme.recolor(primary, "secondary")
 		Theme.setEnabled(primary, false)
 	end
@@ -901,7 +852,7 @@ function QuestController.claim(id: string)
 	end
 	if not q.ready then
 		SoundController.play("UIError")
-		HUDController.hint(if q.claimed then "Already claimed today" else q.name .. " first", 1.5)
+		HUDController.hint(if q.claimed then "Already claimed" else q.name .. " first", 1.5)
 		return
 	end
 	ShopController.closeAll()

@@ -469,10 +469,17 @@ Config.Spin.Wheels = {
 -- Cosmetic economy (docs/ECONOMY.md §2). Every prize item has an explicit Rarity in the Catalog and
 -- sells for its rarity's flat price, so a price change never moves an item between tiers.
 -- DuplicateCoins (20% of the price) is what a daily quest chest pays when you already own every
--- item of the rarity it rolled.
+-- item of the rarity it rolled. RobuxPriceByRarity is what a Robux-exclusive cosmetic (Item.Exclusive)
+-- costs; exclusives are Epic or Legendary only. RobuxPriceByCategory overrides it for the smaller
+-- cosmetics (titles and gestures).
 Config.Economy = {
 	PriceByRarity = { Common = 500, Rare = 1750, Epic = 5000, Legendary = 12000 },
 	DuplicateCoins = { Common = 100, Rare = 350, Epic = 1000, Legendary = 2400 },
+	RobuxPriceByRarity = { Epic = 79, Legendary = 199 },
+	RobuxPriceByCategory = {
+		Title = { Epic = 39, Legendary = 99 },
+		Pose = { Epic = 39, Legendary = 99 },
+	},
 }
 
 -- Daily quests (docs/ECONOMY.md §4). Progress resets at UTC midnight; each quest's chest can be
@@ -481,9 +488,12 @@ Config.Economy = {
 -- payout), and a finished match you took part in (the anti-AFK rule the match coins use).
 --   Event: "Knockout" | "Played" | "Won"
 -- Quest chests are free, so they're allowed where paid random items are restricted.
+-- The very first time a player claims a quest, it comes back FirstCooldown seconds later (fresh
+-- progress) instead of waiting for the UTC reset; every later claim waits for the reset.
 Config.Quests = {
+	FirstCooldown = 15 * 60,
 	List = {
-		{ Id = "Knockouts", Name = "Knock out 3 opponents", Event = "Knockout", Goal = 3, Chest = "Title" },
+		{ Id = "Knockouts", Name = "Knock out 3", Event = "Knockout", Goal = 3, Chest = "Title" },
 		{ Id = "Played", Name = "Play 2 games", Event = "Played", Goal = 2, Chest = "Gesture" },
 		{ Id = "Won", Name = "Win 1 game", Event = "Won", Goal = 1, Chest = "Finisher" },
 	},

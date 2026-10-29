@@ -468,6 +468,15 @@ icons.OutOfThePark = {
 
 FinisherIcons.Icons = icons
 
+-- Supernova: a blazing white-gold star bursting out of a violet ring
+icons.Supernova = {
+	layer(nil, { circle(50, 50, 98, LILAC, { t = 0.55 }) }),
+	layer(4, burst(50, 50, 84, 16, GOLD)),
+	layer(nil, burst(50, 50, 60, 12, YELLOW)),
+	layer(3.5, { circle(50, 50, 36, "#fff6c8", { kids = { circle(50, 50, 50, WHITE) } }) }),
+	layer(3, join(twinkle(14, 18, 18, WHITE), twinkle(86, 80, 20, WHITE), twinkle(84, 16, 12, VIOLET))),
+}
+
 function FinisherIcons.has(module: string?): boolean
 	return module ~= nil and icons[module] ~= nil
 end

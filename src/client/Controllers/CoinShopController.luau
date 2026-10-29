@@ -13,6 +13,9 @@
 -- Owned once you have everything in it. It hides itself at the offer's End; the sheet grows to fit
 -- it and scales down so it takes no more of the screen than without it. The same strip also sits at
 -- the top of the Shop's shelf while you don't own it yet (its items are on the shelf too).
+--
+-- While an offer is live, a pumpkin "Bundles" button tops the action column and opens a sheet of
+-- just those limited-time bundles, so they're one tap away instead of tucked inside Coins.
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -51,14 +54,18 @@ local cards: { [string]: { root: GuiObject, art: GuiObject, buy: TextButton } } 
 local backToShop = false -- opened from the shop's Buy: return there after a purchase
 local boostCards: { [string]: { root: GuiObject, status: TextLabel, buy: TextButton } } = {}
 local boost = { untilTime = 0, forever = false } -- profile.boost from the server
-type OfferCard = { offer: any, root: GuiObject, status: TextLabel, buy: TextButton, inShop: boolean }
-local offerCards: { OfferCard } = {} -- the Coins sheet's strips, then the Shop shelf's banners
+-- where an offer card sits: the Coins sheet's strip, the Shop shelf's banner or the Bundles sheet
+type OfferCard = { offer: any, root: GuiObject, status: TextLabel, buy: TextButton, place: string }
+local offerCards: { OfferCard } = {}
 local shopBanners = false -- built the Shop shelf's banners yet
 local owned: { [string]: boolean } = {} -- profile.owned from the server
 local offersShown: boolean? = nil -- is the offer strip up (nil until the first layout)
 local offerRow: Frame
 local bundleRow: Frame
 local boostRow: Frame
+local bundlesSheet: any -- Theme.Sheet: the limited-time bundles on their own
+local bundlesAction: TextButton
+local gateBundles: () -> ()
 
 local function inHub(): boolean
 	return player:GetAttribute("Status") == "Lobby" and (player:GetAttribute("Team") or "") == ""
@@ -365,13 +372,13 @@ end
 
 -- Show each offer only inside its window; the strip (and the room the sheet makes for it) comes
 -- and goes with the first live one.
-local offerCard: (parent: Instance, offer: any, order: number, inShop: boolean) -> ()
+local offerCard: (parent: Instance, offer: any, order: number, place: string) -> ()
 local function renderOffers()
 	local shelf = ShopController.shelf()
 	if not shopBanners and shelf then
 		shopBanners = true
 		for _, offer in CS.Offers do
-			offerCard(shelf, offer, 0, true)
+			offerCard(shelf, offer, 0, "Shop")
 		end
 	end
 	local now = Workspace:GetServerTimeNow()
@@ -380,12 +387,12 @@ local function renderOffers()
 		local offer = card.offer
 		local live = Catalog.offerLive(offer, now)
 		local have = offerOwned(offer)
-		if card.inShop then
+		if card.place == "Shop" then
 			-- (and not while the shelf shows only what you own)
 			card.root.Visible = live and not have and CoinShopController.unlocked() and not ShopController.ownedOnly
 		else
 			card.root.Visible = live
-			any = any or live
+			any = any or (live and card.place == "Coins")
 		end
 		if live then
 			card.status.Text = if have
@@ -416,7 +423,7 @@ local function buyOffer(offer: any)
 	buy(offer)
 end
 
-function offerCard(parent: Instance, offer: any, order: number, inShop: boolean)
+function offerCard(parent: Instance, offer: any, order: number, place: string)
 	local root = new("Frame", {
 		Name = offer.Id,
 		LayoutOrder = order,
@@ -509,7 +516,7 @@ function offerCard(parent: Instance, offer: any, order: number, inShop: boolean)
 	button.Activated:Connect(function()
 		buyOffer(offer)
 	end)
-	table.insert(offerCards, { offer = offer, root = root, status = status, buy = button, inShop = inShop })
+	table.insert(offerCards, { offer = offer, root = root, status = status, buy = button, place = place })
 	if offer.ProductId > 0 then
 		task.spawn(function()
 			local ok, info = pcall(function()
@@ -519,6 +526,22 @@ function offerCard(parent: Instance, offer: any, order: number, inShop: boolean)
 				Theme.setText(button, ("R$ %d"):format(info.PriceInRobux))
 			end
 		end)
+	end
+end
+
+-- The pumpkin button shows only while an offer is on sale (and Robux buttons are unlocked).
+local function anyOfferLive(): boolean
+	local now = Workspace:GetServerTimeNow()
+	for _, offer in CS.Offers do
+		if Catalog.offerLive(offer, now) then
+			return true
+		end
+	end
+	return false
+end
+function gateBundles()
+	if bundlesAction then
+		bundlesAction.Visible = CoinShopController.unlocked() and anyOfferLive()
 	end
 end
 
@@ -566,7 +589,7 @@ local function build()
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, offerRow)
 	for i, offer in CS.Offers do
-		offerCard(offerRow, offer, i, false)
+		offerCard(offerRow, offer, i, "Coins")
 	end
 	local row = new("Frame", {
 		Name = "Bundles",
@@ -615,6 +638,43 @@ local function build()
 	ShopController.onCloseAll(function()
 		CoinShopController.open(false)
 	end)
+
+	-- the Bundles sheet: every limited-time offer, one strip under another
+	local pad = Theme.Space.XL
+	bundlesSheet = ShopController.sheet(
+		"Bundles",
+		"Limited bundles",
+		Vector2.new(OFFER.X + pad * 2, 76 + 12 + 32 + 16 + #CS.Offers * (OFFER.Y + Theme.Space.L) + pad),
+		"Exclusive cosmetics plus coins, only for a short time.",
+		{ tone = T.sun, glyph = "pumpkin" }
+	)
+	bundlesSheet.close.Activated:Connect(function()
+		CoinShopController.openBundles(false)
+	end)
+	local list = new("Frame", {
+		Name = "Offers",
+		Position = UDim2.fromOffset(0, 16),
+		Size = UDim2.new(1, 0, 1, -16),
+		BackgroundTransparency = 1,
+		ZIndex = 4,
+	}, bundlesSheet.body)
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		Padding = UDim.new(0, Theme.Space.L),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, list)
+	for i, offer in CS.Offers do
+		offerCard(list, offer, i, "Bundles")
+	end
+	bundlesAction = ShopController.addAction("Bundles", T.sun, "pumpkin", 0, function()
+		CoinShopController.openBundles(not ShopController.isOpen(bundlesSheet.frame))
+	end)
+	player:GetAttributeChangedSignal("RobuxOk"):Connect(gateBundles)
+	gateBundles()
+	ShopController.onCloseAll(function()
+		CoinShopController.openBundles(false)
+	end)
 end
 
 -- Open or close the sheet. `need` (coins short) is set when the shop sent you here.
@@ -661,6 +721,33 @@ function CoinShopController.open(on: boolean, need: number?)
 	end
 end
 
+-- Open or close the Bundles sheet (the pumpkin button).
+function CoinShopController.openBundles(on: boolean)
+	local f = bundlesSheet.frame
+	if on then
+		if not (inHub() and CoinShopController.unlocked() and anyOfferLive()) then
+			return
+		end
+		if not ShopController.isOpen(f) then
+			SoundController.play("UIOpen")
+		end
+		ShopController.closeAll()
+		renderOffers()
+		Theme.show(f, ShopController.getBackdrop())
+		for _, card in offerCards do
+			if card.place == "Bundles" and card.root.Visible and card.buy.Visible then
+				Theme.focus(card.buy)
+				break
+			end
+		end
+	else
+		if ShopController.isOpen(f) then
+			Theme.setHome(nil)
+		end
+		Theme.hide(f, ShopController.getBackdrop())
+	end
+end
+
 -- Buy a limited-time bundle (the Shop's bundle items and banner use this too).
 CoinShopController.buyOffer = buyOffer
 -- Show, hide and count down the bundle strips (the Shop calls this when it draws its shelf).
@@ -685,7 +772,15 @@ function CoinShopController.start()
 	-- the server granted a limited-time bundle: its coins and its cosmetics (equip them in the shop)
 	Net.on("BundleBought", function(d)
 		SoundController.play("Purchase")
-		HUDController.coinPop(tonumber(d.coins) or 0)
+		local coins = tonumber(d.coins) or 0
+		if coins > 0 then
+			HUDController.coinPop(coins)
+		end
+		-- a Robux-exclusive cosmetic arrives as a one-item bundle named after the item
+		local exclusive = Catalog.get(d.id)
+		if exclusive then
+			HUDController.hint(("%s unlocked! Equip it in the Shop"):format(exclusive.Name), 2.4)
+		end
 		for _, card in offerCards do
 			if card.offer.Id == d.id and card.root.Visible then
 				Theme.pop(card.root, 1.08, Theme.Motion.Slow)
@@ -734,9 +829,17 @@ function CoinShopController.start()
 		if not inHub() and sheet.frame.Visible then
 			CoinShopController.open(false)
 		end
-		-- the timed boost's and the offers' countdowns, once a second while this sheet or the shop is up
-		if (sheet.frame.Visible or ShopController.isShopOpen()) and os.clock() >= nextTick then
-			nextTick = os.clock() + 1
+		if not inHub() and bundlesSheet.frame.Visible then
+			CoinShopController.openBundles(false)
+		end
+		if os.clock() < nextTick then
+			return
+		end
+		nextTick = os.clock() + 1
+		-- the pumpkin button comes and goes with the offers' windows
+		gateBundles()
+		-- the timed boost's and the offers' countdowns while this sheet, the bundles or the shop is up
+		if sheet.frame.Visible or bundlesSheet.frame.Visible or ShopController.isShopOpen() then
 			renderBoosts()
 			renderOffers()
 		end

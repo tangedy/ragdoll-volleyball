@@ -149,6 +149,18 @@ return function(H)
 		end
 	end)
 
+	test("catalog: the new coin gestures and finisher refill the chests", function()
+		eq(Catalog.get("Pose_PowerUp").Exclusive, nil, "Power Up is a coin item")
+		eq(Catalog.get("Finisher_Supernova").Exclusive, nil, "Supernova is a coin item")
+		local gestures = S.RewardService.chestPool("Gesture")
+		local finishers = S.RewardService.chestPool("Finisher")
+		eq(#gestures.Epic, 3, "Gesture Chest Epics (Take a Bow, The Floss, Heart Hands)")
+		eq(gestures.Legendary[1] and gestures.Legendary[1].Id, "Pose_PowerUp", "Gesture Chest Legendary")
+		eq(finishers.Legendary[1] and finishers.Legendary[1].Id, "Finisher_Supernova", "Finisher Chest Legendary")
+		local icons = H.require("shared/IntroPoses").Poses
+		eq(icons.PowerUp.Fx, "Aura", "Power Up's aura")
+	end)
+
 	test("catalog: every gesture has its frames and every finisher its module", function()
 		local IntroPoses = H.require("shared/IntroPoses")
 		for _, item in Catalog.inCategory("Pose") do
@@ -361,6 +373,28 @@ return function(H)
 		eq(c.profile.Coins, Config.Coins.WinAlive + 2 * Config.Coins.WinAlive, "boosted payout")
 		local results = H.eventsNamed("Results")
 		eq(results[#results].payload.boost, 2, "results card boost")
+	end)
+
+	test("quests: a first claim comes back after the short cooldown, later ones wait for the reset", function()
+		local c = H.combatant()
+		local d = S.QuestService.daily(c)
+		d.progress.Won = 1
+		check(S.QuestService.claim(c, "Won") ~= nil, "first claim refused")
+		local function won(): any
+			for _, q in S.QuestService.status(c).quests do
+				if q.id == "Won" then
+					return q
+				end
+			end
+			return nil
+		end
+		check(won().claimed and math.abs(won().nextAt - os.time() - Config.Quests.FirstCooldown) <= 1, "cooldown")
+		check(S.QuestService.claim(c, "Won") == nil, "claimed again during the cooldown")
+		d.backAt.Won = os.time() - 1 -- the cooldown has run out
+		check(not won().claimed and won().progress == 0, "quest didn't come back fresh")
+		d.progress.Won = 1
+		check(S.QuestService.claim(c, "Won") ~= nil, "second claim refused")
+		eq(won().nextAt, S.QuestService.status(c).resetsAt, "second claim waits for the reset")
 	end)
 
 	test("rewards: aborted or idle matches don't count toward the quests; a loss is played, not won", function()
@@ -714,6 +748,65 @@ return function(H)
 		end
 		check(n >= 4, "mastery items missing")
 		eq(c.profile.Coins, 1e6, "coins spent")
+	end)
+
+	test("exclusives: Robux-only, priced by category, never spun, rolled or sold for coins", function()
+		local c = H.combatant()
+		c.profile.Coins = 1e6
+		local E = Config.Economy
+		local count: { [string]: number } = {}
+		for _, item in Catalog.Items do
+			if item.Exclusive then
+				local rarity = Catalog.rarity(item)
+				count[item.Category] = (count[item.Category] or 0) + 1
+				check(rarity == "Epic" or rarity == "Legendary", item.Id .. " is " .. rarity)
+				check(not Catalog.isOffered(item), item.Id .. " offered for coins")
+				check(not S.ShopService.buy(c, item.Id), item.Id .. " sold for coins")
+				local byCat = E.RobuxPriceByCategory[item.Category]
+				eq(
+					Catalog.robuxPrice(item),
+					if byCat then byCat[rarity] else E.RobuxPriceByRarity[rarity],
+					item.Id .. " price"
+				)
+				for _, list in S.SpinService.pool() do
+					for _, it in list do
+						check(it.Id ~= item.Id, item.Id .. " is on the wheels")
+					end
+				end
+				for _, q in Config.Quests.List do
+					for _, list in S.RewardService.chestPool(q.Chest) do
+						for _, it in list do
+							check(it.Id ~= item.Id, item.Id .. " is in a chest")
+						end
+					end
+				end
+			end
+		end
+		eq(count.BallSkin, 4, "exclusive ball skins")
+		eq(count.Trail, 4, "exclusive trails")
+		eq(count.Title, 4, "exclusive titles")
+		eq(count.Finisher, 4, "exclusive finishers")
+		eq(count.Pose, 3, "exclusive gestures")
+		eq(Catalog.robuxPrice(Catalog.get("Finisher_DestinyArrives")), 199, "Legendary finisher price")
+		eq(Catalog.robuxPrice(Catalog.get("Pose_Robot")), 39, "Epic gesture price")
+		for _ = 1, 20 do
+			check(not S.ShopService.pickBotFinisher().Exclusive, "a bot got an exclusive finisher")
+		end
+		eq(Catalog.robuxPrice(Catalog.get("Title_MainCharacter")), 99, "Legendary title price")
+		eq(Catalog.robuxPrice(Catalog.get("Skin_Phoenix")), 199, "Legendary skin price")
+		eq(Catalog.robuxPrice(Catalog.get("Skin_Lime")), nil, "a coin item has a Robux price")
+		eq(c.profile.Coins, 1e6, "coins spent")
+	end)
+
+	test("titles: a gradient title colors each letter and escapes rich text", function()
+		local TitleStyle = H.require("shared/TitleStyle")
+		local cols = Catalog.get("Title_NeonAce").Data.Gradient
+		local out = TitleStyle.render("A <b>", cols, 0)
+		local _, fonts = string.gsub(out, "<font ", "")
+		eq(fonts, 4, "one font tag per letter (the space bare)")
+		check(string.find(out, "&lt;", 1, true) ~= nil, "< not escaped")
+		check(string.find(out, "<b>", 1, true) == nil, "raw tag survived")
+		check(TitleStyle.render("Ace", cols, 0) ~= TitleStyle.render("Ace", cols, 0.5), "phase does nothing")
 	end)
 
 	test("mastery: power-ball knockouts count by type, unlock at the goal, the featured ball doubles", function()

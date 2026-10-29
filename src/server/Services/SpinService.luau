@@ -42,9 +42,9 @@ function SpinService.pool(): { [string]: { Catalog.Item } }
 	end
 	local p: { [string]: { Catalog.Item } } = { Common = {}, Rare = {}, Epic = {}, Legendary = {} }
 	for _, item in Catalog.Items do
-		-- event cosmetics are never on the wheels (they're only sold during their event), and mastery
-		-- cosmetics are only earned
-		if not item.Default and item.Price > 0 and not item.Event and not item.Unlock then
+		-- event cosmetics are never on the wheels (they're only sold during their event), mastery
+		-- cosmetics are only earned and Robux exclusives only bought (the chest pools narrow this one)
+		if not item.Default and item.Price > 0 and not item.Event and not item.Unlock and not item.Exclusive then
 			table.insert(p[Catalog.rarity(item)], item)
 		end
 	end

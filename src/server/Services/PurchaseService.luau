@@ -1,9 +1,10 @@
 --!strict
 -- Robux purchases (developer products). Roblox allows one ProcessReceipt callback per game, so every
 -- product registers a handler here by product id: coin bundles and limited-time cosmetic bundles
--- (Config.CoinShop), boosts (BoostService) and the extra spin (SpinService). A handler grants the
--- purchase and returns true; nothing is reported as granted until the profile holding it has saved,
--- and every PurchaseId is remembered on the profile so a retried receipt never grants twice.
+-- (Config.CoinShop), Robux-exclusive cosmetics (Catalog Item.Exclusive), boosts (BoostService) and
+-- the extra spin (SpinService). A handler grants the purchase and returns true; nothing is reported
+-- as granted until the profile holding it has saved, and every PurchaseId is remembered on the
+-- profile so a retried receipt never grants twice.
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -142,6 +143,16 @@ function PurchaseService.start()
 		PurchaseService.register(offer.ProductId, function(c: any): boolean
 			return PurchaseService.grantOffer(c, offer)
 		end)
+	end
+	-- Robux-exclusive cosmetics: one product per item, granted like a one-item bundle with no coins.
+	-- Their RobuxProductIds are still the placeholder 0, so none is registered until the products exist.
+	for _, item in Catalog.Items do
+		if item.Exclusive then
+			local grant = { Id = item.Id, Items = { item.Id }, Coins = 0 }
+			PurchaseService.register(item.RobuxProductId, function(c: any): boolean
+				return PurchaseService.grantOffer(c, grant)
+			end)
+		end
 	end
 	MarketplaceService.ProcessReceipt = processReceipt
 end

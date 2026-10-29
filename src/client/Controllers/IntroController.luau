@@ -40,7 +40,7 @@ local function poseFx(model: Instance, poseId: string?): () -> ()
 	if pose.Prop == "PumpkinHead" and model:IsA("Model") then
 		return JackOLantern.onHead(model)
 	end
-	if pose.Fx ~= "Confetti" then
+	if pose.Fx ~= "Confetti" and pose.Fx ~= "Aura" then
 		return function() end
 	end
 	local cycle = 0
@@ -49,9 +49,19 @@ local function poseFx(model: Instance, poseId: string?): () -> ()
 	end
 	local running = true
 	task.spawn(function()
+		if pose.Fx == "Aura" then
+			-- the flare lands with the second frame (arms thrown wide)
+			task.wait(pose.Frames[1].hold)
+		end
 		while running do
 			local head = model:FindFirstChild("Head") :: BasePart?
-			if head then
+			if head and pose.Fx == "Aura" then
+				local chest = head.Position - Vector3.new(0, 1.2, 0)
+				local feet = head.Position - Vector3.new(0, 4.4, 0)
+				EffectsController.burst(chest, Color3.fromRGB(255, 214, 90), 30, 26, 0.7)
+				EffectsController.burst(chest, Color3.new(1, 1, 1), 12, 30, 0.45)
+				EffectsController.shockwave(feet, Vector3.yAxis, Color3.fromRGB(255, 200, 70), 9, 0.45)
+			elseif head then
 				local at = head.Position + Vector3.new(0, 2.5, 0)
 				EffectsController.burst(at, Color3.fromRGB(247, 205, 70), 24, 22, 0.6)
 				EffectsController.burst(at, Color3.new(1, 1, 1), 12, 18, 0.45)

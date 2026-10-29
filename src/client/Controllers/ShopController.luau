@@ -11,10 +11,12 @@
 -- shining primary button. A reward that lets you pick a cosmetic swaps the day cards for the choices.
 
 local ContextActionService = game:GetService("ContextActionService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -30,6 +32,7 @@ local FinisherIcons = require(script.Parent.Parent:WaitForChild("UI"):WaitForChi
 local PoseKit = require(script.Parent.PoseKit)
 local IntroPoses = require(Shared.IntroPoses)
 local JackOLantern = require(Shared.JackOLantern)
+local BallModels = require(Shared.BallModels)
 
 local player = Players.LocalPlayer
 local T = Theme.Toybox
@@ -93,6 +96,24 @@ local function liveOffer(item: Catalog.Item): any
 		end
 	end
 	return nil
+end
+
+-- A Robux-exclusive item's price in Robux while Robux buttons are unlocked (nil otherwise). It sits on
+-- the shelf with a button that prompts its own developer product.
+local function exclusivePrice(item: Catalog.Item): number?
+	if player:GetAttribute("RobuxOk") ~= true then
+		return nil
+	end
+	return Catalog.robuxPrice(item)
+end
+
+local function buyExclusive(item: Catalog.Item)
+	if item.RobuxProductId <= 0 then
+		SoundController.play("UIError")
+		HUDController.hint("This item isn't on sale yet", 1.6)
+		return
+	end
+	MarketplaceService:PromptProductPurchase(player, item.RobuxProductId)
 end
 
 -- NEW! tags on the category tabs: a tab is new while it has something on sale this player has never
@@ -302,11 +323,46 @@ local function posePortrait(art: Frame, poseId: string, z: number): boolean
 	return true
 end
 
+-- A model skin (Catalog Data.Model) in a ViewportFrame: built by BallModels exactly as balls wear
+-- it, seen from the front and a little above so its face (-Z) and top both read.
+local function modelPortrait(art: Frame, name: string, z: number): boolean
+	local model = BallModels.build(name, CFrame.identity, 1)
+	if not model then
+		return false
+	end
+	BallModels.anchor(model)
+	local vp = Theme.new("ViewportFrame", {
+		Name = "Portrait",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Ambient = Color3.fromRGB(170, 170, 180),
+		LightColor = Color3.new(1, 1, 1),
+		LightDirection = Vector3.new(-0.4, -1, 0.5),
+		ZIndex = z,
+	}, art)
+	model.Parent = vp
+	local _, size = model:GetBoundingBox()
+	local cam = Instance.new("Camera")
+	cam.FieldOfView = 30
+	-- the model fills about 55% of the art band's height, like the drawn balls
+	local dist = (size.Magnitude / 2 / 0.55 * 0.6) / math.tan(math.rad(cam.FieldOfView / 2))
+	cam.CFrame = CFrame.lookAt(Vector3.new(0.35, 0.45, -1).Unit * dist, Vector3.zero)
+	cam.Parent = vp
+	vp.CurrentCamera = cam
+	return true
+end
+
 local GHOST_TEXT = Color3.fromRGB(214, 255, 244)
+local STRIPE = Color3.fromRGB(25, 25, 28) -- the Zebra skin's bands (BallSkinController)
 
 local function drawArt(item: Catalog.Item, art: Frame)
 	local d = item.Data
 	local z = art.ZIndex + 1
+	if item.Category == "BallSkin" and type(d.Model) == "string" and modelPortrait(art, d.Model, z) then
+		return -- a model skin: the real model, the same one the ball wears
+	end
 	if item.Category == "BallSkin" then
 		local col = d.Color or Color3.fromRGB(214, 48, 49)
 		local ball = new("Frame", {
@@ -319,6 +375,44 @@ local function drawArt(item: Catalog.Item, art: Frame)
 		new("UIAspectRatioConstraint", nil, ball)
 		Theme.round(ball)
 		Theme.stroke(ball, T.outline, Theme.StrokeToy)
+		-- patterns and metal sheen as a gradient over a white ball (it tints the fill, clipped to the round)
+		local gradient: ColorSequence? = nil
+		local rotation = 0
+		if d.Pattern == "Zebra" then
+			-- hard-edged black bands: two keypoints at each edge
+			local keys = {}
+			local edges = { 0.14, 0.24, 0.38, 0.5, 0.63, 0.73, 0.85, 0.92 }
+			table.insert(keys, ColorSequenceKeypoint.new(0, col))
+			for i, x in edges do
+				local before = if i % 2 == 1 then col else STRIPE
+				local after = if i % 2 == 1 then STRIPE else col
+				table.insert(keys, ColorSequenceKeypoint.new(x - 0.001, before))
+				table.insert(keys, ColorSequenceKeypoint.new(x, after))
+			end
+			table.insert(keys, ColorSequenceKeypoint.new(1, col))
+			gradient = ColorSequence.new(keys)
+			rotation = -35
+		elseif d.Pattern == "Rainbow" then
+			local keys = {}
+			for i = 0, 6 do
+				table.insert(keys, ColorSequenceKeypoint.new(i / 6, Color3.fromHSV(i / 7, 0.75, 1)))
+			end
+			gradient = ColorSequence.new(keys)
+			rotation = 45
+		elseif type(d.Reflectance) == "number" and d.Reflectance > 0 then
+			-- metal: a bright glint up top fading through the color to a darker rim
+			gradient = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, col:Lerp(Color3.new(1, 1, 1), 0.7)),
+				ColorSequenceKeypoint.new(0.3, col),
+				ColorSequenceKeypoint.new(0.55, col:Lerp(Color3.new(1, 1, 1), 0.25)),
+				ColorSequenceKeypoint.new(1, col:Lerp(Color3.new(0, 0, 0), 0.4)),
+			})
+			rotation = 60
+		end
+		if gradient then
+			ball.BackgroundColor3 = Color3.new(1, 1, 1)
+			new("UIGradient", { Color = gradient, Rotation = rotation }, ball)
+		end
 		-- a single soft highlight
 		local shine = new("Frame", {
 			Position = UDim2.fromScale(0.2, 0.16),
@@ -328,28 +422,6 @@ local function drawArt(item: Catalog.Item, art: Frame)
 			ZIndex = z + 1,
 		}, ball)
 		Theme.round(shine)
-		if d.Pumpkin then
-			-- the Jack-o'-Lantern skin: a carved face glowing on the ball
-			local carve = Config.Halloween.Ball.Carve
-			for _, x in { 0.3, 0.7 } do
-				new("Frame", {
-					AnchorPoint = Vector2.new(0.5, 0.5),
-					Position = UDim2.fromScale(x, 0.4),
-					Size = UDim2.fromScale(0.17, 0.17),
-					Rotation = 45,
-					BackgroundColor3 = carve,
-					ZIndex = z + 2,
-				}, ball)
-			end
-			local grin = new("Frame", {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.7),
-				Size = UDim2.fromScale(0.56, 0.14),
-				BackgroundColor3 = carve,
-				ZIndex = z + 2,
-			}, ball)
-			Theme.round(grin)
-		end
 	elseif item.Category == "Trail" then
 		local colors: { Color3 }? = d.Colors
 		if colors and #colors > 0 then
@@ -371,6 +443,27 @@ local function drawArt(item: Catalog.Item, art: Frame)
 			Theme.round(bar)
 			Theme.stroke(bar, T.outline, 2.5)
 			new("UIGradient", { Color = ColorSequence.new(keys) }, bar)
+			if typeof(d.Width) == "number" and d.Width > 1 then
+				bar.Size = UDim2.fromScale(0.8, 0.16 * math.min(d.Width, 1.6)) -- a wider trail draws wider
+			end
+			-- an exclusive trail's sparkles: a few glinting dots scattered along the bar
+			local sparkle: { Color3 }? = d.Sparkle
+			if sparkle and #sparkle > 0 then
+				for i, at in
+					{ Vector2.new(0.22, 0.3), Vector2.new(0.48, 0.72), Vector2.new(0.72, 0.28), Vector2.new(0.86, 0.62) }
+				do
+					local dot = new("Frame", {
+						AnchorPoint = Vector2.new(0.5, 0.5),
+						Position = UDim2.fromScale(at.X, at.Y),
+						Size = UDim2.fromScale(0.07, 0.07),
+						Rotation = 45,
+						BackgroundColor3 = sparkle[(i - 1) % #sparkle + 1],
+						ZIndex = z + 1,
+					}, art)
+					new("UIAspectRatioConstraint", nil, dot)
+					Theme.stroke(dot, T.outline, 1.5)
+				end
+			end
 		else
 			Theme.body(art, {
 				AnchorPoint = Vector2.new(0.5, 0.5),
@@ -395,6 +488,36 @@ local function drawArt(item: Catalog.Item, art: Frame)
 			TextTransparency = 0.15,
 			ZIndex = z,
 		}, 0)
+	elseif item.Category == "Title" and type(d.Gradient) == "table" and #d.Gradient > 0 then
+		-- a gradient title (the Robux exclusives): white text under a UIGradient of its colors, with a
+		-- dark stroke so it reads on any band; animated ones slide the gradient along, as on name tags
+		local label = Theme.label(art, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.86, 0.32),
+			Text = d.Text,
+			TextColor3 = Color3.new(1, 1, 1),
+			TextStrokeColor3 = T.outline,
+			TextStrokeTransparency = 0.2,
+			ZIndex = z,
+		}, 0)
+		local keys = {}
+		local cols: { Color3 } = d.Gradient
+		for i, c in cols do
+			table.insert(keys, ColorSequenceKeypoint.new(if #cols == 1 then 0 else (i - 1) / (#cols - 1), c))
+		end
+		if #keys == 1 then
+			table.insert(keys, ColorSequenceKeypoint.new(1, cols[1]))
+		end
+		local g = new("UIGradient", { Color = ColorSequence.new(keys) }, label)
+		if d.Animated and not HUDController.settings.ReducedMotion then
+			g.Offset = Vector2.new(-0.5, 0)
+			TweenService:Create(
+				g,
+				TweenInfo.new(2.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+				{ Offset = Vector2.new(0.5, 0) }
+			):Play()
+		end
 	elseif item.Category == "Title" then
 		Theme.label(art, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -470,6 +593,10 @@ local function primaryAction(item: Catalog.Item?)
 	elseif liveOffer(item) then
 		local CoinShopController = require(script.Parent.CoinShopController) :: any
 		CoinShopController.buyOffer(liveOffer(item))
+	elseif item.Exclusive then
+		if exclusivePrice(item) then
+			buyExclusive(item)
+		end
 	elseif (profile.coins or 0) >= item.Price then
 		Net.request(Net.Actions.BuyItem, { id = item.Id })
 	else
@@ -529,6 +656,11 @@ local function renderAction(item: Catalog.Item, b: TextButton)
 	elseif liveOffer(item) then
 		-- bundle-only: the button buys the whole bundle
 		Theme.setText(b, ("Bundle · R$ %d"):format(liveOffer(item).Robux))
+		Theme.recolor(b, T.candy)
+		Theme.setEnabled(b, true)
+	elseif item.Exclusive then
+		-- Robux-exclusive: the button prompts the item's own product
+		Theme.setText(b, ("R$ %d"):format(exclusivePrice(item) or 0))
 		Theme.recolor(b, T.candy)
 		Theme.setEnabled(b, true)
 	elseif coins >= item.Price then
@@ -625,6 +757,12 @@ local function itemCard(item: Catalog.Item, order: number, parent: Instance): { 
 		Position = UDim2.fromOffset(8, 8),
 		ZIndex = 10,
 	})
+	if item.Exclusive then
+		Theme.sticker(face, "Exclusive", T.joyBlue, {
+			Position = UDim2.fromOffset(8, 32),
+			ZIndex = 10,
+		})
+	end
 	if item.Category == "Finisher" or item.Category == "Pose" then
 		local preview = Theme.iconButton(face, "play", "secondary", 34, {
 			Name = "Preview",
@@ -769,11 +907,16 @@ local function renderShelf()
 	local CoinShopController = require(script.Parent.CoinShopController) :: any
 	CoinShopController.renderOffers() -- the Haunted Bundle banner at the top of the shelf
 	-- event cosmetics show while their event runs (and forever once owned); mastery cosmetics always,
-	-- locked until earned; bundle items while their bundle is on sale
+	-- locked until earned; bundle items while their bundle is on sale; Robux exclusives once Robux
+	-- buttons are unlocked
 	local byTier: { [string]: { Catalog.Item } } = {}
 	local events = Catalog.activeEvents()
 	for _, item in Catalog.inCategory(currentTab) do
-		local shown = Catalog.isOffered(item, events) or owns(item) or item.Unlock or liveOffer(item)
+		local shown = Catalog.isOffered(item, events)
+			or owns(item)
+			or item.Unlock
+			or liveOffer(item)
+			or exclusivePrice(item)
 		if shown and (owns(item) or not ShopController.ownedOnly) then
 			local tier = tierOf(item)
 			byTier[tier] = byTier[tier] or {}
@@ -1207,7 +1350,7 @@ end
 -- the bottom, a little larger, centred in the free space between the coins chip and the controls
 -- (and shrunk only if that space is too narrow).
 local ACTION_W, ACTION_H = 84, 56 + Theme.Ledge + 26 -- one Theme.roundAction button
-local ACTIONS = 5 -- Shop, Spin, Daily, Settings, Coins
+local ACTIONS = 6 -- Bundles, Shop, Spin, Daily, Settings, Coins
 local ROW_W = ACTIONS * ACTION_W + (ACTIONS - 1) * Theme.Space.L
 local TOUCH_SCALE = 1.25 -- relative to the rest of the HUD
 local actionLayout: UIListLayout

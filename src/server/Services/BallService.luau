@@ -117,6 +117,8 @@ local function setState(ball: Ball, state: string)
 	ball.part:SetAttribute(Types.Attr.BallState, state)
 end
 
+local TRAIL_LIFETIME = 0.25
+
 local function applyLook(ball: Ball)
 	local def = BallDefinitions.get(ball.type)
 	local part = ball.part
@@ -125,11 +127,17 @@ local function applyLook(ball: Ball)
 	part.Color = def.Color
 	part.Material = def.Material
 	part:SetAttribute(Types.Attr.BallType, ball.type)
-	part:SetAttribute("Pumpkin", nil) -- the Jack-o'-Lantern skin's pumpkin (applyOwnerLook)
+	part:SetAttribute("SkinPattern", nil) -- a patterned skin (applyOwnerLook, BallSkinController)
+	part:SetAttribute("SkinModel", nil) -- a model skin (applyOwnerLook, BallSkinController)
+	part:SetAttribute("SkinVariant", nil) -- a Legendary skin's form for this pickup (applyOwnerLook)
+	part.Reflectance = 0
 	local trail = part:FindFirstChild("Trail") :: Trail?
 	if trail then
 		trail.Enabled = def.Trail
 		trail.Color = ColorSequence.new(def.Color)
+		trail.Lifetime = TRAIL_LIFETIME
+		trail.WidthScale = NumberSequence.new(1)
+		trail.LightEmission = 0
 	end
 	local light = part:FindFirstChild("TypeLight") :: PointLight?
 	if light then
@@ -155,8 +163,22 @@ local function applyOwnerLook(ball: Ball, c: any)
 	if look.material then
 		part.Material = look.material
 	end
-	if look.pumpkin then
-		part:SetAttribute("Pumpkin", true)
+	if look.reflectance then
+		part.Reflectance = look.reflectance
+	end
+	if look.model then
+		part:SetAttribute("SkinModel", look.model)
+	end
+	-- a Legendary skin shows a fresh form on every pickup; its holder sees a flourish as it swaps
+	if look.variants and #look.variants > 0 then
+		local form = S.ShopService.pickForm(c, look.variants)
+		part:SetAttribute("SkinVariant", form)
+		if c.player then
+			S.NetService.send(c.player, "SkinForm", { form = form, model = look.model })
+		end
+	end
+	if look.pattern then
+		part:SetAttribute("SkinPattern", look.pattern)
 	end
 	local trail = part:FindFirstChild("Trail") :: Trail?
 	if trail and look.trail and #look.trail > 0 then
@@ -172,6 +194,12 @@ local function applyOwnerLook(ball: Ball, c: any)
 		end
 		trail.Color = ColorSequence.new(keys)
 		trail.Enabled = true
+		local style = look.trailStyle -- an exclusive trail: longer, wider, glowing
+		if style then
+			trail.Lifetime = style.lifetime or TRAIL_LIFETIME
+			trail.WidthScale = NumberSequence.new(style.width or 1, 0)
+			trail.LightEmission = style.glow or 0
+		end
 	end
 end
 
@@ -195,7 +223,7 @@ local function makePart(): Part
 	trail.Name = "Trail"
 	trail.Attachment0 = a0
 	trail.Attachment1 = a1
-	trail.Lifetime = 0.25
+	trail.Lifetime = TRAIL_LIFETIME
 	trail.Enabled = false
 	trail.Parent = p
 	local light = Instance.new("PointLight")
@@ -399,6 +427,9 @@ function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: 
 	-- Flight is deterministic, so clients render the arc locally from this launch record and
 	-- reconcile to the authoritative ball's state changes (see BallVisualController).
 	local look = if ball.type == "Standard" then S.ShopService.ballLook(c) else nil
+	if look then
+		look.variant = part:GetAttribute("SkinVariant") -- the thrown ball keeps the form it was picked up in
+	end
 	S.NetService.broadcast("BallLaunched", {
 		look = look,
 		id = ball.id,

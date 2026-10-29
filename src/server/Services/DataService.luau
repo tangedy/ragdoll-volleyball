@@ -31,7 +31,12 @@ export type Profile = {
 	Level: number,
 	XP: number,
 	-- schema v12: today's quest progress and claimed chests by Config.Quests.List id (QuestService)
-	DailyQuests: { date: string, progress: { [string]: number }, claimed: { [string]: boolean } },
+	DailyQuests: {
+		date: string,
+		progress: { [string]: number },
+		claimed: { [string]: boolean },
+		backAt: { [string]: number }?,
+	},
 	LoginStreak: { day: number, lastDate: string, claimedDate: string },
 	IndexOwned: { [string]: boolean },
 	CurrentWinStreak: number,
@@ -53,6 +58,8 @@ export type Profile = {
 	RewardPicks: { { source: string, ids: { string }, rarity: string, coins: number } },
 	-- lifetime credited knockouts by power-ball type (Power Ball Mastery, ShopService.recordPowerKO)
 	PowerKOs: { [string]: number },
+	-- quests ever claimed (unix time of the first claim; it gets the short Config.Quests.FirstCooldown)
+	QuestFirstClaims: { [string]: number },
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -82,6 +89,7 @@ local function default(): Profile
 		BonusSpins = {},
 		RewardPicks = {},
 		PowerKOs = {},
+		QuestFirstClaims = {},
 		Lock = nil,
 	}
 end
@@ -186,6 +194,9 @@ function DataService.migrate(old: any): Profile
 	end
 	if type(data.PowerKOs) ~= "table" then
 		data.PowerKOs = {}
+	end
+	if type(data.QuestFirstClaims) ~= "table" then
+		data.QuestFirstClaims = {}
 	end
 	data.SchemaVersion = D.SchemaVersion
 	return data

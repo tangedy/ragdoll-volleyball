@@ -31,8 +31,15 @@ export type Item = {
 	-- that power ball (Ball = "All": that many with each type). Never sold, spun or rolled; on the
 	-- shelf locked, with progress, until earned.
 	Unlock: { Ball: string, Knockouts: number }?,
+	-- a Robux-exclusive cosmetic: bought only with its own developer product (RobuxProductId, at
+	-- Config.Economy.RobuxPriceByRarity / ByCategory), never sold for coins, spun or rolled. On the shelf with a
+	-- Robux button and an EXCLUSIVE tag. Price is just its value. Epic or Legendary only.
+	Exclusive: boolean?,
 	Data: { [string]: any },
 }
+
+-- The forms a Legendary skin can show (BallModels.Forms): picked one per pickup.
+local FORMS = { "Nice", "Evil", "Glitched" }
 
 local items: { Item } = {
 	-- Ball skins: color/material of YOUR Standard ball while held and in flight.
@@ -43,7 +50,70 @@ local items: { Item } = {
 		Price = 0,
 		RobuxProductId = 0,
 		Default = true,
-		Data = {},
+		Data = { Color = BallDefinitions.get("Standard").Color, Material = Enum.Material.SmoothPlastic }, -- red
+	},
+	{
+		Id = "Skin_Orange",
+		Category = "BallSkin",
+		Name = "Orange",
+		Price = Config.Economy.PriceByRarity.Common,
+		Rarity = "Common",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(255, 140, 30), Material = Enum.Material.SmoothPlastic },
+	},
+	{
+		Id = "Skin_Yellow",
+		Category = "BallSkin",
+		Name = "Yellow",
+		Price = Config.Economy.PriceByRarity.Common,
+		Rarity = "Common",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(255, 215, 40), Material = Enum.Material.SmoothPlastic },
+	},
+	{
+		Id = "Skin_Green",
+		Category = "BallSkin",
+		Name = "Green",
+		Price = Config.Economy.PriceByRarity.Common,
+		Rarity = "Common",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(60, 200, 80), Material = Enum.Material.SmoothPlastic },
+	},
+	{
+		Id = "Skin_Blue",
+		Category = "BallSkin",
+		Name = "Blue",
+		Price = Config.Economy.PriceByRarity.Common,
+		Rarity = "Common",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(40, 120, 255), Material = Enum.Material.SmoothPlastic },
+	},
+	{
+		Id = "Skin_Purple",
+		Category = "BallSkin",
+		Name = "Purple",
+		Price = Config.Economy.PriceByRarity.Common,
+		Rarity = "Common",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(150, 70, 230), Material = Enum.Material.SmoothPlastic },
+	},
+	{
+		Id = "Skin_DarkGray",
+		Category = "BallSkin",
+		Name = "Dark Gray",
+		Price = Config.Economy.PriceByRarity.Common,
+		Rarity = "Common",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(70, 72, 80), Material = Enum.Material.SmoothPlastic },
+	},
+	{
+		Id = "Skin_White",
+		Category = "BallSkin",
+		Name = "White",
+		Price = Config.Economy.PriceByRarity.Common,
+		Rarity = "Common",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(245, 245, 245), Material = Enum.Material.SmoothPlastic },
 	},
 	{
 		Id = "Skin_Bubblegum",
@@ -72,14 +142,237 @@ local items: { Item } = {
 		RobuxProductId = 0,
 		Data = { Color = Color3.fromRGB(220, 245, 255), Material = Enum.Material.Ice },
 	},
+	-- Data.Pattern: drawn on the ball by BallSkinController ("Zebra": black bands welded around a
+	-- white ball; "Rainbow": the color cycles through the hues). Data.Reflectance: a metallic shine.
+	{
+		Id = "Skin_Zebra",
+		Category = "BallSkin",
+		Name = "Zebra",
+		Price = Config.Economy.PriceByRarity.Rare,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(245, 245, 245), Material = Enum.Material.SmoothPlastic, Pattern = "Zebra" },
+	},
+	{
+		Id = "Skin_Rainbow",
+		Category = "BallSkin",
+		Name = "Rainbow",
+		Price = Config.Economy.PriceByRarity.Rare,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(255, 60, 60), Material = Enum.Material.SmoothPlastic, Pattern = "Rainbow" },
+	},
+	{
+		Id = "Skin_Silver",
+		Category = "BallSkin",
+		Name = "Silver",
+		Price = Config.Economy.PriceByRarity.Rare,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(205, 212, 222), Material = Enum.Material.Foil, Reflectance = 0.45 },
+	},
 	{
 		Id = "Skin_Gold",
 		Category = "BallSkin",
 		Name = "Gold",
+		Price = Config.Economy.PriceByRarity.Rare,
+		Rarity = "Rare", -- was Epic until Oct 29; owners keep it
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(255, 196, 40), Material = Enum.Material.Foil, Reflectance = 0.35 },
+	},
+	-- Data.Model: a BallModels look shown in place of the sphere (BallSkinController); the sphere's
+	-- size and physics never change. Color is the look's main color (the fallback if it can't build).
+	{
+		Id = "Skin_Basketball",
+		Category = "BallSkin",
+		Name = "Basketball",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
 		RobuxProductId = 0,
-		Data = { Color = Color3.fromRGB(255, 200, 50), Material = Enum.Material.Foil },
+		Data = { Color = Color3.fromRGB(232, 110, 32), Material = Enum.Material.SmoothPlastic, Model = "Basketball" },
+	},
+	{
+		Id = "Skin_Soccer",
+		Category = "BallSkin",
+		Name = "Soccer Ball",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(245, 245, 245), Material = Enum.Material.SmoothPlastic, Model = "Soccer" },
+	},
+	{
+		Id = "Skin_Tennis",
+		Category = "BallSkin",
+		Name = "Tennis Ball",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(206, 232, 58), Material = Enum.Material.SmoothPlastic, Model = "Tennis" },
+	},
+	{
+		Id = "Skin_EightBall",
+		Category = "BallSkin",
+		Name = "Eight Ball",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(18, 18, 22), Material = Enum.Material.SmoothPlastic, Model = "EightBall" },
+	},
+	-- effect skins: model skins with light effects (BallModels: Neon, a light, embers or sparkles)
+	{
+		Id = "Skin_Meteor",
+		Category = "BallSkin",
+		Name = "Meteor",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(62, 50, 46), Material = Enum.Material.Basalt, Model = "Meteor" }, -- goes with the Meteor Strike finisher
+	},
+	{
+		Id = "Skin_DiscoBall",
+		Category = "BallSkin",
+		Name = "Disco Ball",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(205, 210, 222), Material = Enum.Material.Foil, Model = "DiscoBall" },
+	},
+	{
+		Id = "Skin_Planet",
+		Category = "BallSkin",
+		Name = "Planet",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(96, 70, 170), Material = Enum.Material.SmoothPlastic, Model = "Planet" },
+	},
+	{
+		Id = "Skin_Bomb",
+		Category = "BallSkin",
+		Name = "Bomb",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Color = Color3.fromRGB(32, 32, 38), Material = Enum.Material.SmoothPlastic, Model = "Bomb" },
+	},
+	-- The Legendary set (Verity, Falsity, Lovity, Cruelty): model skins with Data.Variants, the forms
+	-- one of which shows on each pickup (never the same twice in a row; ShopService.pickForm). Every
+	-- skin has the same three forms, each in its own colors (BallModels).
+	{
+		Id = "Skin_Verity",
+		Category = "BallSkin",
+		Name = "Verity",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Data = {
+			Color = Color3.fromRGB(246, 242, 230),
+			Material = Enum.Material.SmoothPlastic,
+			Model = "Verity",
+			Variants = FORMS,
+		}, -- pearl white and gold
+	},
+	{
+		Id = "Skin_Falsity",
+		Category = "BallSkin",
+		Name = "Falsity",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Data = {
+			Color = Color3.fromRGB(112, 62, 172),
+			Material = Enum.Material.SmoothPlastic,
+			Model = "Falsity",
+			Variants = FORMS,
+		}, -- purple, with a smiling and a frowning mask
+	},
+	{
+		Id = "Skin_Lovity",
+		Category = "BallSkin",
+		Name = "Lovity",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Data = {
+			Color = Color3.fromRGB(255, 150, 196),
+			Material = Enum.Material.SmoothPlastic,
+			Model = "Lovity",
+			Variants = FORMS,
+		}, -- pink, scattered with hearts
+	},
+	{
+		Id = "Skin_Cruelty",
+		Category = "BallSkin",
+		Name = "Cruelty",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Data = {
+			Color = Color3.fromRGB(184, 22, 34),
+			Material = Enum.Material.SmoothPlastic,
+			Model = "Cruelty",
+			Variants = FORMS,
+		}, -- crimson, with a jagged black bite
+	},
+	-- Robux exclusives (Item.Exclusive): model skins with their own light and particles; the two
+	-- Legendaries also shift between the Legendary forms on every pickup (Data.Variants)
+	{
+		Id = "Skin_Galaxy",
+		Category = "BallSkin",
+		Name = "Galaxy",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Color = Color3.fromRGB(14, 12, 40),
+			Material = Enum.Material.SmoothPlastic,
+			Model = "Galaxy",
+		}, -- stars, nebulae and a twinkle
+	},
+	{
+		Id = "Skin_StormCore",
+		Category = "BallSkin",
+		Name = "Storm Core",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Color = Color3.fromRGB(120, 220, 255),
+			Material = Enum.Material.SmoothPlastic,
+			Model = "StormCore",
+		}, -- plasma core, jumping lightning arcs
+	},
+	{
+		Id = "Skin_Sovereign",
+		Category = "BallSkin",
+		Name = "Sovereign",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Color = Color3.fromRGB(240, 190, 60),
+			Material = Enum.Material.SmoothPlastic,
+			Model = "Sovereign",
+			Variants = FORMS,
+		}, -- gold, jewels and a floating crown
+	},
+	{
+		Id = "Skin_Phoenix",
+		Category = "BallSkin",
+		Name = "Phoenix",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Color = Color3.fromRGB(255, 120, 30),
+			Material = Enum.Material.SmoothPlastic,
+			Model = "Phoenix",
+			Variants = FORMS,
+		}, -- flame plumes and sparks
 	},
 	{
 		Id = "Skin_Witchbrew",
@@ -103,8 +396,8 @@ local items: { Item } = {
 		Event = "Halloween",
 		Limited = true,
 		Bundle = "Halloween2026", -- Haunted Bundle only
-		-- Pumpkin: your Standard balls wear the carved Halloween pumpkin all year (HalloweenController)
-		Data = { Color = Config.Halloween.Ball.Body, Material = Enum.Material.SmoothPlastic, Pumpkin = true },
+		-- your Standard balls wear the carved Halloween pumpkin all year (BallModels "Pumpkin")
+		Data = { Color = Config.Halloween.Ball.Body, Material = Enum.Material.SmoothPlastic, Model = "Pumpkin" },
 	},
 	-- Trails behind YOUR throws.
 	{ Id = "Trail_None", Category = "Trail", Name = "None", Price = 0, RobuxProductId = 0, Default = true, Data = {} },
@@ -165,6 +458,75 @@ local items: { Item } = {
 		Data = {
 			Colors = { Color3.fromRGB(255, 140, 20), Color3.fromRGB(40, 140, 255), Color3.fromRGB(170, 70, 230) },
 		},
+	},
+	-- Robux exclusives: longer, wider, glowing trails that shed sparkles (Catalog.trailStyle)
+	{
+		Id = "Trail_Aurora",
+		Category = "Trail",
+		Name = "Aurora",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Colors = { Color3.fromRGB(90, 255, 170), Color3.fromRGB(60, 200, 255), Color3.fromRGB(170, 90, 255) },
+			Lifetime = 0.6,
+			Width = 1.6,
+			Glow = 0.8,
+			Sparkle = { Color3.fromRGB(200, 255, 230), Color3.fromRGB(160, 140, 255) },
+			SparkleRate = 18,
+		}, -- northern lights
+	},
+	{
+		Id = "Trail_NeonPulse",
+		Category = "Trail",
+		Name = "Neon Pulse",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Colors = { Color3.fromRGB(255, 60, 200), Color3.fromRGB(255, 255, 255), Color3.fromRGB(40, 230, 255) },
+			Lifetime = 0.5,
+			Width = 1.3,
+			Glow = 1,
+			Sparkle = { Color3.fromRGB(255, 120, 220), Color3.fromRGB(80, 240, 255) },
+			SparkleRate = 22,
+		}, -- hot pink to cyan
+	},
+	{
+		Id = "Trail_Stardust",
+		Category = "Trail",
+		Name = "Stardust",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Colors = { Color3.fromRGB(255, 236, 150), Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 190, 70) },
+			Lifetime = 0.8,
+			Width = 1.8,
+			Glow = 1,
+			Sparkle = { Color3.fromRGB(255, 250, 220), Color3.fromRGB(255, 210, 90) },
+			SparkleRate = 35,
+		}, -- a comet's tail of gold
+	},
+	{
+		Id = "Trail_VoidRift",
+		Category = "Trail",
+		Name = "Void Rift",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Colors = { Color3.fromRGB(170, 80, 255), Color3.fromRGB(40, 10, 70), Color3.fromRGB(10, 0, 20) },
+			Lifetime = 0.8,
+			Width = 2,
+			Glow = 0.4,
+			Sparkle = { Color3.fromRGB(200, 120, 255), Color3.fromRGB(90, 255, 230) },
+			SparkleRate = 30,
+		}, -- a tear in space
 	},
 	-- Titles shown on your name tag.
 	{
@@ -403,6 +765,68 @@ local items: { Item } = {
 		-- Style "Ghost": a special name tag, pale and see-through and framed in ghosts (ShopService)
 		Data = { Text = "Ghost", Style = "Ghost", Icon = "👻" },
 	},
+	-- Robux exclusives: gradient titles, each letter its own color (TitleStyle); the Legendaries
+	-- shimmer, the gradient sliding along them (TitleFxController)
+	{
+		Id = "Title_NeonAce",
+		Category = "Title",
+		Name = "Neon Ace",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Text = "Neon Ace",
+			Gradient = { Color3.fromRGB(40, 230, 255), Color3.fromRGB(255, 60, 200) },
+		}, -- cyan into pink
+	},
+	{
+		Id = "Title_MidnightMenace",
+		Category = "Title",
+		Name = "Midnight Menace",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Text = "Midnight Menace",
+			Gradient = { Color3.fromRGB(120, 80, 255), Color3.fromRGB(40, 140, 255), Color3.fromRGB(200, 120, 255) },
+		}, -- purple and blue
+	},
+	{
+		Id = "Title_TheChosenOne",
+		Category = "Title",
+		Name = "The Chosen One",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Text = "The Chosen One",
+			Gradient = { Color3.fromRGB(255, 210, 70), Color3.fromRGB(255, 255, 230), Color3.fromRGB(255, 160, 40) },
+			Animated = true,
+		}, -- shimmering gold
+	},
+	{
+		Id = "Title_MainCharacter",
+		Category = "Title",
+		Name = "Main Character",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true,
+		Data = {
+			Text = "Main Character",
+			Gradient = {
+				Color3.fromRGB(255, 80, 80),
+				Color3.fromRGB(255, 200, 60),
+				Color3.fromRGB(80, 230, 120),
+				Color3.fromRGB(60, 160, 255),
+				Color3.fromRGB(200, 100, 255),
+			},
+			Animated = true,
+		}, -- a rainbow that never stops
+	},
 	-- Finishers: the cutscene everyone in the match watches when you score the final knockout.
 	-- Data.Module names a module in ReplicatedStorage.Shared.Finishers.
 	{
@@ -483,7 +907,8 @@ local items: { Item } = {
 		Name = "Meteor Strike",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0,
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Module = "Meteor", Icon = "☄️" },
 	},
 	{
@@ -504,8 +929,18 @@ local items: { Item } = {
 		Name = "Destiny Arrives",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0,
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Module = "DestinyArrives", Icon = "🌀" },
+	},
+	{
+		Id = "Finisher_Supernova",
+		Category = "Finisher",
+		Name = "Supernova",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Data = { Module = "Supernova", Icon = "🌟" }, -- the Finisher Chest's coin Legendary (Oct 29)
 	},
 	{
 		Id = "Finisher_PurpleFlash",
@@ -522,7 +957,8 @@ local items: { Item } = {
 		Name = "Black Hole",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0,
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Module = "BlackHole", Icon = "🕳️" },
 	},
 	{
@@ -549,7 +985,8 @@ local items: { Item } = {
 		Name = "Out of the Park!",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0,
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Module = "OutOfThePark", Icon = "⚾" },
 	},
 	-- Intro poses: what you do while the match-start camera pans across your team.
@@ -650,7 +1087,8 @@ local items: { Item } = {
 		Name = "Dab",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0,
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Pose = "Dab", Icon = "😎" },
 	},
 	{
@@ -659,8 +1097,36 @@ local items: { Item } = {
 		Name = "Robot",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0,
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Pose = "Robot", Icon = "🤖" },
+	},
+	{
+		Id = "Pose_Floss",
+		Category = "Pose",
+		Name = "The Floss",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Pose = "Floss", Icon = "🕺" },
+	},
+	{
+		Id = "Pose_HeartHands",
+		Category = "Pose",
+		Name = "Heart Hands",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Pose = "HeartHands", Icon = "🫶" },
+	},
+	{
+		Id = "Pose_PowerUp",
+		Category = "Pose",
+		Name = "Power Up",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Data = { Pose = "PowerUp", Icon = "⚡" }, -- the Gesture Chest's coin Legendary; a golden aura flares (IntroPoses Fx)
 	},
 	{
 		Id = "Pose_TrophyLift",
@@ -668,7 +1134,8 @@ local items: { Item } = {
 		Name = "Trophy Lift",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0,
+		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Pose = "TrophyLift", Icon = "🏆" }, -- its pose plays a confetti burst (IntroPoses Fx)
 	},
 	{
@@ -739,16 +1206,30 @@ function Catalog.activeEvents(): { [string]: boolean }
 	return { Halloween = rs:GetAttribute("Halloween") == true }
 end
 
--- Is this item on sale (for coins) right now? Event items only while their event runs; bundle
--- and mastery items never.
+-- Is this item on sale (for coins) right now? Event items only while their event runs; bundle,
+-- mastery and Robux-exclusive items never.
 function Catalog.isOffered(item: Item, events: { [string]: boolean }?): boolean
-	if item.Bundle or item.Unlock then
+	if item.Bundle or item.Unlock or item.Exclusive then
 		return false
 	end
 	if not item.Event then
 		return true
 	end
 	return (events or Catalog.activeEvents())[item.Event] == true
+end
+
+-- A Robux-exclusive item's price in Robux (Config.Economy.RobuxPriceByCategory for titles and
+-- gestures, else RobuxPriceByRarity), or nil for any other item.
+function Catalog.robuxPrice(item: Item): number?
+	if not item.Exclusive then
+		return nil
+	end
+	local rarity = Catalog.rarity(item)
+	local byCategory = (Config.Economy.RobuxPriceByCategory :: any)[item.Category]
+	if byCategory and byCategory[rarity] then
+		return byCategory[rarity]
+	end
+	return (Config.Economy.RobuxPriceByRarity :: any)[rarity]
 end
 
 -- Is a limited-time Robux bundle (Config.CoinShop.Offers) on sale at `now` (unix seconds)? Inside
@@ -774,6 +1255,24 @@ function Catalog.unlockProgress(item: Item, powerKOs: { [string]: number }?): (n
 		low = math.min(low, tonumber(kos[t]) or 0)
 	end
 	return math.min(u.Knockouts, low), u.Knockouts
+end
+
+-- How a trail draws past its colors: plain trails use the ball's defaults; exclusive ones set
+-- Data.Lifetime (seconds), Data.Width (x the ball's trail width), Data.Glow (LightEmission 0-1) and
+-- Data.Sparkle (particle colors shed along the path, at Data.SparkleRate a second).
+export type TrailStyle = {
+	lifetime: number?,
+	width: number?,
+	glow: number?,
+	sparkle: { Color3 }?,
+	sparkleRate: number?,
+}
+function Catalog.trailStyle(item: Item): TrailStyle?
+	local d = item.Data
+	if not (d.Lifetime or d.Width or d.Glow or d.Sparkle) then
+		return nil
+	end
+	return { lifetime = d.Lifetime, width = d.Width, glow = d.Glow, sparkle = d.Sparkle, sparkleRate = d.SparkleRate }
 end
 
 -- The equipped item for a category from a profile's Equipped map, falling back to the default.

@@ -21,6 +21,7 @@ local ProjectileMath = require(Shared.ProjectileMath)
 local Net = require(script.Parent.Net)
 local HubController = require(script.Parent.HubController)
 local OutlineController = require(script.Parent.OutlineController)
+local GraphicsController = require(script.Parent.GraphicsController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
 local player = Players.LocalPlayer
@@ -331,8 +332,17 @@ function BallVisualController.applyLook(part: Part, look: any)
 	if typeof(look.material) == "EnumItem" and (look.material :: EnumItem).EnumType == Enum.Material then
 		part.Material = look.material :: any
 	end
-	if look.pumpkin == true then
-		part:SetAttribute("Pumpkin", true) -- the Jack-o'-Lantern skin (HalloweenController)
+	if type(look.reflectance) == "number" then
+		part.Reflectance = look.reflectance
+	end
+	if type(look.model) == "string" then
+		part:SetAttribute("SkinModel", look.model) -- Jack-o'-Lantern, Basketball... (BallSkinController)
+	end
+	if type(look.variant) == "string" then
+		part:SetAttribute("SkinVariant", look.variant) -- the Legendary form it was picked up in
+	end
+	if type(look.pattern) == "string" then
+		part:SetAttribute("SkinPattern", look.pattern) -- Zebra / Rainbow (BallSkinController)
 	end
 	if type(look.trail) == "table" and #look.trail > 0 and not part:FindFirstChildOfClass("Trail") then
 		local a0 = Instance.new("Attachment")
@@ -354,14 +364,53 @@ function BallVisualController.applyLook(part: Part, look: any)
 			table.insert(keys, ColorSequenceKeypoint.new(1, keys[1].Value))
 		end
 		if #keys >= 2 then
+			local style = if type(look.trailStyle) == "table" then look.trailStyle else {}
 			local trail = Instance.new("Trail")
 			trail.Attachment0 = a0
 			trail.Attachment1 = a1
-			trail.Lifetime = 0.35
+			trail.Lifetime = if type(style.lifetime) == "number" then style.lifetime else 0.35
 			trail.Color = ColorSequence.new(keys)
 			trail.Transparency = NumberSequence.new(0.1, 1)
-			trail.LightEmission = 0.5
+			trail.LightEmission = if type(style.glow) == "number" then style.glow else 0.5
+			if type(style.width) == "number" then
+				trail.WidthScale = NumberSequence.new(style.width, 0)
+			end
 			trail.Parent = part
+			-- an exclusive trail's sparkles, shed along the path (fewer in performance mode)
+			if type(style.sparkle) == "table" and #style.sparkle > 0 then
+				local cols = {}
+				for i, col in style.sparkle do
+					if typeof(col) == "Color3" then
+						table.insert(
+							cols,
+							ColorSequenceKeypoint.new(
+								if #style.sparkle == 1 then 0 else (i - 1) / (#style.sparkle - 1),
+								col
+							)
+						)
+					end
+				end
+				if #cols == 1 then
+					table.insert(cols, ColorSequenceKeypoint.new(1, cols[1].Value))
+				end
+				if #cols >= 2 then
+					local rate = if type(style.sparkleRate) == "number" then style.sparkleRate else 25
+					local e = Instance.new("ParticleEmitter")
+					e.Name = "TrailSparkle"
+					e.Color = ColorSequence.new(cols)
+					e.LightEmission = 1
+					e.Size = NumberSequence.new({
+						NumberSequenceKeypoint.new(0, 0.35),
+						NumberSequenceKeypoint.new(1, 0),
+					})
+					e.Lifetime = NumberRange.new(0.3, 0.6)
+					e.Speed = NumberRange.new(0.5, 1.5)
+					e.SpreadAngle = Vector2.new(180, 180)
+					e.Drag = 3
+					e.Rate = if GraphicsController.low then rate * Config.Graphics.LowParticleScale else rate
+					e.Parent = part
+				end
+			end
 		end
 	end
 end

@@ -10,6 +10,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local BallDefinitions = require(Shared.BallDefinitions)
 local Config = require(Shared.Config)
 local Catalog = require(Shared.Catalog)
+local TitleStyle = require(Shared.TitleStyle)
 local NetSchema = require(Shared.NetSchema)
 
 local ShopService = {}
@@ -97,6 +98,9 @@ function ShopService.buy(c: any, id: string): (boolean, string?)
 	end
 	if item.Unlock then
 		return false, "Earn it with power-ball knockouts"
+	end
+	if item.Exclusive then
+		return false, "Robux exclusive"
 	end
 	if not Catalog.isOffered(item) then
 		return false, ("Only during %s"):format(item.Event or "its event")
@@ -189,7 +193,9 @@ end
 
 -- Name-tag badge (RichText): level, win-streak flame and title, the title in its rarity's color
 -- (Legendary ones framed in ✦). The Ghost title (Data.Style "Ghost") is its own special tag: pale,
--- see-through and framed in ghosts.
+-- see-through and framed in ghosts. A gradient title (Data.Gradient, the Robux exclusives) colors
+-- each letter along its gradient (TitleStyle); an animated one (Data.Animated) shimmers, re-drawn
+-- on each client by TitleFxController from the badge's TitlePrefix / TitleItem attributes.
 function ShopService.applyCosmetics(c: any)
 	if not c.profile then
 		return
@@ -201,7 +207,20 @@ function ShopService.applyCosmetics(c: any)
 	end
 	local item = Catalog.equipped(p.Equipped, "Title")
 	local title = item.Data.Text
-	if title and title ~= "" then
+	local gradient: { Color3 }? = item.Data.Gradient
+	if title and title ~= "" and gradient then
+		local frame = if Catalog.rarity(item) == "Legendary"
+			then ('<font color="#%s">✦</font>'):format(gradient[1]:ToHex())
+			else ""
+		local prefix = badge .. " · "
+		badge = prefix .. TitleStyle.framed(title, gradient, frame, 0)
+		S.CharacterService.setBadge(
+			c,
+			badge,
+			if item.Data.Animated then { prefix = prefix, item = item.Id, frame = frame } else nil
+		)
+		return
+	elseif title and title ~= "" then
 		local rarity = Catalog.rarity(item)
 		title = string.gsub(string.gsub(string.gsub(title, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
 		if item.Data.Style == "Ghost" then
@@ -221,10 +240,24 @@ function ShopService.applyCosmetics(c: any)
 end
 
 -- Cosmetic look for a Standard ball owned by this combatant, or nil for the default look.
--- `pumpkin`: the Jack-o'-Lantern skin, drawn as a carved pumpkin all year (HalloweenController).
-function ShopService.ballLook(
-	c: any
-): { color: Color3?, material: Enum.Material?, trail: { Color3 }?, pumpkin: boolean? }?
+-- `pattern`: "Zebra" or "Rainbow", and `model`: a BallModels look shown in place of the sphere (the
+-- Jack-o'-Lantern's pumpkin, the Basketball...), both drawn by BallSkinController. `reflectance`:
+-- metal skins. `trailStyle`: an exclusive trail's longer, wider, brighter look and sparkles
+-- (Catalog.trailStyle). `variants`: a Legendary skin's forms (Data.Variants), one picked per pickup
+-- (ShopService.pickForm); `variant`: the form a thrown ball is showing (BallService adds it).
+type TrailStyle = Catalog.TrailStyle
+
+function ShopService.ballLook(c: any): {
+	color: Color3?,
+	material: Enum.Material?,
+	reflectance: number?,
+	pattern: string?,
+	trail: { Color3 }?,
+	trailStyle: TrailStyle?,
+	model: string?,
+	variants: { string }?,
+	variant: string?,
+}?
 	if not c or not c.profile then
 		return nil
 	end
@@ -236,9 +269,30 @@ function ShopService.ballLook(
 	return {
 		color = skin.Data.Color,
 		material = skin.Data.Material,
+		reflectance = skin.Data.Reflectance,
+		pattern = skin.Data.Pattern,
 		trail = trail.Data.Colors,
-		pumpkin = if skin.Data.Pumpkin then true else nil,
+		trailStyle = Catalog.trailStyle(trail),
+		model = skin.Data.Model,
+		variants = skin.Data.Variants,
 	}
+end
+
+-- The form a Legendary skin shows for this pickup: a random one of `variants`, never the one this
+-- combatant's last pickup showed (with a single form, that one).
+function ShopService.pickForm(c: any, variants: { string }): string
+	local choices = {}
+	for _, v in variants do
+		if v ~= c.lastSkinForm then
+			table.insert(choices, v)
+		end
+	end
+	if #choices == 0 then
+		choices = variants
+	end
+	local form = choices[math.random(1, #choices)]
+	c.lastSkinForm = form
+	return form
 end
 
 -- The intro pose a combatant strikes in the match-start camera pan. Bots show off a random one.
@@ -295,8 +349,8 @@ end
 function ShopService.pickBotFinisher(): Catalog.Item
 	local byTier: { [string]: { Catalog.Item } } = {}
 	for _, item in Catalog.inCategory("Finisher") do
-		if item.Event then
-			continue -- bots don't show off event limiteds
+		if item.Event or item.Exclusive then
+			continue -- bots don't show off event limiteds or Robux exclusives
 		end
 		local tier = Catalog.rarity(item)
 		byTier[tier] = byTier[tier] or {}
