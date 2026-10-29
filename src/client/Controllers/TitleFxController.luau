@@ -12,7 +12,9 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Catalog = require(Shared:WaitForChild("Catalog"))
+local Config = require(Shared:WaitForChild("Config"))
 local TitleStyle = require(Shared:WaitForChild("TitleStyle"))
+local GraphicsController = require(script.Parent.GraphicsController)
 
 local TitleFxController = {}
 
@@ -51,7 +53,8 @@ function TitleFxController.start()
 		if now < nextAt then
 			return
 		end
-		nextAt = now + 1 / FPS
+		-- each redraw rebuilds the rich text and re-lays out the label: fewer in performance mode
+		nextAt = now + 1 / (if GraphicsController.low then Config.Graphics.LowTitleFps else FPS)
 		local phase = (now * SPEED) % 1
 		for _, badge in CollectionService:GetTagged(TitleStyle.Tag) do
 			draw(badge, phase)

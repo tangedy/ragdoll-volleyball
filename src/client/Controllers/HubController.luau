@@ -14,6 +14,7 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local GraphicsController = require(script.Parent.GraphicsController)
 
 local player = Players.LocalPlayer
 
@@ -68,6 +69,8 @@ end
 local function animateProps(dt: number)
 	local boost = math.max(0, wheelBoostUntil - os.clock())
 	wheelAngle += dt * (IDLE_WHEEL_SPEED + boost * 4)
+	local cam = Workspace.CurrentCamera
+	local camPos = if cam then cam.CFrame.Position else nil
 	for _, m in taggedList("HubWheel") do
 		if m:IsA("Model") and m.PrimaryPart then
 			local home = wheelHome[m]
@@ -75,16 +78,21 @@ local function animateProps(dt: number)
 				home = m:GetPivot()
 				wheelHome[m] = home
 			end
+			-- a whole model moves on every PivotTo: skip the ones too far away to see
+			if camPos and (home.Position - camPos).Magnitude > Config.Graphics.PropCullDistance then
+				continue
+			end
 			-- the pivot is the disc, whose axis (local X) points out of the wall
 			local rate = m:GetAttribute("SpinRate")
 			m:PivotTo(home * CFrame.Angles(wheelAngle * (if type(rate) == "number" then rate else 1), 0, 0))
 		end
 	end
 	-- firelight (the haunted wheel's pumpkins, candles and braziers) flickers about its Base brightness
+	-- (lights that performance mode switched off are skipped)
 	local now = os.clock()
 	for i, l in taggedList("HubFlicker") do
 		local base = l:GetAttribute("Base")
-		if l:IsA("Light") and type(base) == "number" then
+		if l:IsA("Light") and l.Enabled and type(base) == "number" then
 			l.Brightness = base * (0.8 + 0.45 * math.noise(now * 6, i * 3.1))
 		end
 	end
@@ -235,6 +243,7 @@ function HubController.start()
 		lobbyFolder = Workspace:WaitForChild("Lobby", 30)
 	end)
 	local nextOccupantScan = 0
+	local propDt = 0 -- time since the props last moved (performance mode skips frames)
 	RunService.RenderStepped:Connect(function(dt)
 		setHidden(HubController.shouldHide())
 		local lobby = lobbyFolder
@@ -248,7 +257,11 @@ function HubController.start()
 				hideHubOccupants()
 			end
 		else
-			animateProps(dt)
+			propDt += dt
+			if not GraphicsController.low or propDt >= 1 / Config.Graphics.LowPropHz then
+				animateProps(math.min(propDt, 0.25)) -- capped so a hitch doesn't jump the wheel
+				propDt = 0
+			end
 		end
 	end)
 end

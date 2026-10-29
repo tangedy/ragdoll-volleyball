@@ -67,7 +67,7 @@ title.BackgroundTransparency = 1
 title.Font = Enum.Font.FredokaOne
 title.TextScaled = true
 title.TextColor3 = Color3.new(1, 1, 1)
-title.Text = "FLING YOUR FRIENDS!"
+title.Text = "RAGDOLL DODGEBALL"
 title.Rotation = -3
 title.Parent = bg
 stroke(title, 6)
@@ -80,7 +80,7 @@ sub.BackgroundTransparency = 1
 sub.Font = Enum.Font.FredokaOne
 sub.TextScaled = true
 sub.TextColor3 = Color3.fromRGB(255, 225, 120)
-sub.Text = "Grab a ball. Smash your friend. Watch them fly."
+sub.Text = "Fling your friends!"
 sub.Parent = bg
 stroke(sub, 3)
 

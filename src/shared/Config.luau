@@ -588,6 +588,9 @@ Config.Graphics = {
 	WarmupTime = 8, -- ignore the first seconds after joining (loading hitches)
 	LowQualityLevel = 3, -- a Roblox graphics quality of 1-3 (set by hand) starts in performance mode
 	LowParticleScale = 0.4, -- one-shot effect bursts keep this share of their particles
+	LowPropHz = 30, -- performance mode: hub props (wheels, fans) animate at most this often
+	LowTitleFps = 4, -- performance mode: animated titles redraw this many times a second (else 10)
+	PropCullDistance = 180, -- hub wheels this far from the camera stop turning (you can't see them)
 }
 
 Config.Visuals = {

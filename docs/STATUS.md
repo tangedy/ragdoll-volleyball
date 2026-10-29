@@ -1,5 +1,11 @@
 # Implementation status (Oct 24, 2026)
 
+## Oct 29 performance mode, last pass
+
+- **Hub props** (`HubController`): in performance mode the wheels and fans move at most 30 times a second (`Config.Graphics.LowPropHz`). A wheel more than 180 studs from the camera (`PropCullDistance`) doesn't turn at all, since each turn moves its whole model. Flickering lights that are switched off are skipped.
+- **Animated titles** (`TitleFxController`): in performance mode they redraw 4 times a second instead of 10 (`LowTitleFps`).
+- Not run in Studio yet; `selene` and `stylua --check` pass. To check: turn ⚙ Performance mode on in the hub. The prize wheel and fans should still turn smoothly.
+
 ## Oct 28 power-ball mastery, featured ball, fuller chest pools
 
 Not run in Studio yet. `selene`, `luau-lsp` and the 55 offline tests pass. Details are in docs/ECONOMY.md §6.
@@ -226,7 +232,7 @@ None of this has been run in Studio yet. It passes `selene` (0 errors, the same 
 - **Match summary:** the title, the coins earned (tier plus elimination coins), and hits / catches / knockouts.
 - **Daily claim:** today's box pops with a check, the button reads "COME BACK TOMORROW!", then the panel closes itself and the coins fly to the counter.
 - **Tutorial step 1:** "Walk over a ball." is replaced by gold chevron arrows on the floor from the player to the nearest ball they can pick up, with a pulsing ring under it (`BallGuideController`).
-- **Loading screen:** "FLING YOUR FRIENDS!".
+- **Loading screen:** "RAGDOLL DODGEBALL", with "Fling your friends!" underneath.
 - **Tests:** the F9 suite is 19/19 (adds the elimination-coins test).
 
 
