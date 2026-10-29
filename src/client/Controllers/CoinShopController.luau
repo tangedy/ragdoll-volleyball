@@ -381,7 +381,8 @@ local function renderOffers()
 		local live = Catalog.offerLive(offer, now)
 		local have = offerOwned(offer)
 		if card.inShop then
-			card.root.Visible = live and not have and CoinShopController.unlocked()
+			-- (and not while the shelf shows only what you own)
+			card.root.Visible = live and not have and CoinShopController.unlocked() and not ShopController.ownedOnly
 		else
 			card.root.Visible = live
 			any = any or live

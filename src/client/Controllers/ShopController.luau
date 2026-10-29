@@ -65,6 +65,8 @@ local dailyDot: Frame
 local claimButton: TextButton
 local claimShine: Frame
 local currentTab = "BallSkin"
+-- the "Owned only" switch over the shelf: show just what you own (and the defaults), in every tab
+ShopController.ownedOnly = false
 local profile: any = { coins = 0, owned = {}, equipped = {}, daily = nil }
 local dailyAutoShown = false
 local claimPending = false -- the player pressed Claim and we're waiting for the server's answer
@@ -771,7 +773,8 @@ local function renderShelf()
 	local byTier: { [string]: { Catalog.Item } } = {}
 	local events = Catalog.activeEvents()
 	for _, item in Catalog.inCategory(currentTab) do
-		if Catalog.isOffered(item, events) or owns(item) or item.Unlock or liveOffer(item) then
+		local shown = Catalog.isOffered(item, events) or owns(item) or item.Unlock or liveOffer(item)
+		if shown and (owns(item) or not ShopController.ownedOnly) then
 			local tier = tierOf(item)
 			byTier[tier] = byTier[tier] or {}
 			table.insert(byTier[tier], item)
@@ -803,6 +806,17 @@ local function renderShelf()
 				pick = pick or item.Id
 			end
 		end
+	end
+	if #items == 0 then
+		local empty = Theme.body(shelf, {
+			Name = "Empty",
+			LayoutOrder = 1,
+			Size = UDim2.new(1, 0, 0, 80),
+			Text = "You don't own anything here yet.",
+			TextColor3 = T.inkMuted,
+			ZIndex = 5,
+		})
+		empty:SetAttribute("ShelfSection", true) -- cleared with the sections on the next render
 	end
 	-- keep the selection when re-rendering the same tab; otherwise start on the equipped item
 	local still = false
@@ -1355,11 +1369,47 @@ local function buildShop()
 			tabTags[cat] = newTag(tab)
 		end
 	end
+	-- "Owned only" switch, right-aligned under the tabs (the label flips it too)
+	local filterRow = new("Frame", {
+		Name = "OwnedFilter",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 56),
+		Size = UDim2.fromOffset(190, 36),
+		BackgroundTransparency = 1,
+		ZIndex = 4,
+	}, body)
+	local function setOwnedOnly(on: boolean)
+		ShopController.ownedOnly = on
+		renderShelf()
+	end
+	local filterToggle, setFilter = Theme.toggle(filterRow, false, setOwnedOnly, {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.fromScale(1, 0.5),
+		ZIndex = 5,
+	})
+	local filterLabel = new("TextButton", {
+		Name = "Label",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -(filterToggle.Size.X.Offset + Theme.Space.S), 0.5, 0),
+		Size = UDim2.new(1, -(filterToggle.Size.X.Offset + Theme.Space.S), 1, 0),
+		BackgroundTransparency = 1,
+		FontFace = Theme.LabelFace,
+		Text = "Owned only",
+		TextSize = 18,
+		TextColor3 = T.ink,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 5,
+	}, filterRow)
+	filterLabel.Activated:Connect(function()
+		local on = not ShopController.ownedOnly
+		setFilter(on)
+		setOwnedOnly(on)
+	end)
 	-- the shelf: tier sections of four-wide grids, scrolling down
 	shelf = new("ScrollingFrame", {
 		Name = "Shelf",
-		Position = UDim2.fromOffset(-8, 56),
-		Size = UDim2.new(1, 16, 1, -56),
+		Position = UDim2.fromOffset(-8, 98),
+		Size = UDim2.new(1, 16, 1, -98),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		ScrollBarThickness = 6,
