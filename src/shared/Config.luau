@@ -118,8 +118,8 @@ Config.Player = {
 	MaxHeldBalls = 1,
 	FullChargeTime = 0.65,
 	-- Every throw is full power (tap to fire), so both ends are the same speed.
-	MinThrowSpeed = 140,
-	MaxThrowSpeed = 140,
+	MinThrowSpeed = 147,
+	MaxThrowSpeed = 147,
 	ThrowRecovery = 0.4,
 	RagdollDuration = 1.1,
 	PostHitImmunity = 0.75,
@@ -318,10 +318,10 @@ Config.CoinShop = {
 	-- matches and eliminations, never bundles, dailies or wheel refunds. The timed one runs in real
 	-- time and buying it again adds Minutes. Boosts don't stack past BoostMultiplier.
 	BoostMultiplier = 2,
-	-- Robux placement (release plan, Stage 2): every Robux button stays hidden until the tutorial is
-	-- done and the player has this much play time; the Coins sheet opens by itself only on the
-	-- AutoOpenAfterFails-th coin purchase you couldn't afford, at most once a session.
-	RobuxAfterSeconds = 600,
+	-- Robux placement (release plan, Stage 2): every Robux button stays hidden until the player has
+	-- finished this many matches; the Coins sheet opens by itself only on the AutoOpenAfterFails-th
+	-- coin purchase you couldn't afford, at most once a session.
+	RobuxAfterMatches = 1,
 	AutoOpenAfterFails = 3,
 	Boosts = {
 		{

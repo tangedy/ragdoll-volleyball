@@ -71,7 +71,7 @@ local function processReceipt(receipt: any): Enum.ProductPurchaseDecision
 end
 PurchaseService.process = processReceipt -- the F9 suite feeds it receipts
 
--- Robux buttons show only after the tutorial plus Config.CoinShop.RobuxAfterSeconds of play. The
+-- Robux buttons show only after Config.CoinShop.RobuxAfterMatches finished matches. The
 -- client reads the "RobuxOk" player attribute; purchases themselves are always honoured.
 function PurchaseService.robuxUnlocked(c: any): boolean
 	local p = c.profile
@@ -81,8 +81,7 @@ function PurchaseService.robuxUnlocked(c: any): boolean
 	if RunService:IsStudio() and workspace:GetAttribute("RD_RobuxUnlocked") == true then
 		return true -- Studio testing: workspace:SetAttribute("RD_RobuxUnlocked", true)
 	end
-	return (tonumber(p.TutorialStep) or 0) >= S.TutorialService.Done
-		and (tonumber(p.PlaySeconds) or 0) >= Config.CoinShop.RobuxAfterSeconds
+	return (tonumber(p.Matches) or 0) >= Config.CoinShop.RobuxAfterMatches
 end
 
 -- Grant one limited-time bundle (Config.CoinShop.Offers): its cosmetics and its coins. This runs

@@ -50,7 +50,7 @@ export type Profile = {
 	-- schema v9: 2x coins boosts (BoostService): a timed boost's end (unix seconds) and the lifetime one
 	CoinBoostUntil: number,
 	CoinBoostForever: boolean,
-	-- schema v9: seconds played (PurchaseService unlocks Robux buttons after Config.CoinShop.RobuxAfterSeconds)
+	-- schema v9: seconds played (kept for analytics; Robux buttons unlock on Matches now)
 	PlaySeconds: number,
 	-- schema v11: typed login rewards (RewardService.grant): free bonus spins waiting, oldest first
 	-- (Config.Spin.Wheels ids), and cosmetic picks waiting for the player's choice
@@ -145,8 +145,7 @@ function DataService.migrate(old: any): Profile
 		-- v9: coin boosts; nobody owns one yet
 		data.CoinBoostUntil = tonumber(data.CoinBoostUntil) or 0
 		data.CoinBoostForever = data.CoinBoostForever == true
-		-- returning players who've finished a few matches are past the Robux wait already
-		data.PlaySeconds = if (tonumber(data.Matches) or 0) >= 3 then Config.CoinShop.RobuxAfterSeconds else 0
+		data.PlaySeconds = tonumber(data.PlaySeconds) or 0
 	end
 	if version < 11 then
 		-- v11: the login ladder pays typed rewards. It's still 7 days, so the streak carries over as

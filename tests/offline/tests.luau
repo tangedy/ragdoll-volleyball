@@ -200,7 +200,7 @@ return function(H)
 		local v8 = D.migrate({ SchemaVersion = 8, Coins = 9, Matches = 5, Receipts = { "a" } })
 		eq(v8.Coins, 9, "v8 coins")
 		eq(v8.Receipts[1], "a", "v8 receipts")
-		check(v8.PlaySeconds >= Config.CoinShop.RobuxAfterSeconds, "returning player has to wait for Robux again")
+		check(S.PurchaseService.robuxUnlocked({ profileLoaded = true, profile = v8 }), "returning player is locked out of Robux again")
 		eq(v8.CoinBoostForever, false, "v8 boost flag")
 		local v9 = D.migrate({ SchemaVersion = 9, CoinBoostForever = true, CoinBoostUntil = 77, PlaySeconds = 30 })
 		eq(v9.CoinBoostForever, true, "v9 lifetime boost kept")
@@ -945,13 +945,11 @@ return function(H)
 		check(#c.profile.Receipts <= 100, "receipt list grew to " .. #c.profile.Receipts)
 	end)
 
-	test("Robux buttons unlock after the tutorial plus play time", function()
+	test("Robux buttons unlock after the first finished match", function()
 		local c = H.combatant()
 		check(not S.PurchaseService.robuxUnlocked(c), "new player")
-		c.profile.TutorialStep = S.TutorialService.Done
-		check(not S.PurchaseService.robuxUnlocked(c), "right after the tutorial")
-		c.profile.PlaySeconds = Config.CoinShop.RobuxAfterSeconds
-		check(S.PurchaseService.robuxUnlocked(c), "after the tutorial and play time")
+		c.profile.Matches = Config.CoinShop.RobuxAfterMatches
+		check(S.PurchaseService.robuxUnlocked(c), "after a finished match")
 	end)
 
 	-- Shop, daily, Halloween -------------------------------------------------------------------------

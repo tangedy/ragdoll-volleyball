@@ -929,21 +929,19 @@ test("purchases: every product grants once, retries never double-grant, failures
 	assertTrue(ok, tostring(err))
 end)
 
-test("Robux buttons stay hidden until the tutorial plus play time", function()
+test("Robux buttons stay hidden until the first finished match", function()
 	local studioUnlock = Workspace:GetAttribute("RD_RobuxUnlocked")
 	Workspace:SetAttribute("RD_RobuxUnlocked", nil)
 	local c: any = {
 		profileLoaded = true,
-		profile = { TutorialStep = 1, PlaySeconds = 0 },
+		profile = { TutorialStep = 1, Matches = 0 },
 	}
 	assertTrue(not S.PurchaseService.robuxUnlocked(c), "unlocked for a brand-new player")
-	c.profile.TutorialStep = S.TutorialService.Done
-	assertTrue(not S.PurchaseService.robuxUnlocked(c), "unlocked right after the tutorial")
-	c.profile.PlaySeconds = Config.CoinShop.RobuxAfterSeconds
-	assertTrue(S.PurchaseService.robuxUnlocked(c), "still locked after the tutorial and play time")
+	c.profile.Matches = Config.CoinShop.RobuxAfterMatches
+	assertTrue(S.PurchaseService.robuxUnlocked(c), "still locked after a finished match")
 	Workspace:SetAttribute("RD_RobuxUnlocked", studioUnlock)
 	local migrated = S.DataService.migrate({ SchemaVersion = 8, Matches = 5 })
-	assertTrue(migrated.PlaySeconds >= Config.CoinShop.RobuxAfterSeconds, "a returning player waits again")
+	assertTrue(S.PurchaseService.robuxUnlocked({ profileLoaded = true, profile = migrated }), "a returning player is locked again")
 	assertTrue(migrated.CoinBoostForever == false and migrated.CoinBoostUntil == 0, "v9 boost fields missing")
 end)
 

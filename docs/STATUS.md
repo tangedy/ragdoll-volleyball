@@ -80,8 +80,8 @@ None of this has been run in Studio yet. `selene` has 0 errors and 0 warnings, a
   - The 30-minute boost runs in real time; buying it again adds 30 minutes. The lifetime one is a profile flag. They don't stack past 2x.
   - The Coins sheet has a boosts row (time left, or Owned), and the HUD coin chip shows a "2x COINS" sticker while one runs.
   - The lifetime boost is a developer product, not a game pass, because no API key could create game passes. Its button hides once owned.
-- **Robux placement rules** (`PurchaseService.robuxUnlocked`, `Config.CoinShop.RobuxAfterSeconds` / `AutoOpenAfterFails`):
-  - Every Robux button (the Coins hub icon, the shop's "+", the Robux spin) stays hidden until the tutorial is done and the player has 10 minutes of play (`PlaySeconds`, saved). Returning players with 3+ matches are already unlocked.
+- **Robux placement rules** (`PurchaseService.robuxUnlocked`, `Config.CoinShop.RobuxAfterMatches` / `AutoOpenAfterFails`):
+  - Every Robux button (the Coins hub icon, the shop's "+", the Robux spin, the Haunted Bundle and its hub stand) stays hidden until the player has finished 1 match (`Matches`, saved; aborted matches don't count).
   - A Buy you can't afford only says how many coins you need; the 3rd one opens the Coins sheet, once a session.
   - The Coins sheet only opens in the hub, so no prompt can appear in a round.
 - **Purchase tests:** the F9 suite feeds fake receipts through the real `ProcessReceipt`: bundles grant once, a retried receipt never grants twice, boosts stack and set the flag, a grant that throws is retried and lands exactly once, and unknown products or absent players wait.
