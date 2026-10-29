@@ -15,7 +15,11 @@
 -- the top of the Shop's shelf while you don't own it yet (its items are on the shelf too).
 --
 -- While an offer is live, a pumpkin "Bundles" button tops the action column and opens a sheet of
--- just those limited-time bundles, so they're one tap away instead of tucked inside Coins.
+-- just those limited-time bundles, so they're one tap away instead of tucked inside Coins. The
+-- Coins button sits right under it, above Shop.
+--
+-- Clicking a bundle's strip (anywhere but Buy), or any of its items on the Shop's shelf, opens the
+-- bundle's own page: every item in it as a card, plus its coins, with Buy and a Back button.
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -66,6 +70,21 @@ local boostRow: Frame
 local bundlesSheet: any -- Theme.Sheet: the limited-time bundles on their own
 local bundlesAction: TextButton
 local gateBundles: () -> ()
+-- a bundle's page: every item in it as a card, plus its coins, with Buy at the bottom
+local PREVIEW_SIZE = Vector2.new(880, 612)
+local previewSheet: any -- Theme.Sheet
+type Preview = {
+	offer: any?,
+	back: (() -> ())?,
+	grid: ScrollingFrame,
+	status: TextLabel,
+	summary: TextLabel,
+	buy: TextButton,
+	backButton: TextButton,
+	cards: { [string]: GuiObject },
+}
+local preview: Preview = {} :: any
+local prices: { [string]: number } = {} -- an offer's real Robux price, from its product
 
 local function inHub(): boolean
 	return player:GetAttribute("Status") == "Lobby" and (player:GetAttribute("Team") or "") == ""
@@ -434,6 +453,27 @@ function offerCard(parent: Instance, offer: any, order: number, place: string)
 	}, parent)
 	Theme.corner(root, Theme.Radius.M)
 	Theme.stroke(root, T.outline, Theme.StrokeToy)
+	-- clicking the strip anywhere but Buy opens the bundle's page; Back there returns here
+	local open = new("TextButton", {
+		Name = "Open",
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		ZIndex = 7,
+	}, root)
+	open.Activated:Connect(function()
+		SoundController.play("UIClick")
+		CoinShopController.openPreview(offer, function()
+			if place == "Shop" then
+				ShopController.openShop(true)
+			elseif place == "Bundles" then
+				CoinShopController.openBundles(true)
+			else
+				CoinShopController.open(true)
+			end
+		end)
+	end)
 	-- the art disc: the offer's uploaded image, or a pumpkin until there is one
 	local disc = new("Frame", {
 		Name = "Art",
@@ -516,6 +556,16 @@ function offerCard(parent: Instance, offer: any, order: number, place: string)
 	button.Activated:Connect(function()
 		buyOffer(offer)
 	end)
+	Theme.text(root, 14, {
+		Name = "SeeInside",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -140, 1, -8),
+		Size = UDim2.fromOffset(110, 18),
+		Text = "See what's inside ›",
+		TextColor3 = T.inkMuted,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 7,
+	})
 	table.insert(offerCards, { offer = offer, root = root, status = status, buy = button, place = place })
 	if offer.ProductId > 0 then
 		task.spawn(function()
@@ -523,6 +573,7 @@ function offerCard(parent: Instance, offer: any, order: number, place: string)
 				return MarketplaceService:GetProductInfo(offer.ProductId, Enum.InfoType.Product)
 			end)
 			if ok and type(info) == "table" and type(info.PriceInRobux) == "number" then
+				prices[offer.Id] = info.PriceInRobux
 				Theme.setText(button, ("R$ %d"):format(info.PriceInRobux))
 			end
 		end)
@@ -543,6 +594,216 @@ function gateBundles()
 	if bundlesAction then
 		bundlesAction.Visible = CoinShopController.unlocked() and anyOfferLive()
 	end
+end
+
+-- Bundle page ----------------------------------------------------------------------------------------
+-- Opened by clicking a bundle's strip (Shop shelf, Bundles or Coins sheet) or any of its items on the
+-- shelf: a sheet like the Shop's with a card for everything in the bundle and one for its coins, the
+-- time left and Buy. Back returns to wherever it was opened from.
+
+local function renderPreviewStatus()
+	local offer = preview.offer
+	if not offer then
+		return
+	end
+	local have = offerOwned(offer)
+	preview.status.Text = if have
+		then "Owned: equip it in the Shop"
+		else "Limited time · " .. endsIn(stamp(offer.End) - Workspace:GetServerTimeNow())
+	preview.buy.Visible = not have
+	if offer.ProductId <= 0 then
+		Theme.setText(preview.buy, "Soon")
+		Theme.recolor(preview.buy, "secondary")
+	else
+		Theme.setText(preview.buy, ("Buy bundle · R$ %d"):format(prices[offer.Id] or offer.Robux))
+		Theme.recolor(preview.buy, "primary")
+	end
+end
+
+-- The coins that come with a bundle, as a card like the items' (a heap on a peach band).
+local function coinsCard(parent: Instance, coins: number, order: number): Frame
+	local size = ShopController.CONTENTS_CARD
+	local artH = size.Y - 70
+	local face = new("Frame", {
+		Name = "Coins",
+		LayoutOrder = order,
+		BackgroundColor3 = T.surface,
+		ZIndex = 5,
+	}, parent)
+	Theme.corner(face, Theme.Radius.M)
+	Theme.stroke(face, T.outline, Theme.StrokeToy)
+	local art = new("Frame", {
+		Name = "Art",
+		Size = UDim2.new(1, 0, 0, artH),
+		BackgroundColor3 = T.peach,
+		ZIndex = 6,
+	}, face)
+	Theme.corner(art, Theme.Radius.M)
+	new("Frame", {
+		Position = UDim2.new(0, 0, 1, -Theme.Radius.M),
+		Size = UDim2.new(1, 0, 0, Theme.Radius.M),
+		BackgroundColor3 = T.peach,
+		BorderSizePixel = 0,
+		ZIndex = 6,
+	}, art)
+	new("Frame", {
+		Position = UDim2.fromScale(0, 1),
+		Size = UDim2.new(1, 0, 0, 2),
+		BackgroundColor3 = T.outline,
+		BorderSizePixel = 0,
+		ZIndex = 7,
+	}, art)
+	local heap = new("Frame", {
+		Name = "Heap",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		ZIndex = 8,
+	}, art)
+	drawHeap(heap, 3)
+	local name = Theme.label(face, {
+		Name = "Name",
+		Position = UDim2.fromOffset(10, artH + 8),
+		Size = UDim2.new(1, -20, 0, 26),
+		Text = ("+%s coins"):format(commas(coins)),
+		ZIndex = 7,
+	}, 0)
+	new("UITextSizeConstraint", { MaxTextSize = 22 }, name)
+	Theme.body(face, {
+		Name = "Kind",
+		Position = UDim2.fromOffset(10, artH + 36),
+		Size = UDim2.new(1, -20, 0, 20),
+		FontFace = Theme.TextFace,
+		Text = "Straight to your wallet",
+		TextColor3 = T.inkMuted,
+		ZIndex = 7,
+	})
+	return face
+end
+
+local function fillPreview(offer: any)
+	for _, child in preview.grid:GetChildren() do
+		if child:IsA("GuiObject") then
+			child:Destroy()
+		end
+	end
+	table.clear(preview.cards)
+	-- after a finisher preview, come back to this page (still going Back to where it came from)
+	local back = preview.back
+	local function reopen()
+		CoinShopController.openPreview(offer, back)
+	end
+	for i, id in offer.Items do
+		local item = Catalog.get(id)
+		if item then
+			preview.cards[id] = ShopController.contentsCard(item, i, preview.grid, reopen)
+		end
+	end
+	if (offer.Coins or 0) > 0 then
+		preview.cards.Coins = coinsCard(preview.grid, offer.Coins, #offer.Items + 1)
+	end
+	preview.summary.Text = ("%d items + %s coins"):format(#offer.Items, commas(offer.Coins or 0))
+end
+
+local function buildPreview()
+	previewSheet = ShopController.sheet("BundlePreview", "Bundle", PREVIEW_SIZE, nil, {
+		tone = T.sun,
+		glyph = "pumpkin",
+	})
+	previewSheet.close.Activated:Connect(function()
+		CoinShopController.openPreview(nil)
+	end)
+	local body = previewSheet.body :: Frame
+	-- top bar: Back, and what's in it
+	local backButton = Theme.button(body, "‹ Back", "secondary", {
+		Name = "Back",
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(120, 44),
+		ZIndex = 5,
+	})
+	backButton.Activated:Connect(function()
+		local back = preview.back
+		CoinShopController.openPreview(nil)
+		if back then
+			back()
+		end
+	end)
+	local summary = Theme.text(body, 20, {
+		Name = "Summary",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.new(1, -140, 0, 44),
+		FontFace = Theme.DisplayFace,
+		Text = "",
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 5,
+	})
+	-- the contents: four-wide cards, scrolling if a bundle has more than fits
+	local grid = new("ScrollingFrame", {
+		Name = "Contents",
+		Position = UDim2.fromOffset(-8, 52),
+		Size = UDim2.new(1, 16, 1, -52 - 76),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 6,
+		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
+		ScrollBarImageColor3 = T.outline,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		ElasticBehavior = Enum.ElasticBehavior.Never,
+		ZIndex = 4,
+	}, body)
+	new("UIPadding", {
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 8),
+		PaddingLeft = UDim.new(0, 8),
+		PaddingRight = UDim.new(0, 8),
+	}, grid)
+	new("UIGridLayout", {
+		CellSize = UDim2.fromOffset(ShopController.CONTENTS_CARD.X, ShopController.CONTENTS_CARD.Y),
+		CellPadding = UDim2.fromOffset(Theme.Space.L, Theme.Space.L),
+		FillDirectionMaxCells = 4,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, grid)
+	-- footer: the time left and Buy
+	local footer = new("Frame", {
+		Name = "Footer",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, -8),
+		Size = UDim2.new(1, 0, 0, 60),
+		BackgroundTransparency = 1,
+		ZIndex = 4,
+	}, body)
+	local status = Theme.text(footer, 18, {
+		Name = "Status",
+		Size = UDim2.new(1, -280, 1, 0),
+		Text = "",
+		TextColor3 = T.success,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 5,
+	})
+	local buyButton = Theme.button(footer, "Buy bundle", "primary", {
+		Name = "Buy",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.fromScale(1, 0.5),
+		Size = UDim2.fromOffset(260, 56),
+		ZIndex = 6,
+	})
+	buyButton.Activated:Connect(function()
+		if preview.offer then
+			buyOffer(preview.offer)
+		end
+	end)
+	preview.grid = grid
+	preview.status = status
+	preview.summary = summary
+	preview.buy = buyButton
+	preview.backButton = backButton
+	preview.cards = {}
+	ShopController.onCloseAll(function()
+		CoinShopController.openPreview(nil)
+	end)
 end
 
 local function build()
@@ -627,7 +888,7 @@ local function build()
 	end
 	renderBoosts()
 	renderOffers()
-	local action = ShopController.addAction("Coins", T.peach, "coin", 5, function()
+	local action = ShopController.addAction("Coins", T.peach, "coin", 0, function()
 		CoinShopController.open(not ShopController.isOpen(sheet.frame))
 	end)
 	local function gate()
@@ -667,7 +928,7 @@ local function build()
 	for i, offer in CS.Offers do
 		offerCard(list, offer, i, "Bundles")
 	end
-	bundlesAction = ShopController.addAction("Bundles", T.sun, "pumpkin", 0, function()
+	bundlesAction = ShopController.addAction("Bundles", T.sun, "pumpkin", -1, function()
 		CoinShopController.openBundles(not ShopController.isOpen(bundlesSheet.frame))
 	end)
 	player:GetAttributeChangedSignal("RobuxOk"):Connect(gateBundles)
@@ -675,6 +936,7 @@ local function build()
 	ShopController.onCloseAll(function()
 		CoinShopController.openBundles(false)
 	end)
+	buildPreview()
 end
 
 -- Open or close the sheet. `need` (coins short) is set when the shop sent you here.
@@ -748,6 +1010,47 @@ function CoinShopController.openBundles(on: boolean)
 	end
 end
 
+-- Open a bundle's page (`back` reopens wherever it was opened from; `focusId` pops that item's card),
+-- or close it with nil.
+function CoinShopController.openPreview(offer: any?, back: (() -> ())?, focusId: string?)
+	local f = previewSheet.frame
+	if offer then
+		local live = Catalog.offerLive(offer, Workspace:GetServerTimeNow())
+		if not (inHub() and CoinShopController.unlocked() and live) then
+			return
+		end
+		if not ShopController.isOpen(f) then
+			SoundController.play("UIOpen")
+		end
+		ShopController.closeAll()
+		preview.offer = offer
+		preview.back = back
+		previewSheet.title.Text = offer.Name
+		preview.backButton.Visible = back ~= nil
+		fillPreview(offer)
+		renderPreviewStatus()
+		Theme.show(f, ShopController.getBackdrop())
+		local list = {}
+		for _, id in offer.Items do
+			table.insert(list, preview.cards[id])
+		end
+		table.insert(list, preview.cards.Coins)
+		Theme.popIn(list)
+		Theme.focus(if preview.buy.Visible then preview.buy else previewSheet.close)
+		local card = focusId and preview.cards[focusId]
+		if card then
+			task.delay(Theme.Motion.Slow, function()
+				Theme.pop(card, 1.1, Theme.Motion.Slow)
+			end)
+		end
+	else
+		if ShopController.isOpen(f) then
+			Theme.setHome(nil)
+		end
+		Theme.hide(f, ShopController.getBackdrop())
+	end
+end
+
 -- Buy a limited-time bundle (the Shop's bundle items and banner use this too).
 CoinShopController.buyOffer = buyOffer
 -- Show, hide and count down the bundle strips (the Shop calls this when it draws its shelf).
@@ -767,6 +1070,11 @@ function CoinShopController.start()
 		if type(d.owned) == "table" then
 			owned = d.owned
 			renderOffers()
+			-- the bundle page's Owned stickers and Buy follow what you own
+			if previewSheet.frame.Visible and preview.offer then
+				task.defer(fillPreview, preview.offer)
+				renderPreviewStatus()
+			end
 		end
 	end)
 	-- the server granted a limited-time bundle: its coins and its cosmetics (equip them in the shop)
@@ -832,6 +1140,9 @@ function CoinShopController.start()
 		if not inHub() and bundlesSheet.frame.Visible then
 			CoinShopController.openBundles(false)
 		end
+		if not inHub() and previewSheet.frame.Visible then
+			CoinShopController.openPreview(nil)
+		end
 		if os.clock() < nextTick then
 			return
 		end
@@ -842,6 +1153,9 @@ function CoinShopController.start()
 		if sheet.frame.Visible or bundlesSheet.frame.Visible or ShopController.isShopOpen() then
 			renderBoosts()
 			renderOffers()
+		end
+		if previewSheet.frame.Visible then
+			renderPreviewStatus()
 		end
 	end)
 end

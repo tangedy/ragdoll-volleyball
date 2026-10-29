@@ -450,7 +450,12 @@ local function drawArt(item: Catalog.Item, art: Frame)
 			local sparkle: { Color3 }? = d.Sparkle
 			if sparkle and #sparkle > 0 then
 				for i, at in
-					{ Vector2.new(0.22, 0.3), Vector2.new(0.48, 0.72), Vector2.new(0.72, 0.28), Vector2.new(0.86, 0.62) }
+					{
+						Vector2.new(0.22, 0.3),
+						Vector2.new(0.48, 0.72),
+						Vector2.new(0.72, 0.28),
+						Vector2.new(0.86, 0.62),
+					}
 				do
 					local dot = new("Frame", {
 						AnchorPoint = Vector2.new(0.5, 0.5),
@@ -604,11 +609,15 @@ local function primaryAction(item: Catalog.Item?)
 	end
 end
 
--- Close the shop, play the finisher preview on yourself, then reopen the shop where you were.
-function ShopController.previewFinisher(item: any)
+-- Close the shop, play the finisher preview on yourself, then reopen the shop where you were (or,
+-- from a bundle's page, `back` reopens that instead).
+function ShopController.previewFinisher(item: any, back: (() -> ())?)
 	local FinisherController = require(script.Parent.FinisherController) :: any
 	if FinisherController.playing then
 		return
+	end
+	if back then
+		ShopController.closeAll()
 	end
 	shop.frame.Visible = false
 	backdrop.Visible = false
@@ -618,18 +627,22 @@ function ShopController.previewFinisher(item: any)
 			HUDController.hint("Preview works in the hub", 1.5)
 		end
 		if inHub() then
-			ShopController.openShop(true)
+			if back then
+				back()
+			else
+				ShopController.openShop(true)
+			end
 		end
 	end)
 end
 
-local function previewAction(item: Catalog.Item)
+local function previewAction(item: Catalog.Item, back: (() -> ())?)
 	if item.Category == "Pose" then
 		local IntroController = require(script.Parent.IntroController) :: any
 		IntroController.preview(item.Data.Pose)
-		ShopController.openShop(false)
+		ShopController.closeAll()
 	elseif item.Category == "Finisher" then
-		ShopController.previewFinisher(item)
+		ShopController.previewFinisher(item, back)
 	end
 end
 
@@ -799,9 +812,23 @@ local function itemCard(item: Catalog.Item, order: number, parent: Instance): { 
 	b.MouseEnter:Connect(function()
 		selectItem(id)
 	end)
-	-- a finisher card plays its preview wherever you click it (the buy button sits on top and keeps
-	-- its own click)
-	if item.Category == "Finisher" then
+	-- a bundle item's card opens the bundle's page (everything that comes in it) while it's on sale;
+	-- a finisher card plays its preview wherever you click it (the buy and play buttons sit on top
+	-- and keep their own clicks)
+	if item.Bundle then
+		b.Activated:Connect(function()
+			local offer = liveOffer(item)
+			if offer then
+				selectItem(id)
+				local CoinShopController = require(script.Parent.CoinShopController) :: any
+				CoinShopController.openPreview(offer, function()
+					ShopController.openShop(true)
+				end, id)
+			elseif item.Category == "Finisher" then
+				previewAction(item)
+			end
+		end)
+	elseif item.Category == "Finisher" then
 		b.Activated:Connect(function()
 			selectItem(id)
 			SoundController.play("UIClick")
@@ -812,6 +839,91 @@ local function itemCard(item: Catalog.Item, order: number, parent: Instance): { 
 		selectItem(id)
 	end)
 	return { button = b, art = art, action = action }
+end
+
+-- A card on a bundle's page (CoinShopController): the item's art on its tier band with the tier
+-- sticker, its name and kind, an Owned sticker once you have it, and the play button for a finisher
+-- or a pose (`back` reopens the page after a finisher preview).
+local KIND_NAMES = { BallSkin = "Ball skin", Trail = "Trail", Title = "Title", Finisher = "Finisher", Pose = "Pose" }
+ShopController.CONTENTS_CARD = Vector2.new(ITEM_CARD.X, ART_H + 70)
+function ShopController.contentsCard(item: Catalog.Item, order: number, parent: Instance, back: () -> ()): Frame
+	local tone = toneOf(item)
+	local face = new("Frame", {
+		Name = item.Id,
+		LayoutOrder = order,
+		BackgroundColor3 = T.surface,
+		ZIndex = 5,
+	}, parent)
+	Theme.corner(face, Theme.Radius.M)
+	Theme.stroke(face, T.outline, Theme.StrokeToy)
+	local art = new("Frame", {
+		Name = "Art",
+		Size = UDim2.new(1, 0, 0, ART_H),
+		BackgroundColor3 = tone,
+		ZIndex = 6,
+	}, face)
+	Theme.corner(art, Theme.Radius.M)
+	new("Frame", {
+		Position = UDim2.new(0, 0, 1, -Theme.Radius.M),
+		Size = UDim2.new(1, 0, 0, Theme.Radius.M),
+		BackgroundColor3 = tone,
+		BorderSizePixel = 0,
+		ZIndex = 6,
+	}, art)
+	new("Frame", {
+		Position = UDim2.fromScale(0, 1),
+		Size = UDim2.new(1, 0, 0, 2),
+		BackgroundColor3 = T.outline,
+		BorderSizePixel = 0,
+		ZIndex = 7,
+	}, art)
+	local canvas = new("Frame", {
+		Name = "Canvas",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		ZIndex = 7,
+	}, art)
+	drawArt(item, canvas)
+	Theme.sticker(face, Catalog.rarity(item), T.paper, {
+		Position = UDim2.fromOffset(8, 8),
+		ZIndex = 10,
+	})
+	if item.Category == "Finisher" or item.Category == "Pose" then
+		local preview = Theme.iconButton(face, "play", "secondary", 34, {
+			Name = "Preview",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -8, 0, 8),
+			ZIndex = 10,
+		})
+		preview.Activated:Connect(function()
+			previewAction(item, back)
+		end)
+	end
+	local name = Theme.label(face, {
+		Name = "Name",
+		Position = UDim2.fromOffset(10, ART_H + 8),
+		Size = UDim2.new(1, -20, 0, 26),
+		Text = item.Name,
+		ZIndex = 7,
+	}, 0)
+	new("UITextSizeConstraint", { MaxTextSize = 22 }, name)
+	Theme.body(face, {
+		Name = "Kind",
+		Position = UDim2.fromOffset(10, ART_H + 36),
+		Size = UDim2.new(1, -20, 0, 20),
+		FontFace = Theme.TextFace,
+		Text = KIND_NAMES[item.Category] or item.Category,
+		TextColor3 = T.inkMuted,
+		ZIndex = 7,
+	})
+	if owns(item) then
+		Theme.sticker(face, "Owned", T.leaf, {
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.new(1, -8, 1, -10),
+			ZIndex = 10,
+		})
+	end
+	return face
 end
 
 -- The shelf is grouped by tier, cheapest first: Free, then Common, Rare, Epic and Legendary. Each
@@ -1350,7 +1462,7 @@ end
 -- the bottom, a little larger, centred in the free space between the coins chip and the controls
 -- (and shrunk only if that space is too narrow).
 local ACTION_W, ACTION_H = 84, 56 + Theme.Ledge + 26 -- one Theme.roundAction button
-local ACTIONS = 6 -- Bundles, Shop, Spin, Daily, Settings, Coins
+local ACTIONS = 6 -- Bundles, Coins, Shop, Spin, Daily, Settings
 local ROW_W = ACTIONS * ACTION_W + (ACTIONS - 1) * Theme.Space.L
 local TOUCH_SCALE = 1.25 -- relative to the rest of the HUD
 local actionLayout: UIListLayout
