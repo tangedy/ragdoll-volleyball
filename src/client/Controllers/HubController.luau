@@ -199,8 +199,11 @@ local function hideHubOccupants()
 		end
 	end
 	for p in wantParts do
-		hiddenParts[p] = true
-		p.LocalTransparencyModifier = 1
+		-- only newly hidden parts: rewriting every hub occupant's parts 5 times a second added up
+		if not hiddenParts[p] then
+			hiddenParts[p] = true
+			p.LocalTransparencyModifier = 1
+		end
 	end
 	for g in wantGuis do
 		if g.Enabled or hiddenGuis[g] then

@@ -35,13 +35,19 @@ export type Ball = {
 	flightT: number,
 	hasHit: boolean,
 	syncedAt: number, -- flightT when the part's CFrame was last written during flight
+	launchSeq: number, -- unique per launch across all balls (bots key their reactions on it)
 }
 
 local BallService = {}
 
 local S: any
 local balls: { [number]: Ball } = {}
+-- all() is read every frame (bot reactions) and every bot tick; the array is rebuilt only when a
+-- ball is spawned or destroyed. A stale array is dropped, never cleared, so a caller iterating it
+-- while destroying balls is unaffected.
+local allCache: { Ball }? = nil
 local nextId = 0
+local launchSeq = 0
 local accumulator = 0
 local folder: Folder
 local rng = Random.new()
@@ -238,11 +244,16 @@ function BallService.start()
 	end)
 end
 
+-- Shared array: read it, don't modify it.
 function BallService.all(): { Ball }
+	if allCache then
+		return allCache
+	end
 	local list = {}
 	for _, b in balls do
 		table.insert(list, b)
 	end
+	allCache = list
 	return list
 end
 
@@ -270,12 +281,14 @@ function BallService.spawn(ballType: string, pos: Vector3, context: string, isPo
 		flightT = 0,
 		hasHit = false,
 		syncedAt = 0,
+		launchSeq = 0,
 	}
 	part:SetAttribute(Types.Attr.BallId, ball.id)
 	part:SetAttribute("Context", context)
 	applyLook(ball)
 	setState(ball, "Resting")
 	balls[ball.id] = ball
+	allCache = nil
 	part.Parent = folder
 	makePhysical(ball, pos, Vector3.zero)
 	return ball
@@ -288,6 +301,7 @@ function BallService.destroy(ball: Ball)
 		S.PlayerStateService.setAttr(h, Types.Attr.HeldBall, "")
 	end
 	balls[ball.id] = nil
+	allCache = nil
 	ball.part:Destroy()
 end
 
@@ -370,6 +384,8 @@ function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: 
 	ball.flightT = 0
 	ball.syncedAt = 0
 	ball.hasHit = false
+	launchSeq += 1
+	ball.launchSeq = launchSeq
 	ball.lastThrower = c
 	ball.lastTeam = c.team
 	ball.lockoutUntil = now() + Config.Ball.PickupLockout
@@ -608,14 +624,18 @@ function BallService.pickupTick()
 			local pos = ball.part.Position
 			local best, bestDist = nil, radius
 			for _, c in candidates do
-				if c.heldBall == nil and c.root and not c.isDummy and S.CombatService.canPickup(c, ball, pos) then
+				if c.heldBall == nil and c.root and not c.isDummy then
 					local rp = c.root.Position
-					-- horizontal distance, with a generous height window (balls sit low, roots high)
+					-- horizontal distance, with a generous height window (balls sit low, roots high).
+					-- Measured before the rules check: nearly everyone is out of reach, so this skips
+					-- canPickup for almost every (ball, combatant) pair each frame.
 					local d = Vector3.new(rp.X - pos.X, 0, rp.Z - pos.Z).Magnitude
-					if math.abs(rp.Y - pos.Y) > 7 then
-						d = math.huge
-					end
-					if d <= bestDist and not (ball.lastThrower == c and t < ball.throwerLockoutUntil) then
+					if
+						d <= bestDist
+						and math.abs(rp.Y - pos.Y) <= 7
+						and not (ball.lastThrower == c and t < ball.throwerLockoutUntil)
+						and S.CombatService.canPickup(c, ball, pos)
+					then
 						best, bestDist = c, d
 					end
 				end

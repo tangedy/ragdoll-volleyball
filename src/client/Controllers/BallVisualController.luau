@@ -44,6 +44,8 @@ type Visual = {
 	threat: boolean, -- last threat check result (re-checked at THREAT_RATE, not every frame)
 	nextThreatAt: number,
 	handoffAt: number?, -- the server ended the flight: glide onto the real ball, then hand over
+	lag: number, -- seconds the drawn ball starts behind the true arc (catch-up from the hand)
+	lagTime: number, -- seconds over which that lag is caught up
 }
 
 local BallVisualController = {}
@@ -58,6 +60,13 @@ local HANDOFF_FAR = 4
 local HANDOFF_DONE = 1.5 -- swap once this close (under two frames of motion at throw speed)
 local HANDOFF_MAX = 0.4
 local HANDOFF_RATE = 25
+-- Someone else's throw (a bot's or another player's) reaches us a round trip after it left their
+-- hand, and drawing it where it truly is now made it pop into existence several studs out (about
+-- 14 studs at 100 ms and 140 stud/s). It now starts in the hand and runs along the same arc a
+-- little faster until it's caught up, so the release reads as a throw. The "!" warning still uses
+-- the true position, and hits are always the server's.
+local CATCHUP_MAX_LAG = 0.35 -- beyond this (a very laggy link) the ball starts partway out
+local CATCHUP_BASE = 0.12 -- catch-up takes this plus the lag: at most ~1.7x speed, briefly
 local folder: Folder
 local visuals: { [Visual]: boolean } = {}
 local byBallId: { [number]: Visual } = {}
@@ -217,6 +226,8 @@ local function newVisual(part: Part, origin: Vector3, vel: Vector3, g: number, t
 		threat = false,
 		nextThreatAt = 0,
 		handoffAt = nil,
+		lag = 0,
+		lagTime = 0,
 	}
 end
 
@@ -293,8 +304,12 @@ local function onLaunched(d: any)
 	if lobby and HubController.lobbyHidden then
 		return -- you're on the court and the hub is hidden: don't draw practice throws
 	end
-	local part = makePart(d.ballType, ProjectileMath.positionAt(d.origin, d.vel, g, math.max(serverNow - d.t0, 0)))
+	local elapsed = math.max(serverNow - d.t0, 0)
+	local lag = math.min(elapsed, CATCHUP_MAX_LAG)
+	local part = makePart(d.ballType, ProjectileMath.positionAt(d.origin, d.vel, g, elapsed - lag))
 	local v = newVisual(part, d.origin, d.vel, g, d.t0)
+	v.lag = lag
+	v.lagTime = CATCHUP_BASE + lag
 	v.ballId = d.id
 	v.lobby = lobby
 	v.team = if d.thrower ~= player and type(d.team) == "string" then d.team else nil
@@ -482,7 +497,16 @@ function BallVisualController.start()
 			if v.stoppedAt then
 				continue
 			end
-			local pos = ProjectileMath.positionAt(v.origin, v.vel, v.g, math.max(t, 0))
+			local drawT = t
+			if v.lag > 0 then
+				local k = 1 - (clock - v.createdAt) / v.lagTime
+				if k > 0 then
+					drawT = t - v.lag * k
+				else
+					v.lag = 0 -- caught up with the true arc
+				end
+			end
+			local pos = ProjectileMath.positionAt(v.origin, v.vel, v.g, math.max(drawT, 0))
 			if v.blendStart > 0 then
 				local blend = 1 - (clock - v.blendStart) / BLEND_TIME
 				if blend > 0 then

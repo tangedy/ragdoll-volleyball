@@ -85,16 +85,9 @@ end
 
 function BotService.start()
 	task.spawn(loadProfiles)
-	task.spawn(function()
-		while true do
-			task.wait(B.TickInterval)
-			if not paused then
-				BotService.tick()
-			end
-		end
-	end)
 	RunService.Heartbeat:Connect(function(dt)
 		if not paused then
+			BotService.tick()
 			BotService.react()
 		end
 		BotService.animate(dt)
@@ -187,7 +180,8 @@ function BotService.create(team: string, roster: { any }, difficulty: string?): 
 		claim = nil, -- id of the ball this bot is going for
 		nextWanderAt = 0,
 		wander = nil,
-		reacted = {},
+		nextThinkAt = 0, -- next decision step (see tick)
+		reacted = {}, -- launchSeq -> this bot's decision about that throw
 		difficulty = level,
 		profile = B.Profiles[level] or B.Profiles.Easy,
 	}
@@ -724,12 +718,24 @@ function BotService.tickOne(c: any)
 	end
 end
 
+-- Every bot decides once per TickInterval, each on its own phase: all of them used to think on the
+-- same frame (sight raycasts, target picks, MoveTo for every bot at once), a server spike every
+-- 0.15 s. A bot that fell behind (paused, round not live) gets a fresh random phase.
 function BotService.tick()
 	if not S.MatchService.isRoundLive() then
 		return
 	end
+	local t = now()
 	for _, c in S.MatchService.roster() do
-		BotService.tickOne(c)
+		local brain = c.isBot and c.bot
+		if brain and t >= brain.nextThinkAt then
+			if t - brain.nextThinkAt > B.TickInterval then
+				brain.nextThinkAt = t + rng:NextNumber(0, B.TickInterval)
+			else
+				brain.nextThinkAt += B.TickInterval
+			end
+			BotService.tickOne(c)
+		end
 	end
 end
 
@@ -764,12 +770,9 @@ function BotService.react()
 						local tc = rel:Dot(v) / vv -- seconds until closest approach
 						local miss = (rel - v * tc).Magnitude
 						if tc > 0 and tc < 1 and miss < 4.5 then
-							local key = ("%d:%s:%d"):format(
-								ball.id,
-								tostring(ball.lastThrower and ball.lastThrower.id),
-								math.floor(ball.stateAt * 10)
-							)
-							local r = brain.reacted[key]
+							-- one number per launch: this used to format a string key per ball, per
+							-- bot, every frame
+							local r = brain.reacted[ball.launchSeq]
 							if r == nil then
 								-- first sight of this throw: decide now, act after the reaction time
 								local roll = rng:NextNumber()
@@ -781,7 +784,7 @@ function BotService.react()
 										else "None",
 									catchAt = 0,
 								}
-								brain.reacted[key] = r
+								brain.reacted[ball.launchSeq] = r
 							end
 							if t >= r.at and r.choice == "Dodge" then
 								r.choice = "Done"
