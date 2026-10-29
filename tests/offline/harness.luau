@@ -472,7 +472,7 @@ local SERVICES = {
 	"SpinService",
 	"PurchaseService",
 	"BoostService",
-	"ChestService",
+	"QuestService",
 	"HalloweenService",
 }
 H.S = {}
@@ -487,7 +487,7 @@ for _, name in SERVICES do
 end
 -- start only what registers handlers (no loops that wait on the place)
 H.S.ShopService.applyCosmetics = function() end
-for _, name in { "SpinService", "BoostService", "ChestService", "PurchaseService" } do
+for _, name in { "SpinService", "BoostService", "QuestService", "PurchaseService" } do
 	H.S[name].start()
 end
 

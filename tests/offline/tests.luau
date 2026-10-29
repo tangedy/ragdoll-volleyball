@@ -10,17 +10,6 @@ return function(H)
 	local test, check, eq = H.test, H.check, H.eq
 	local DateTime = H.DateTime
 
-	local function chestIndex(tier: string): number
-		for i, spot in Config.Chest.Spots do
-			if spot.Tier == tier then
-				return i
-			end
-		end
-		error("no chest of tier " .. tier)
-	end
-	local function atChest(c, index)
-		c.root = { Position = S.ChestService.position(index), Parent = true }
-	end
 	local nextReceipt = 0
 	local function receipt(c, productId: number, purchaseId: string?)
 		nextReceipt += 1
@@ -54,6 +43,22 @@ return function(H)
 		end
 	end)
 
+	test("catalog: every prize has a rarity and sells at its rarity's flat price", function()
+		for _, item in Catalog.Items do
+			if not item.Default then
+				check(Config.Economy.PriceByRarity[item.Rarity] ~= nil, item.Id .. " has no rarity")
+				eq(Catalog.rarity(item), item.Rarity, item.Id .. " rarity")
+				-- bundle items are never sold, and the Limited Pumpkin Reaper keeps its event price
+				if not item.Bundle and item.Id ~= "Finisher_Pumpkin" then
+					eq(item.Price, Config.Economy.PriceByRarity[item.Rarity], item.Id .. " price")
+				end
+			end
+		end
+		eq(Catalog.rarity(Catalog.get("Finisher_DestinyArrives")), "Legendary", "Destiny Arrives")
+		eq(Catalog.rarity(Catalog.get("Finisher_PurpleFlash")), "Epic", "Purple Flash re-tiered")
+		eq(Catalog.get("Title_Rookie").Price, 500, "Rookie at the Common price")
+	end)
+
 	test("config: every Robux product id is set and distinct", function()
 		local ids = {}
 		local function add(id, what)
@@ -68,21 +73,97 @@ return function(H)
 			add(b.ProductId, b.Id)
 		end
 		add(Config.Spin.RobuxProductId, "extra spin")
+		-- limited-time bundles may still be at the placeholder 0, but a real id must be distinct
+		for _, o in Config.CoinShop.Offers do
+			if o.ProductId ~= 0 then
+				add(o.ProductId, o.Id)
+			end
+		end
 	end)
 
-	test("config: every chest spot names a tier, and every tier can fill its wheel", function()
-		local pool = S.SpinService.pool()
-		for i, spot in Config.Chest.Spots do
-			local tier = Config.Chest.Tiers[spot.Tier]
-			check(tier ~= nil, "spot " .. i .. " has unknown tier " .. tostring(spot.Tier))
-			local total = 0
-			for r, w in tier.RarityWeights do
-				if w > 0 then
-					check(#pool[r] > 0, spot.Tier .. " can drop " .. r .. " but there are none")
-					total += w
-				end
+	test("config: every limited offer has a window and names bundle-only catalog items", function()
+		local ids = {}
+		for _, o in Config.CoinShop.Offers do
+			check(not ids[o.Id], "duplicate offer " .. o.Id)
+			ids[o.Id] = true
+			local from, to = DateTime.fromIsoDate(o.Start).UnixTimestamp, DateTime.fromIsoDate(o.End).UnixTimestamp
+			check(to > from, o.Id .. " window")
+			check(o.Coins >= 0 and #o.Items > 0, o.Id .. " is empty")
+			for _, id in o.Items do
+				local item = Catalog.get(id)
+				check(item ~= nil, o.Id .. " names unknown item " .. id)
+				eq(item.Bundle, o.Id, id .. " Bundle tag")
 			end
-			check(total > 0, spot.Tier .. " has no weights")
+		end
+		for _, item in Catalog.Items do
+			if item.Bundle then
+				check(ids[item.Bundle], item.Id .. " belongs to no offer")
+			end
+		end
+	end)
+
+	test("config: the Halloween bundle runs Oct 28 through Nov 3 UTC", function()
+		local o
+		for _, it in Config.CoinShop.Offers do
+			if it.Id == "Halloween2026" then
+				o = it
+			end
+		end
+		check(o, "no Halloween2026 offer")
+		local function at(iso)
+			return Catalog.offerLive(o, DateTime.fromIsoDate(iso).UnixTimestamp)
+		end
+		check(not at("2026-10-27T23:59:59Z"), "on before Oct 28")
+		check(at("2026-10-28T00:00:00Z"), "off at the start")
+		check(at("2026-11-03T23:59:59Z"), "off on Nov 3")
+		check(not at("2026-11-04T00:00:00Z"), "still on after Nov 3")
+	end)
+
+	test("config: every quest names a chest that can drop something, with odds adding up to 1", function()
+		for _, q in Config.Quests.List do
+			local def = Config.Quests.Chests[q.Chest]
+			check(def ~= nil, q.Id .. " names unknown chest " .. tostring(q.Chest))
+			check(q.Goal >= 1, q.Id .. " has no goal")
+			check(S.RewardService.valid({ Kind = "Chest", Chest = q.Chest }), q.Id .. "'s chest isn't a valid reward")
+			local sum = 0
+			for r, p in S.RewardService.chestOdds(q.Chest) do
+				check(p == 0 or #S.RewardService.chestPool(q.Chest)[r] > 0, q.Chest .. " can roll an empty " .. r)
+				sum += p
+			end
+			check(math.abs(sum - 1) < 1e-9, q.Chest .. " odds add up to " .. sum)
+		end
+		check(not S.RewardService.valid({ Kind = "Chest", Chest = "Nope" }), "unknown chest is valid")
+		-- every chest has items in every rarity, so its odds are exactly its configured weights
+		local f = S.RewardService.chestOdds("Finisher")
+		check(math.abs(f.Common - 0.6) < 1e-9 and math.abs(f.Legendary - 0.01) < 1e-9, "finisher odds")
+	end)
+
+	test("catalog: every quest chest has a spread of items in every rarity", function()
+		for _, q in Config.Quests.List do
+			local pool = S.RewardService.chestPool(q.Chest)
+			for _, r in { "Common", "Rare", "Epic", "Legendary" } do
+				check(#pool[r] >= 1, ("%s has no %s items"):format(q.Chest, r))
+			end
+			local n = #pool.Common + #pool.Rare + #pool.Epic + #pool.Legendary
+			check(n >= 10, ("%s has only %d items"):format(q.Chest, n))
+		end
+	end)
+
+	test("catalog: every gesture has its frames and every finisher its module", function()
+		local IntroPoses = H.require("shared/IntroPoses")
+		for _, item in Catalog.inCategory("Pose") do
+			local pose = IntroPoses.Poses[item.Data.Pose]
+			check(pose ~= nil, item.Id .. " names an unknown pose")
+			eq(pose.Name, item.Name, item.Id .. " pose name")
+			for _, step in pose.Frames do
+				check(IntroPoses.Frames[step.frame] ~= nil, item.Id .. " uses unknown frame " .. step.frame)
+			end
+		end
+		for _, item in Catalog.inCategory("Finisher") do
+			local ok, def = pcall(H.require, "shared/Finishers/" .. item.Data.Module)
+			check(ok and type(def) == "table", item.Id .. " module doesn't load: " .. tostring(def))
+			eq(def.Id, item.Data.Module, item.Id .. " module Id")
+			check(type(def.play) == "function", item.Id .. " has no play")
 		end
 	end)
 
@@ -99,7 +180,7 @@ return function(H)
 		local D = S.DataService
 		local v1 = D.migrate({ SchemaVersion = 1, Coins = 5, OwnedCosmetics = { Skin_Lime = true } })
 		eq(v1.SchemaVersion, Config.Data.SchemaVersion, "v1 schema")
-		check(v1.LoginStreak and v1.Spin and v1.ChestDaily and v1.Receipts, "v1 missing fields")
+		check(v1.LoginStreak and v1.Spin and v1.DailyQuests and v1.Receipts, "v1 missing fields")
 		check(v1.OwnedCosmetics.Skin_Lime, "v1 lost a cosmetic")
 		local v3 = D.migrate({ SchemaVersion = 3, Pts = 1234 })
 		eq(v3.Coins, 1234, "v3 Pts became coins")
@@ -113,11 +194,46 @@ return function(H)
 		eq(v9.CoinBoostForever, true, "v9 lifetime boost kept")
 		eq(v9.CoinBoostUntil, 77, "v9 timed boost kept")
 		eq(v9.PlaySeconds, 30, "v9 play time kept")
-		check(type(v9.ChestDaily) == "table", "v9 got no ChestDaily")
+		check(type(v9.DailyQuests) == "table" and v9.ChestDaily == nil, "v9 quests/chests")
 		-- migrating twice changes nothing
 		local again = D.migrate(H.deepCopy(v9))
 		eq(again.CoinBoostUntil, 77, "second migration")
 		eq(again.PlaySeconds, 30, "second migration play time")
+	end)
+
+	test("save migration v11: login streaks carry over to the typed ladder; damage is repaired", function()
+		local D = S.DataService
+		local today = os.date("!%Y-%m-%d", os.time())
+		local yesterday = os.date("!%Y-%m-%d", os.time() - 86400)
+		-- mid-streak yesterday: today is the next rung, nothing lost
+		local v10 = D.migrate({
+			SchemaVersion = 10,
+			Coins = 300,
+			LoginStreak = { day = 4, lastDate = yesterday, claimedDate = yesterday },
+		})
+		eq(v10.SchemaVersion, Config.Data.SchemaVersion, "schema")
+		eq(v10.LoginStreak.day, 4, "streak day")
+		eq(v10.LoginStreak.claimedDate, yesterday, "claimed date")
+		eq(v10.Coins, 300, "coins")
+		check(type(v10.BonusSpins) == "table" and type(v10.RewardPicks) == "table", "new fields")
+		local c = H.combatant()
+		c.profile = v10
+		local status = S.ShopService.dailyStatus(c)
+		check(status.day == 5 and not status.claimed, "streak didn't continue at day 5")
+		-- already claimed today under the old ladder: no second claim after the update
+		c.profile = D.migrate({ SchemaVersion = 10, LoginStreak = { day = 2, lastDate = today, claimedDate = today } })
+		check(not S.ShopService.claimDaily(c), "claimed twice on update day")
+		-- damaged entries are repaired, not reset
+		local bad = D.migrate({ SchemaVersion = 10, LoginStreak = { day = "3", claimedDate = yesterday } })
+		check(bad.LoginStreak.day == 3 and bad.LoginStreak.lastDate == yesterday, "string day lost")
+		eq(D.migrate({ SchemaVersion = 10, LoginStreak = { day = 9, claimedDate = "" } }).LoginStreak.day, 2, "wrap")
+		local gone = D.migrate({ SchemaVersion = 10, LoginStreak = "oops", BonusSpins = 5 })
+		check(gone.LoginStreak.day == 0 and gone.LoginStreak.claimedDate == "", "unreadable streak")
+		eq(#gone.BonusSpins, 0, "bad bonus spins")
+		-- v11 data survives another migration
+		local v11 = D.migrate({ SchemaVersion = 11, BonusSpins = { "RarePlus" }, RewardPicks = { { ids = { "a" } } } })
+		eq(v11.BonusSpins[1], "RarePlus", "bonus spins kept")
+		eq(v11.RewardPicks[1].ids[1], "a", "picks kept")
 	end)
 
 	test("saving: load takes the lock, save writes, release drops the lock", function()
@@ -223,7 +339,7 @@ return function(H)
 		eq(S.RewardService.coins(killer, ctx("Red", { aborted = true, finalEliminator = killer })), 0, "aborted")
 	end)
 
-	test("rewards: a match pays once, boosts double it, and it counts toward free chests", function()
+	test("rewards: a match pays once, boosts double it, and it counts toward the daily quests", function()
 		local c = H.combatant()
 		c.team = "Red"
 		c.stats.throws = 2
@@ -234,7 +350,9 @@ return function(H)
 		eq(c.profile.Coins, Config.Coins.WinAlive, "first payout")
 		S.RewardService.awardMatch({ c }, m)
 		eq(c.profile.Coins, Config.Coins.WinAlive, "same match paid twice")
-		eq(S.ChestService.daily(c).matches, 1, "free-chest match count")
+		local d = S.QuestService.daily(c)
+		eq(d.progress.Played, 1, "played quest")
+		eq(d.progress.Won, 1, "won quest")
 		-- with a boost, the next match pays double
 		c.profile.CoinBoostForever = true
 		c.stats = H.stats()
@@ -245,13 +363,18 @@ return function(H)
 		eq(results[#results].payload.boost, 2, "results card boost")
 	end)
 
-	test("rewards: aborted or idle matches don't count toward free chests", function()
+	test("rewards: aborted or idle matches don't count toward the quests; a loss is played, not won", function()
 		local c = H.combatant()
 		c.team = "Red"
 		S.RewardService.awardMatch({ c }, ctx("Red")) -- idle: no actions
 		c.stats.throws = 3
 		S.RewardService.awardMatch({ c }, ctx(nil, { aborted = true }))
-		eq(S.ChestService.daily(c).matches, 0, "matches counted")
+		eq(S.QuestService.daily(c).progress.Played, nil, "matches counted")
+		c.stats = H.stats()
+		c.stats.throws = 1
+		S.RewardService.awardMatch({ c }, ctx("Blue"))
+		eq(S.QuestService.daily(c).progress.Played, 1, "a loss isn't played")
+		eq(S.QuestService.daily(c).progress.Won, nil, "a loss counted as won")
 	end)
 
 	test("rewards: bot-heavy (casual) matches leave win streaks alone; real ones move them", function()
@@ -272,114 +395,201 @@ return function(H)
 		eq(c.profile.BestWinStreak, 5, "best streak")
 	end)
 
-	-- Chests ----------------------------------------------------------------------------------------
+	-- Daily quests ----------------------------------------------------------------------------------
 
-	test("chests: each tier's wheels hold only its rarities, in about its odds", function()
-		local order = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
-		for i, spot in Config.Chest.Spots do
-			local tier = Config.Chest.Tiers[spot.Tier]
-			local counts, total = {}, 0
-			for n = 1, 400 do
-				local c = { id = 100000 + n, profile = { ChestOpens = n } }
-				for _, id in S.ChestService.wheel(c, i) do
-					local r = Catalog.rarity(Catalog.get(id))
-					check((tier.RarityWeights[r] or 0) > 0, spot.Tier .. " wheel holds a " .. r)
-					counts[r] = (counts[r] or 0) + 1
-					total += 1
-				end
+	local function quest(c, id)
+		for _, q in S.QuestService.status(c).quests do
+			if q.id == id then
+				return q
 			end
-			local sum = 0
-			for _, w in tier.RarityWeights do
-				sum += w
+		end
+	end
+	local function finish(c, id)
+		for _, q in Config.Quests.List do
+			if q.Id == id then
+				S.QuestService.record(c, q.Event, q.Goal)
 			end
-			for r, w in tier.RarityWeights do
-				local got, want = (counts[r] or 0) / total, w / sum
+		end
+	end
+
+	test("quests: knockouts, games and wins add up to each goal and stop there; bots don't track", function()
+		local c = H.combatant()
+		S.QuestService.record(c, "Knockout")
+		S.QuestService.record(c, "Knockout")
+		local q = quest(c, "Knockouts")
+		check(q.progress == 2 and not q.ready, "2 of 3 knockouts")
+		S.QuestService.record(c, "Knockout", 5)
+		q = quest(c, "Knockouts")
+		check(q.progress == 3 and q.ready and not q.claimed, "knockouts past the goal")
+		eq(quest(c, "Played").progress, 0, "a knockout counted as a game")
+		S.QuestService.record(c, "Played")
+		eq(quest(c, "Played").progress, 1, "played")
+		S.QuestService.record(c, "Won")
+		check(quest(c, "Won").ready, "win quest not ready")
+		local bot = H.combatant(false)
+		S.QuestService.record(bot, "Knockout")
+		eq(bot.profile.DailyQuests.date, "", "a bot's quests were touched")
+	end)
+
+	test("quests: progress and claims reset at UTC midnight", function()
+		local day = 20000 * 86400
+		H.now = day + 86400 - 2 -- two seconds before midnight UTC
+		local c = H.combatant()
+		finish(c, "Won")
+		check(S.QuestService.claim(c, "Won"), "claim refused")
+		S.QuestService.record(c, "Knockout")
+		eq(S.QuestService.status(c).resetsAt, day + 86400, "reset time")
+		H.now = day + 86400 -- midnight
+		local st = S.QuestService.status(c)
+		for _, q in st.quests do
+			check(q.progress == 0 and not q.claimed and not q.ready, q.id .. " carried over midnight")
+		end
+		eq(st.resetsAt, day + 2 * 86400, "next reset time")
+		check(not S.QuestService.claim(c, "Won"), "claimed before the new day's win")
+		finish(c, "Won")
+		check(S.QuestService.claim(c, "Won"), "the next day's chest refused")
+	end)
+
+	test("quests: each chest is claimed once a day, only when done, only in the hub, and saves", function()
+		local c = H.combatant()
+		local r, why = S.QuestService.claim(c, "Knockouts")
+		check(r == nil and why, "claimed an unfinished quest")
+		check(not S.QuestService.claim(c, "Nope"), "claimed an unknown quest")
+		finish(c, "Knockouts")
+		c.status, c.inMatch = "Active", true
+		check(not S.QuestService.claim(c, "Knockouts"), "claimed during a match")
+		c.status, c.inMatch = "Lobby", false
+		c.paidRandomRestricted = true -- quest chests are free: allowed everywhere
+		r = S.QuestService.claim(c, "Knockouts")
+		check(r and r.ok and r.kind == "Chest" and r.quest == "Knockouts", "claim refused")
+		eq(Catalog.get(r.id).Category, "Title", "Title Chest dropped a " .. Catalog.get(r.id).Category)
+		check(c.profile.OwnedCosmetics[r.id] and not r.duplicate, "prize not owned")
+		eq(r.slots[r.index], r.id, "the reveal wheel doesn't land on the prize")
+		eq(#r.slots, Config.Quests.RevealSlots, "reveal slots")
+		check(quest(c, "Knockouts").claimed, "not marked claimed")
+		local coins = c.profile.Coins
+		check(not S.QuestService.claim(c, "Knockouts"), "claimed twice")
+		eq(c.profile.Coins, coins, "a refused claim paid")
+		check(#H.eventsNamed("Profile") > 0, "claim didn't push the profile")
+		-- an unloaded profile can't claim
+		local early = H.combatant()
+		finish(early, "Played")
+		early.profileLoaded = false
+		check(not S.QuestService.claim(early, "Played"), "claimed before the profile loaded")
+	end)
+
+	test("quests: a claim survives a save and reload, and stays claimed", function()
+		local c = H.combatant()
+		finish(c, "Played")
+		check(S.QuestService.claim(c, "Played"), "claim refused")
+		local reloaded = { profile = S.DataService.migrate(H.deepCopy(c.profile)), profileLoaded = true }
+		local q
+		for _, it in S.QuestService.status(reloaded).quests do
+			if it.id == "Played" then
+				q = it
+			end
+		end
+		check(q.claimed and not q.ready, "claim lost on reload")
+	end)
+
+	test("quests: drops follow each chest's rarity odds and stay in its category", function()
+		for _, def in Config.Quests.List do
+			local odds = S.RewardService.chestOdds(def.Chest)
+			local category = Config.Quests.Chests[def.Chest].Category
+			local counts, n = {}, 2000
+			for _ = 1, n do
+				local c = H.combatant(false) -- a fresh profile owns nothing, so there are no duplicates
+				local r = S.RewardService.grant(c, { Kind = "Chest", Chest = def.Chest }, "Test")
+				eq(Catalog.get(r.id).Category, category, def.Chest .. " category")
+				eq(Catalog.rarity(Catalog.get(r.id)), r.rarity, def.Chest .. " rarity")
+				check(not r.duplicate, def.Chest .. " duplicate on an empty profile")
+				counts[r.rarity] = (counts[r.rarity] or 0) + 1
+			end
+			for rarity, p in odds do
+				local got = (counts[rarity] or 0) / n
 				check(
-					math.abs(got - want) < 0.04,
-					("%s: %s is %.1f%% of slots, want %.1f%%"):format(spot.Tier, r, got * 100, want * 100)
+					math.abs(got - p) < 0.035,
+					("%s: %s is %.1f%%, want %.1f%%"):format(def.Chest, rarity, got * 100, p * 100)
 				)
 			end
-			check(order[next(counts)] ~= nil, "no prizes")
 		end
 	end)
 
-	test("chests: the prize is a slot of the wheel the player was shown", function()
+	test("quests: an owned item never drops while its rarity has unowned ones; all owned pays coins", function()
 		local c = H.combatant()
-		local i = chestIndex("Rare")
-		atChest(c, i)
-		c.profile.Coins = 100000
-		for _ = 1, 20 do
-			local shown = S.ChestService.wheel(c, i)
-			local r = S.ChestService.open(c, i)
-			check(r and r.ok, "open refused")
-			eq(shown[r.index], r.id, "prize vs shown wheel")
+		local pool = S.RewardService.chestPool("Gesture")
+		-- own every gesture but one Rare: every Rare roll is that one, every other roll a duplicate
+		local last = pool.Rare[1].Id
+		for _, items in pool do
+			for _, item in items do
+				c.profile.OwnedCosmetics[item.Id] = item.Id ~= last or nil
+			end
+		end
+		local sawRare, sawDup = false, false
+		for _ = 1, 200 do
+			c.profile.OwnedCosmetics[last] = nil
+			local before = c.profile.Coins
+			local r = S.RewardService.grant(c, { Kind = "Chest", Chest = "Gesture" }, "Test")
+			if r.rarity == "Rare" then
+				sawRare = true
+				check(r.id == last and not r.duplicate and r.coins == 0, "rolled an owned Rare")
+			else
+				sawDup = true
+				check(r.duplicate, "an owned " .. r.rarity .. " wasn't a duplicate")
+				eq(r.coins, Config.Economy.DuplicateCoins[r.rarity], r.rarity .. " duplicate coins")
+				eq(c.profile.Coins - before, r.coins, "duplicate coins not paid")
+				eq(Catalog.rarity(Catalog.get(r.id)), r.rarity, "duplicate shows the wrong rarity")
+			end
+		end
+		check(sawRare and sawDup, "200 rolls never hit both cases")
+	end)
+
+	test("quests: the panel status lists each chest's drops and odds", function()
+		local c = H.combatant()
+		local st = S.QuestService.status(c)
+		eq(#st.quests, #Config.Quests.List, "quest count")
+		for _, q in st.quests do
+			local n = 0
+			for r, ids in q.drops do
+				for _, id in ids do
+					eq(Catalog.rarity(Catalog.get(id)), r, id .. " listed under the wrong rarity")
+					n += 1
+				end
+				check(#ids > 0 or q.odds[r] == 0, q.id .. " has odds for an empty " .. r)
+			end
+			check(n > 0, q.id .. " lists no drops")
 		end
 	end)
 
-	test("chests: paid opens cost the tier price; you must be in the hub and at the chest", function()
-		local c = H.combatant()
-		local i = chestIndex("Epic")
-		local cost = Config.Chest.Tiers.Epic.Cost
-		atChest(c, i)
-		c.profile.Coins = cost - 1
-		check(S.ChestService.open(c, i) == nil, "opened without enough coins")
-		eq(c.profile.Coins, cost - 1, "refused open cost coins")
-		c.profile.Coins = cost
-		c.status, c.inMatch = "Active", true
-		check(S.ChestService.open(c, i) == nil, "opened during a match")
-		c.status, c.inMatch = "Lobby", false
-		c.root = { Position = H.Vector3.new(9999, 0, 9999) }
-		check(S.ChestService.open(c, i) == nil, "opened from across the map")
-		atChest(c, i)
-		local r = S.ChestService.open(c, i)
-		check(r and r.ok and not r.free, "paid open refused")
-		eq(c.profile.Coins, r.coins, "coins after the open (only a duplicate refund may remain)")
-	end)
-
-	test("chests: free Common after 1 match, free Rare after 3, once a day, back the next day", function()
-		local c = H.combatant()
-		local common, rare = chestIndex("Common"), chestIndex("Rare")
-		check(not S.ChestService.isFree(c, "Common"), "free before any match")
-		S.ChestService.matchPlayed(c)
-		check(#H.eventsNamed("Hint") == 1, "no hint when the free Common unlocked")
-		check(S.ChestService.isFree(c, "Common") and not S.ChestService.isFree(c, "Rare"), "after 1 match")
-		atChest(c, common)
-		local r = S.ChestService.open(c, common)
-		check(r and r.free, "free Common refused")
-		eq(c.profile.Coins, r.coins, "free open cost coins")
-		check(not S.ChestService.isFree(c, "Common"), "Common free twice")
-		S.ChestService.matchPlayed(c)
-		S.ChestService.matchPlayed(c)
-		check(S.ChestService.isFree(c, "Rare"), "Rare not free after 3")
-		atChest(c, rare)
-		check(S.ChestService.open(c, rare).free, "free Rare refused")
-		check(not S.ChestService.isFree(c, "Rare"), "Rare free twice")
-		check(not S.ChestService.isFree(c, "Epic"), "Epic was free")
-		-- the status the panel reads
-		local st = S.ChestService.status(c)
-		eq(st.matches, 3, "status matches")
-		eq(#st.free, 2, "free tiers listed")
-		check(st.free[1].claimed and st.free[2].claimed, "claimed flags")
-		-- next UTC day
-		H.now = os.time() + 86400
-		check(not S.ChestService.isFree(c, "Common"), "yesterday's matches carried over")
-		S.ChestService.matchPlayed(c)
-		check(S.ChestService.isFree(c, "Common"), "free Common didn't come back")
-	end)
-
-	test("chests: restricted regions can't pay for chests but still get free ones", function()
-		local c = H.combatant()
-		c.paidRandomRestricted = true
-		local i = chestIndex("Common")
-		atChest(c, i)
-		c.profile.Coins = 100000
-		local r, why = S.ChestService.open(c, i)
-		check(r == nil and why ~= nil, "paid chest for a restricted player")
-		eq(c.profile.Coins, 100000, "refused open cost coins")
-		check(S.ChestService.status(c).restricted, "status not restricted")
-		S.ChestService.matchPlayed(c)
-		local free = S.ChestService.open(c, i)
-		check(free and free.free, "free chest blocked for a restricted player")
+	test("save migration v12: today's unopened free chests become bonus spins; lobby chest data goes", function()
+		local D = S.DataService
+		local today = os.date("!%Y-%m-%d", os.time())
+		local both = D.migrate({
+			SchemaVersion = 11,
+			Coins = 10,
+			BonusSpins = { "Standard" },
+			ChestOpens = 12,
+			ChestDaily = { date = today, matches = 3, claimed = {} },
+		})
+		eq(both.SchemaVersion, Config.Data.SchemaVersion, "schema")
+		eq(#both.BonusSpins, 3, "owed chests not converted")
+		check(both.BonusSpins[1] == "Standard" and both.BonusSpins[2] == "Standard", "existing spin or Common lost")
+		eq(both.BonusSpins[3], "RarePlus", "Rare chest became the wrong wheel")
+		check(both.ChestDaily == nil and both.ChestOpens == nil, "lobby chest data left behind")
+		eq(both.Coins, 10, "coins")
+		check(type(both.DailyQuests.progress) == "table" and type(both.DailyQuests.claimed) == "table", "quests")
+		-- one already used, the other not unlocked yet
+		local used =
+			D.migrate({ SchemaVersion = 11, ChestDaily = { date = today, matches = 1, claimed = { Common = true } } })
+		eq(#used.BonusSpins, 0, "a used or locked free chest was granted")
+		local partial = D.migrate({ SchemaVersion = 11, ChestDaily = { date = today, matches = 1, claimed = {} } })
+		eq(#partial.BonusSpins, 1, "Common free chest not converted")
+		-- yesterday's free opens had already expired
+		local stale = D.migrate({ SchemaVersion = 11, ChestDaily = { date = "2000-01-01", matches = 9, claimed = {} } })
+		eq(#stale.BonusSpins, 0, "an expired free chest was granted")
+		-- a v12 save isn't converted again
+		local again = D.migrate(H.deepCopy(both))
+		eq(#again.BonusSpins, 3, "second migration")
 	end)
 
 	-- Spin, boosts, compliance ---------------------------------------------------------------------
@@ -455,6 +665,103 @@ return function(H)
 		eq(S.PurchaseService.process(r), Granted, "retry")
 		eq(c.profile.Coins, b.Coins, "coins after retry")
 		eq(#H.eventsNamed("CoinsBought"), 1, "celebrations")
+	end)
+
+	test("purchases: a limited bundle grants its items and coins once, even after it ends", function()
+		local c = H.combatant()
+		local o = Config.CoinShop.Offers[1]
+		-- the shipped id may still be the placeholder 0, so route a test id to the same grant
+		local productId = 999000222
+		S.PurchaseService.register(productId, function(cc)
+			return S.PurchaseService.grantOffer(cc, o)
+		end)
+		H.now = DateTime.fromIsoDate(o.End).UnixTimestamp + 3600 -- a late receipt still grants
+		local r = receipt(c, productId)
+		eq(S.PurchaseService.process(r), Granted, "first receipt")
+		eq(S.PurchaseService.process(r), Granted, "retry")
+		eq(c.profile.Coins, o.Coins, "coins granted once")
+		for _, id in o.Items do
+			check(S.ShopService.owns(c, id), "missing " .. id)
+		end
+		eq(#H.eventsNamed("BundleBought"), 1, "celebrations")
+	end)
+
+	test("shop: bundle cosmetics never sell for coins and stay off the shelf until owned", function()
+		local c = H.combatant()
+		local id = Config.CoinShop.Offers[1].Items[1]
+		H.game:GetService("ReplicatedStorage"):SetAttribute("Halloween", true)
+		check(not Catalog.isOffered(Catalog.get(id)), "bundle item offered for coins")
+		c.profile.Coins = 1e6
+		check(not S.ShopService.buy(c, id), "bundle item sold for coins")
+		eq(c.profile.Coins, 1e6, "coins spent")
+	end)
+
+	test("mastery: earn-only cosmetics are never sold, spun or rolled", function()
+		local c = H.combatant()
+		c.profile.Coins = 1e6
+		local n = 0
+		for _, item in Catalog.Items do
+			if item.Unlock then
+				n += 1
+				check(not Catalog.isOffered(item), item.Id .. " offered for coins")
+				check(not S.ShopService.buy(c, item.Id), item.Id .. " sold for coins")
+				for _, list in S.SpinService.pool() do
+					for _, it in list do
+						check(it.Id ~= item.Id, item.Id .. " is on the wheels")
+					end
+				end
+			end
+		end
+		check(n >= 4, "mastery items missing")
+		eq(c.profile.Coins, 1e6, "coins spent")
+	end)
+
+	test("mastery: power-ball knockouts count by type, unlock at the goal, the featured ball doubles", function()
+		local types = H.require("shared/BallDefinitions").PowerTypes
+		-- freeze a day whose featured ball is Pop (types[3]): day % 3 == 2
+		H.now = 2 * 86400 + 3600
+		eq(S.ShopService.featuredBall(), "Pop", "featured ball")
+		local c = H.combatant()
+		S.ShopService.recordPowerKO(c, "Standard")
+		S.ShopService.recordPowerKO(c, nil)
+		S.ShopService.recordPowerKO(c, "Nope")
+		eq(next(c.profile.PowerKOs), nil, "a Standard / unknown knockout counted")
+		for i = 1, 9 do
+			S.ShopService.recordPowerKO(c, "Heavy")
+			eq(c.profile.PowerKOs.Heavy, i, "Heavy count")
+		end
+		check(not S.ShopService.owns(c, "Title_Heavyweight"), "unlocked before the goal")
+		local got = S.ShopService.recordPowerKO(c, "Heavy")
+		eq(got[1], "Title_Heavyweight", "unlock at the goal")
+		check(S.ShopService.owns(c, "Title_Heavyweight"), "Heavyweight not owned")
+		eq(#S.ShopService.recordPowerKO(c, "Heavy"), 0, "unlocked twice")
+		-- featured: each Pop knockout counts double
+		for _ = 1, 5 do
+			S.ShopService.recordPowerKO(c, "Pop")
+		end
+		eq(c.profile.PowerKOs.Pop, 10, "featured double")
+		check(S.ShopService.owns(c, "Title_PopStar"), "Pop Star not owned")
+		-- the trail needs 25 of each type
+		local trail = Catalog.get("Trail_PowerSurge")
+		c.profile.PowerKOs = { Heavy = 30, Rocket = 24, Pop = 40 }
+		local have, need = Catalog.unlockProgress(trail, c.profile.PowerKOs)
+		eq(have, 24, "All progress is the lowest type")
+		eq(need, 25, "All goal")
+		S.ShopService.recordPowerKO(c, "Rocket")
+		check(S.ShopService.owns(c, "Trail_PowerSurge"), "Power Surge not owned at 25 each")
+		check(S.ShopService.owns(c, "Title_Rocketeer"), "Rocketeer not owned past its goal")
+		-- bots and unloaded profiles don't track
+		local bot = H.combatant(false)
+		S.ShopService.recordPowerKO(bot, "Heavy")
+		eq(next(bot.profile.PowerKOs), nil, "a bot counted")
+		check(#types == 3, "power types")
+	end)
+
+	test("mastery: a save without PowerKOs gets an empty one; counts survive migration", function()
+		local D = S.DataService
+		eq(next(D.migrate({ SchemaVersion = 12 }).PowerKOs), nil, "missing PowerKOs")
+		eq(next(D.migrate({ SchemaVersion = 12, PowerKOs = "bad" }).PowerKOs), nil, "damaged PowerKOs")
+		eq(D.migrate({ SchemaVersion = 12, PowerKOs = { Heavy = 4 } }).PowerKOs.Heavy, 4, "PowerKOs lost")
 	end)
 
 	test("purchases: every configured product has a handler that grants", function()
@@ -581,7 +888,7 @@ return function(H)
 		local c = H.combatant()
 		local item
 		for _, it in Catalog.Items do
-			if it.Event == "Halloween" then
+			if it.Event == "Halloween" and not it.Bundle then
 				item = it
 			end
 		end
@@ -596,15 +903,126 @@ return function(H)
 	test("daily reward: once per UTC day, ladder advances, a missed day resets", function()
 		local L = Config.DailyRewards.Ladder
 		local c = H.combatant()
-		check(S.ShopService.claimDaily(c), "first claim")
-		eq(c.profile.Coins, L[1], "day 1")
-		check(not S.ShopService.claimDaily(c), "second claim the same day")
+		local r1 = S.ShopService.claimDaily(c)
+		check(r1 and r1.ok and r1.day == 1, "first claim")
+		eq(r1.kind, "Spin", "day 1 kind")
+		eq(c.profile.BonusSpins[1], L[1].Wheel, "day 1 bonus spin queued")
+		local r2, why = S.ShopService.claimDaily(c)
+		check(not r2 and why, "second claim the same day")
+		eq(#c.profile.BonusSpins, 1, "a refused claim granted anyway")
 		H.now = os.time() + 86400
-		check(S.ShopService.claimDaily(c), "next day")
-		eq(c.profile.Coins, L[1] + L[2], "day 2")
+		local r = S.ShopService.claimDaily(c)
+		check(r and r.day == 2, "next day")
+		eq(c.profile.Coins, L[2].Amount, "day 2 coins")
 		H.now = os.time() + 4 * 86400
 		check(S.ShopService.claimDaily(c), "after a gap")
 		eq(c.profile.LoginStreak.day, 1, "missed day resets")
+	end)
+
+	test("daily reward: every rung is a valid typed reward; day 1 is a spin; the week loops", function()
+		local L = Config.DailyRewards.Ladder
+		eq(#L, 7, "ladder length")
+		for i, reward in L do
+			check(S.RewardService.valid(reward), "day " .. i .. " isn't a valid reward")
+		end
+		eq(L[1].Kind, "Spin", "day 1")
+		-- claim a whole week, one day at a time: every kind lands, and day 8 is day 1 again
+		local c = H.combatant()
+		local t0 = os.time()
+		local kinds = {}
+		for day = 1, 8 do
+			H.now = t0 + (day - 1) * 86400
+			local r = S.ShopService.claimDaily(c)
+			check(r and r.ok, "claim on day " .. day)
+			eq(r.day, (day - 1) % 7 + 1, "ladder day")
+			kinds[r.kind] = true
+			if r.kind == "Boost" then
+				check(c.profile.CoinBoostUntil > H.now, "the boost isn't running")
+			elseif r.kind == "Pick" then
+				check(S.RewardService.pick(c, r.ids[1]), "pick refused")
+			end
+		end
+		check(kinds.Coins and kinds.Spin and kinds.Boost and kinds.Pick, "a reward kind never landed")
+	end)
+
+	test("rewards: grant gives every kind, and refuses bad rewards and unloaded profiles", function()
+		local R = S.RewardService
+		local c = H.combatant()
+		eq(R.grant(c, { Kind = "Coins", Amount = 50 }, "T").coins, 50, "coins result")
+		eq(c.profile.Coins, 50, "coins")
+		R.grant(c, { Kind = "Spin", Wheel = "Standard" }, "T")
+		eq(c.profile.BonusSpins[1], "Standard", "spin queued")
+		R.grant(c, { Kind = "Boost", Id = "Boost30" }, "T")
+		check(c.profile.CoinBoostUntil >= os.time() + 29 * 60, "boost")
+		eq(#H.eventsNamed("BoostBought"), 1, "boost announced")
+		local item = S.SpinService.pool().Common[1]
+		local got = R.grant(c, { Kind = "Cosmetic", Id = item.Id, DuplicateCoins = 7 }, "T")
+		check(got.kind == "Cosmetic" and not got.duplicate and c.profile.OwnedCosmetics[item.Id], "item")
+		local dup = R.grant(c, { Kind = "Cosmetic", Id = item.Id, DuplicateCoins = 7 }, "T")
+		check(dup.duplicate and dup.coins == 7 and c.profile.Coins == 57, "duplicate coins")
+		local coins = c.profile.Coins
+		check(not R.grant(c, { Kind = "Gems", Amount = 5 }, "T"), "unknown kind granted")
+		check(not R.grant(c, { Kind = "Spin", Wheel = "Nope" }, "T"), "unknown wheel granted")
+		check(not R.grant(c, { Kind = "Boost", Id = "Nope" }, "T"), "unknown boost granted")
+		c.profileLoaded = false
+		check(not R.grant(c, { Kind = "Coins", Amount = 5 }, "T"), "granted before the profile loaded")
+		eq(c.profile.Coins, coins, "a refused grant paid")
+	end)
+
+	test("rewards: a pick offers unowned items of its rarity; one choice, once; all owned pays coins", function()
+		local R = S.RewardService
+		local reward = { Kind = "Cosmetic", Rarity = "Epic", Choices = 3, DuplicateCoins = 1000 }
+		local c = H.combatant()
+		local r = R.grant(c, reward, "Daily7")
+		eq(r.kind, "Pick", "kind")
+		eq(#r.ids, math.min(3, #S.SpinService.pool().Epic), "choices")
+		for _, id in r.ids do
+			local item = Catalog.get(id)
+			check(Catalog.rarity(item) == "Epic" and not item.Event and not item.Bundle, id .. " not a plain Epic")
+		end
+		eq(S.ShopService.dailyStatus(c).pick.ids[1], r.ids[1], "pick in the daily status")
+		check(not R.pick(c, "Skin_Lime"), "took something that wasn't offered")
+		local got = R.pick(c, r.ids[2])
+		check(got and got.ok and c.profile.OwnedCosmetics[r.ids[2]], "pick didn't grant")
+		check(not R.pick(c, r.ids[2]), "the same pick granted twice")
+		check(not R.pick(c, r.ids[1]), "a second choice from a spent pick")
+		eq(#c.profile.RewardPicks, 0, "pick left waiting")
+		-- owning every Epic: the duplicate coins instead of a pick
+		for _, item in S.SpinService.pool().Epic do
+			c.profile.OwnedCosmetics[item.Id] = true
+		end
+		local coins = c.profile.Coins
+		local all = R.grant(c, reward, "Daily7")
+		check(all.kind == "Cosmetic" and all.duplicate and all.coins == 1000, "all-owned result")
+		eq(c.profile.Coins, coins + 1000, "all-owned coins")
+		-- an offered item bought before picking pays the pick's duplicate coins
+		local d = H.combatant()
+		local p = R.grant(d, reward, "Daily7")
+		d.profile.OwnedCosmetics[p.ids[1]] = true
+		local late = R.pick(d, p.ids[1])
+		check(late.duplicate and late.coins == 1000, "bought-meanwhile pick")
+	end)
+
+	test("spin: bonus spins go first on their own wheel, stack with the daily one, work when restricted", function()
+		local c = H.combatant()
+		c.paidRandomRestricted = true
+		S.RewardService.grant(c, { Kind = "Spin", Wheel = "RarePlus" }, "T")
+		local st = S.SpinService.status(c)
+		eq(st.freeSpins, 2, "bonus + daily")
+		eq(st.bonus, "RarePlus", "next wheel")
+		for _, id in st.slots do
+			check(Catalog.rarity(Catalog.get(id)) ~= "Common", "a Common on the Rare+ wheel")
+		end
+		local r = S.SpinService.spin(c, "Free")
+		check(r and r.how == "Bonus" and r.wheel == "RarePlus", "bonus spin not used first")
+		eq(r.slots[r.index], r.id, "prize isn't the slot shown")
+		check(table.find(st.slots, r.id) ~= nil, "prize wasn't on the previewed wheel")
+		eq(#c.profile.BonusSpins, 0, "bonus spin not spent")
+		check(not c.profile.Spin.freeUsed, "bonus spin used up the daily one")
+		local d = S.SpinService.spin(c, "Free")
+		check(d and d.how == "Free", "daily spin after the bonus")
+		check(not S.SpinService.spin(c, "Free"), "a third free spin")
+		eq(S.SpinService.status(c).freeSpins, 0, "free spins left")
 	end)
 
 	test("Halloween: on inside its window, off outside, off when disabled", function()

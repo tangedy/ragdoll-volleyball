@@ -9,6 +9,7 @@ local StarterGui = game:GetService("StarterGui")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local ArenaLayout = require(Shared.ArenaLayout)
 local Config = require(Shared.Config)
 local DodgeMotion = require(Shared.DodgeMotion)
 local Net = require(script.Parent.Net)
@@ -42,13 +43,18 @@ local function onCharacter(character: Model)
 end
 
 -- Put the camera behind `root`, looking past it at `focus` (same framing as the round start).
-function CharacterController.faceCameraAt(root: BasePart, focus: Vector3)
+-- With `turnBody`, the character is turned to match: you own its physics, and shift lock would
+-- otherwise have already turned it back to the old camera direction.
+function CharacterController.faceCameraAt(root: BasePart, focus: Vector3, turnBody: boolean?)
 	local camera = workspace.CurrentCamera
 	if camera.CameraType ~= Enum.CameraType.Custom then
 		return -- a cutscene owns the camera
 	end
 	local flat = Vector3.new(focus.X - root.Position.X, 0, focus.Z - root.Position.Z)
 	flat = if flat.Magnitude > 0.1 then flat.Unit else root.CFrame.LookVector
+	if turnBody then
+		root.CFrame = CFrame.lookAt(root.Position, root.Position + flat)
+	end
 	local camPos = root.Position - flat * 12 + Vector3.new(0, 5, 0)
 	camera.CFrame = CFrame.lookAt(camPos, Vector3.new(focus.X, root.Position.Y + 1, focus.Z))
 end
@@ -116,20 +122,20 @@ function CharacterController.start()
 	if player.Character then
 		task.spawn(onCharacter, player.Character)
 	end
-	-- each round countdown, swing the camera behind you facing the court (teleports keep the old yaw)
+	-- each round countdown, swing the camera behind you facing the enemy (teleports keep the old yaw).
+	-- Straight down the court from your team's end, not your body's facing: shift lock has already
+	-- turned the body back to the old camera direction by now.
 	Net.MatchState:GetAttributeChangedSignal("State"):Connect(function()
-		if Net.MatchState:GetAttribute("State") ~= "RoundCountdown" or (player:GetAttribute("Team") or "") == "" then
+		local team = player:GetAttribute("Team")
+		if Net.MatchState:GetAttribute("State") ~= "RoundCountdown" or type(team) ~= "string" or team == "" then
 			return
 		end
 		task.wait(0.15) -- let the spawn teleport replicate
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if root then
-			local look = root.CFrame.LookVector
-			local flat = Vector3.new(look.X, 0, look.Z)
-			flat = if flat.Magnitude > 0.1 then flat.Unit else Vector3.zAxis
-			local camera = workspace.CurrentCamera
-			camera.CFrame = CFrame.lookAt(root.Position - flat * 12 + Vector3.new(0, 5, 0), root.Position + flat * 10)
+			local towardEnemy = Vector3.zAxis * -ArenaLayout.teamSign(team)
+			CharacterController.faceCameraAt(root, root.Position + towardEnemy * 20, true)
 		end
 	end)
 	-- spawning into the hub, or (re)spawning after an elimination: the server faces the character at
@@ -143,11 +149,19 @@ function CharacterController.start()
 		local token = faceToken
 		local character = player.Character or player.CharacterAdded:Wait()
 		local root = character:WaitForChild("HumanoidRootPart", 5) :: BasePart?
-		task.wait(0.15) -- let the server's teleport replicate first
+		local from = if typeof(d.from) == "Vector3" then d.from else nil
+		-- let the server's teleport replicate first. It travels apart from this message, so when we
+		-- know the spot, wait for the body to actually get there: aiming from where it fell (out in
+		-- the void past the other end) would point the camera the wrong way down the court
+		local waited = 0
+		repeat
+			task.wait(0.05)
+			waited += 0.05
+		until waited >= 0.15 and (not from or not root or (root.Position - from).Magnitude < 8 or waited >= 1)
 		if not root or token ~= faceToken or player.Character ~= character then
 			return
 		end
-		CharacterController.faceCameraAt(root, d.focus)
+		CharacterController.faceCameraAt(root, d.focus, from ~= nil)
 	end)
 	Net.on("DodgeAccepted", function(d)
 		if pendingDodges > 0 and os.clock() - lastPredictAt < ACK_WINDOW then

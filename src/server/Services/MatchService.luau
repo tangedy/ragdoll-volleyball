@@ -319,6 +319,7 @@ local function eliminate(c: any)
 	c.eliminatedBy = credit
 	c.matchEliminations = (c.matchEliminations or 0) + 1
 	lastElim = { victim = c, credit = credit }
+	local ballType = c.pendingHit and c.pendingHit.ballType -- read before hitResolved clears it
 	S.AnalyticsService.hitResolved(c, "Void")
 	if c.heldBall then
 		S.BallService.drop(c)
@@ -336,6 +337,8 @@ local function eliminate(c: any)
 			reward = Config.Coins.Elimination * S.BoostService.multiplier(credit)
 			credit.profile.Coins += reward
 			credit.stats.eliminationCoins += reward
+			S.QuestService.record(credit, "Knockout") -- the daily 3-knockout quest, bots included
+			S.ShopService.recordPowerKO(credit, ballType) -- Power Ball Mastery, bots included
 			S.DataService.push(credit)
 		end
 		feed(("%s 💥 launched %s off the court!"):format(tag(credit), tag(c)))
@@ -433,8 +436,10 @@ function MatchService.onJailHit(thrower: any, target: any)
 		if thrower.heldBall then
 			S.BallService.drop(thrower)
 		end
+		-- back on your own half: the camera still points the way it did in jail (away from the
+		-- enemy from here), so swing it round too
 		local pos = spawnFor(thrower)
-		S.CharacterService.teleport(thrower, pos, faceCenter(pos))
+		S.CharacterService.placeFacing(thrower, pos, faceCenter(pos))
 		S.PlayerStateService.setStatus(thrower, "Active")
 		S.PlayerStateService.setAction(thrower, "Idle")
 		thrower.immuneUntil = now() + J.ReturnImmunity
@@ -577,15 +582,18 @@ local function resetRound()
 	end
 	S.BallService.resetMatchBalls()
 	for _, c in roster do
+		local pos = spawnFor(c)
 		if not S.PlayerStateService.isAlive(c) then
+			-- built facing the enemy: a build still waiting on the avatar finishes after the teleport
+			-- below, so its own CFrame is where it ends up
+			local cf = CFrame.lookAt(pos, faceCenter(pos))
 			if c.player then
-				S.CharacterService.spawnPlayer(c, CFrame.new(spawnFor(c)))
+				S.CharacterService.spawnPlayer(c, cf)
 			else
-				S.CharacterService.spawn(c, Instance.new("HumanoidDescription"), CFrame.new(spawnFor(c)))
+				S.CharacterService.spawn(c, Instance.new("HumanoidDescription"), cf)
 			end
 		end
 		resetCombatant(c)
-		local pos = spawnFor(c)
 		S.CharacterService.teleport(c, pos, faceCenter(pos))
 	end
 	publishCounts()
@@ -609,16 +617,21 @@ local function spawnPowerUps()
 		return
 	end
 	-- Both teams always receive the same type, so luck is never one-sided.
+	-- Today's featured ball drops more often.
 	local types = BallDefinitions.PowerTypes
-	local weights = Config.PowerUps.Weights :: { [string]: number }
+	local featured = S.ShopService.featuredBall()
+	local function weight(t: string): number
+		local w = (Config.PowerUps.Weights :: { [string]: number })[t] or 0
+		return if t == featured then w * Config.PowerUps.Featured.WeightBoost else w
+	end
 	local total = 0
 	for _, t in types do
-		total += weights[t] or 0
+		total += weight(t)
 	end
 	local roll = rng:NextNumber() * total
 	local chosen = types[1]
 	for _, t in types do
-		roll -= weights[t] or 0
+		roll -= weight(t)
 		if roll <= 0 then
 			chosen = t
 			break
@@ -639,6 +652,22 @@ local function spawnPowerUps()
 		S.NetService.broadcast("Sound", { cue = "PowerUp", position = S.ArenaService.dispenserPosition("Red") })
 		S.NetService.broadcast("Sound", { cue = "PowerUp", position = S.ArenaService.dispenserPosition("Blue") })
 	end
+end
+
+-- Feed line naming today's featured ball (Config.PowerUps.Featured), once a match.
+local function announceFeatured()
+	local featured = Config.PowerUps.Enabled and S.ShopService.featuredBall()
+	if not featured then
+		return
+	end
+	local def = BallDefinitions.get(featured)
+	feed(
+		('⭐ Featured ball today: <b><font color="#%s">%s</font></b>. Its knockouts count x%d for mastery!'):format(
+			def.Color:ToHex(),
+			def.DisplayName,
+			Config.PowerUps.Featured.MasteryBonus
+		)
+	)
 end
 
 local function waitPhase(seconds: number, abortCheck: (() -> boolean)?): boolean
@@ -947,6 +976,9 @@ local function runMatch(queued: { any })
 		for _, c in roster do
 			S.AnalyticsService.funnel(c, "EnteredFirstRound")
 		end
+		if roundNumber == 1 then
+			announceFeatured()
+		end
 		local result, byElimination = playRound()
 		publishCounts()
 		if result == "Abort" then
@@ -960,7 +992,7 @@ local function runMatch(queued: { any })
 			for _, c in roster do
 				if c.status == "Spectating" and S.PlayerStateService.isAlive(c) then
 					local pos = spawnFor(c)
-					S.CharacterService.teleport(c, pos, faceCenter(pos))
+					S.CharacterService.placeFacing(c, pos, faceCenter(pos))
 				end
 			end
 		end

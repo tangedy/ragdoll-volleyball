@@ -1,13 +1,14 @@
 --!strict
 -- Hub UI: the action row of destinations (Shop, Spin, Daily, Settings), the shop and the daily
--- reward. Shown only in the hub, never during a match. While the shop is open the player stays in
+-- reward ladder. Shown only in the hub, never during a match. While the shop is open the player stays in
 -- the hub (auto-queue is paused and restored on close) so the short intermission never yanks them out
 -- mid-purchase.
 --
 -- Layout follows the Toybox Island design system: the shop is a sheet with segmented category tabs
 -- over a grid of item cards (name, tier color and sticker, preview, and an action on every card). The daily reward
 -- is louder on purpose: a sheet with a sky header band, a row of toy day cards (today's grows, glows
--- and spins a sunburst behind its coin) and one shining primary button.
+-- and spins a sunburst behind its reward icon: coins, a prize wheel, the 2x disc or a gift) and one
+-- shining primary button. A reward that lets you pick a cosmetic swaps the day cards for the choices.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -32,6 +33,7 @@ local T = Theme.Toybox
 local new = Theme.new
 
 local ShopController = {}
+ShopController.onOpenSpin = nil :: (() -> ())? -- set by SpinController: a claimed bonus spin opens its sheet
 
 local SHOP_SIZE = Vector2.new(880, 600)
 local DAILY_SIZE = Vector2.new(760, 438)
@@ -50,6 +52,11 @@ local setTab: (string) -> ()
 local tiles: { { item: any, card: any } } = {}
 local selectedId: string? = nil
 local dailyTiles: { any } = {}
+local daysRow: Frame
+local pickRow: Frame
+local pickCards: { GuiObject } = {}
+local pickShown = "" -- the choices pickRow was drawn for
+local pickRequested = false -- the player took a choice and we're waiting for the server
 local dailyDot: Frame
 local claimButton: TextButton
 local claimShine: Frame
@@ -392,6 +399,9 @@ local function primaryAction(item: Catalog.Item?)
 	end
 	if owns(item) then
 		Net.request(Net.Actions.EquipItem, { id = item.Id })
+	elseif item.Unlock then
+		SoundController.play("UIError")
+		HUDController.hint("Earn it with power-ball knockouts", 1.6)
 	elseif (profile.coins or 0) >= item.Price then
 		Net.request(Net.Actions.BuyItem, { id = item.Id })
 	else
@@ -441,6 +451,13 @@ local function renderAction(item: Catalog.Item, b: TextButton)
 		Theme.setText(b, "Equip")
 		Theme.recolor(b, T.sky)
 		Theme.setEnabled(b, true)
+	elseif item.Unlock then
+		-- Power Ball Mastery: locked until earned, showing the progress
+		local have, need = Catalog.unlockProgress(item, profile.powerKOs)
+		local ball = if item.Unlock.Ball == "All" then "each" else item.Unlock.Ball
+		Theme.setText(b, ("🔒 %d/%d %s KOs"):format(have, need, ball))
+		Theme.recolor(b, "secondary")
+		Theme.setEnabled(b, false)
 	elseif coins >= item.Price then
 		Theme.setText(b, ("Buy · %s"):format(commas(item.Price)))
 		Theme.recolor(b, T.sun)
@@ -594,11 +611,12 @@ local function renderShelf()
 	end
 	table.clear(tiles)
 	walletLabel.Text = commas(profile.coins or 0)
-	-- event cosmetics show while their event runs (and forever once owned)
+	-- event cosmetics show while their event runs (and forever once owned); mastery cosmetics always,
+	-- locked until earned
 	local items = {}
 	local events = Catalog.activeEvents()
 	for _, item in Catalog.inCategory(currentTab) do
-		if Catalog.isOffered(item, events) or owns(item) then
+		if Catalog.isOffered(item, events) or owns(item) or item.Unlock then
 			table.insert(items, item)
 		end
 	end
@@ -639,10 +657,131 @@ end
 
 -- Daily ----------------------------------------------------------------------------------------------
 
+-- How a ladder reward (Config.DailyRewards) reads on its day card and on the Claim button.
+local function boostDef(id: string?): any
+	for _, b in Config.CoinShop.Boosts do
+		if b.Id == id then
+			return b
+		end
+	end
+	return nil
+end
+
+local function rewardLabel(reward: any): string
+	if reward.Kind == "Coins" then
+		return "+" .. commas(reward.Amount)
+	elseif reward.Kind == "Spin" then
+		return if reward.Wheel == "RarePlus" then "Rare+ spin" else "Free spin"
+	elseif reward.Kind == "Boost" then
+		return ("%dx coins"):format(Config.CoinShop.BoostMultiplier)
+	elseif reward.Id then
+		local item = Catalog.get(reward.Id)
+		return if item then item.Name else "Item"
+	end
+	return ("%s pick"):format(reward.Rarity or "Item")
+end
+
+local function claimLabel(reward: any): string
+	if reward.Kind == "Coins" then
+		return ("Claim %s coins"):format(commas(reward.Amount))
+	elseif reward.Kind == "Spin" then
+		return if reward.Wheel == "RarePlus" then "Claim a Rare+ spin" else "Claim a free spin"
+	elseif reward.Kind == "Boost" then
+		local b = boostDef(reward.Id)
+		return ("Claim %dx coins%s"):format(
+			Config.CoinShop.BoostMultiplier,
+			if b and not b.Forever then (" (%d min)"):format(b.Minutes) else ""
+		)
+	elseif reward.Id then
+		return "Claim " .. rewardLabel(reward)
+	end
+	return ("Pick an %s item"):format(reward.Rarity or "")
+end
+
+-- One choice of a cosmetic pick: the item on its rarity color, its name, and a Take button.
+local function pickCard(parent: Instance, order: number, item: Catalog.Item): GuiObject
+	local rarity = Catalog.rarity(item)
+	local root = new("Frame", {
+		Name = item.Id,
+		LayoutOrder = order,
+		Size = UDim2.fromOffset(170, CARD.Y + Theme.Ledge),
+		BackgroundColor3 = T.surface,
+		ZIndex = 5,
+	}, parent)
+	Theme.corner(root, Theme.Radius.M)
+	Theme.stroke(root, T.outline, Theme.StrokeToy)
+	local art = new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 10),
+		Size = UDim2.fromOffset(74, 74),
+		BackgroundColor3 = Theme.Rarity[rarity] or T.candy,
+		ZIndex = 6,
+	}, root)
+	Theme.corner(art, Theme.Radius.M)
+	Theme.stroke(art, T.outline, Theme.StrokeToy)
+	drawArt(item, art)
+	Theme.text(root, 16, {
+		Position = UDim2.fromOffset(6, 88),
+		Size = UDim2.new(1, -12, 0, 20),
+		FontFace = Theme.DisplayFace,
+		Text = item.Name,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 7,
+	})
+	local take = Theme.button(root, "Take it", "primary", {
+		Name = "Take",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -8),
+		Size = UDim2.fromOffset(140, 48),
+		ZIndex = 7,
+	})
+	take.Activated:Connect(function()
+		if not pickRequested then
+			pickRequested = true
+			Net.request(Net.Actions.PickReward, { id = item.Id })
+		end
+	end)
+	return root
+end
+
+local function drawPicks(ids: { string })
+	local key = table.concat(ids, ",")
+	if key == pickShown then
+		return
+	end
+	pickShown = key
+	for _, f in pickCards do
+		f:Destroy()
+	end
+	table.clear(pickCards)
+	for i, id in ids do
+		local item = Catalog.get(id)
+		if item then
+			table.insert(pickCards, pickCard(pickRow, i, item))
+		end
+	end
+end
+
+local function picking(): boolean
+	local d = profile.daily
+	return d ~= nil and type(d.pick) == "table" and type(d.pick.ids) == "table" and #d.pick.ids > 0
+end
+
 local function renderDaily()
 	local d = profile.daily
-	dailyDot.Visible = d ~= nil and not d.claimed
+	dailyDot.Visible = d ~= nil and (not d.claimed or picking())
 	if not d then
+		return
+	end
+	daysRow.Visible = not picking()
+	pickRow.Visible = picking()
+	if picking() then
+		drawPicks(d.pick.ids)
+		daily.subtitle.Text = ("Pick one %s item to keep!"):format(d.pick.rarity or "")
+		Theme.setText(claimButton, "Pick one above")
+		Theme.recolor(claimButton, "secondary")
+		Theme.setEnabled(claimButton, false)
+		claimShine.Visible = false
 		return
 	end
 	daily.subtitle.Text = if d.claimed
@@ -656,7 +795,7 @@ local function renderDaily()
 		card.top.BackgroundColor3 = Theme.darken(fill, 0.22)
 		card.topFill.BackgroundColor3 = card.top.BackgroundColor3
 		card.stamp.Visible = done
-		card.coins.Visible = not done
+		card.icon.Visible = not done
 		card.rays.Visible = today or (card.last and not done)
 		card.glow.Visible = today
 		card.today = today
@@ -670,16 +809,32 @@ local function renderDaily()
 		card.scale:SetAttribute("Base", if today then 1.08 else 1) -- pops settle here
 		card.scale.Scale = if today then 1.08 else 1
 	end
-	Theme.setText(claimButton, if d.claimed then "Come back tomorrow!" else ("Claim %s coins"):format(commas(d.amount)))
+	local reward = Config.DailyRewards.Ladder[d.day]
+	Theme.setText(
+		claimButton,
+		if d.claimed then "Come back tomorrow!" elseif reward then claimLabel(reward) else "Claim"
+	)
 	Theme.recolor(claimButton, if d.claimed then "secondary" else "primary")
 	Theme.setEnabled(claimButton, not d.claimed)
 	claimShine.Visible = not d.claimed
 end
 
--- Claimed: today's card pops and turns leaf with a check stamped on it, the button says come back
--- tomorrow, the sheet closes itself, and the coins fly into the counter.
-local function celebrateClaim(day: number, amount: number)
-	local card = dailyTiles[day]
+-- A cosmetic landed (a fixed reward or a pick): say so, or pop the coins a duplicate paid.
+local function announceItem(result: any)
+	local item = Catalog.get(result.id)
+	if result.duplicate then
+		HUDController.coinPop(tonumber(result.coins) or 0)
+	elseif item then
+		HUDController.hint(("%s is yours! Equip it in the Shop"):format(item.Name), 2.4)
+	end
+end
+
+-- Claimed (`result` is the server's DailyResult): today's card pops and turns leaf with a check
+-- stamped on it, then the reward plays out by kind. Coins fly into the counter; a bonus spin opens
+-- the Spin sheet on its wheel; a boost is announced by its own BoostBought; a pick keeps the sheet
+-- open on the choices.
+local function celebrateClaim(result: any)
+	local card = dailyTiles[result.day]
 	if card then
 		Theme.pop(card.root, 1.25, Theme.Motion.Slow)
 		Theme.pop(card.stamp, 2.2, Theme.Motion.Slow)
@@ -688,11 +843,29 @@ local function celebrateClaim(day: number, amount: number)
 		Theme.pop(claimButton, 0.85, Theme.Motion.Slow)
 	end)
 	SoundController.play("DailyClaim")
+	if result.kind == "Pick" then
+		Theme.popIn(pickCards)
+		local first = pickCards[1] and pickCards[1]:FindFirstChild("Take")
+		if first then
+			Theme.focus(first :: GuiObject)
+		end
+		return
+	end
 	task.delay(1.4, function()
 		if daily.frame.Visible then
 			ShopController.openDaily(false)
 		end
-		HUDController.coinPop(amount)
+		if result.kind == "Coins" then
+			HUDController.coinPop(tonumber(result.coins) or 0)
+		elseif result.kind == "Spin" then
+			if ShopController.onOpenSpin and inHub() then
+				ShopController.onOpenSpin()
+			else
+				HUDController.hint("Your free spin is waiting at the Spin wheel", 2.4)
+			end
+		elseif result.kind == "Cosmetic" then
+			announceItem(result)
+		end
 	end)
 end
 
@@ -785,13 +958,19 @@ function ShopController.openDaily(on: boolean)
 		ShopController.openSettings(false)
 		Theme.show(f, backdrop)
 		renderDaily()
-		local roots = {}
-		for _, card in dailyTiles do
-			table.insert(roots, card.root)
+		if picking() then
+			Theme.popIn(pickCards)
+			local first = pickCards[1] and pickCards[1]:FindFirstChild("Take")
+			Theme.focus((first or claimButton) :: GuiObject)
+		else
+			local roots = {}
+			for _, card in dailyTiles do
+				table.insert(roots, card.root)
+			end
+			Theme.popIn(roots)
+			-- focus the likely answer: Claim
+			Theme.focus(claimButton)
 		end
-		Theme.popIn(roots)
-		-- focus the likely answer: Claim
-		Theme.focus(claimButton)
 	else
 		if ShopController.isOpen(f) then
 			Theme.setHome(nil)
@@ -1018,9 +1197,98 @@ local function buildShop()
 	}, shelf)
 end
 
--- One day card: a toy card in its fill with a darker "Day N" strip, the coin art over a sunburst,
--- the amount, and a paper status strip along the bottom. renderDaily colors it.
-local function dayCard(parent: Instance, i: number, amount: number): { [string]: any }
+-- A reward's icon (Config.DailyRewards kinds) centred in `holder`: coins (three for a big pile), a
+-- little prize wheel with rarity slots, the 2x disc, or a gift box in the pick's rarity color.
+local function rewardIcon(holder: Frame, reward: any)
+	local z = holder.ZIndex
+	local function disc(size: number, fill: Color3): Frame
+		local f = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(size, size),
+			BackgroundColor3 = fill,
+			ZIndex = z,
+		}, holder)
+		Theme.round(f)
+		Theme.stroke(f, T.outline, Theme.StrokeToy)
+		return f
+	end
+	if reward.Kind == "Coins" then
+		local big = reward.Amount >= 600
+		local spots: { { number } } = if big
+			then { { 0.28, 0.62 }, { 0.72, 0.62 }, { 0.5, 0.38 } }
+			else { { 0.5, 0.5 } }
+		for n, spot in spots do
+			Theme.coin(holder, if big then 34 else 44, {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(spot[1], spot[2]),
+				ZIndex = z + n,
+			})
+		end
+	elseif reward.Kind == "Spin" then
+		-- the hub wheel in miniature: a disc with four prize slots in its rarities and a sun hub
+		local rare = reward.Wheel == "RarePlus"
+		local wheel = disc(50, T.surfaceSunk)
+		local slots: { string } = if rare
+			then { "Rare", "Epic", "Rare", "Legendary" }
+			else { "Common", "Rare", "Common", "Epic" }
+		for n, r in slots do
+			local a = math.rad((n - 1) * 90)
+			local slot = new("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5 + 0.3 * math.sin(a), 0.5 - 0.3 * math.cos(a)),
+				Size = UDim2.fromScale(0.3, 0.3),
+				BackgroundColor3 = Theme.Rarity[r],
+				ZIndex = z + 1,
+			}, wheel)
+			Theme.round(slot)
+			Theme.stroke(slot, T.outline, 1.5)
+		end
+		local hub = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.26, 0.26),
+			BackgroundColor3 = T.sun,
+			ZIndex = z + 2,
+		}, wheel)
+		Theme.round(hub)
+		Theme.stroke(hub, T.outline, 1.5)
+	elseif reward.Kind == "Boost" then
+		local d = disc(50, T.leaf)
+		Theme.label(d, {
+			Size = UDim2.fromScale(1, 1),
+			Text = ("%dx"):format(Config.CoinShop.BoostMultiplier),
+			TextXAlignment = Enum.TextXAlignment.Center,
+			ZIndex = z + 1,
+		}, 2)
+	else
+		local item = reward.Id and Catalog.get(reward.Id)
+		local rarity = if item then Catalog.rarity(item) else reward.Rarity
+		local box = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(50, 50),
+			BackgroundColor3 = Theme.Rarity[rarity] or T.candy,
+			ZIndex = z,
+		}, holder)
+		Theme.corner(box, Theme.Radius.S)
+		Theme.stroke(box, T.outline, Theme.StrokeToy)
+		if item then
+			drawArt(item, box)
+		else
+			Theme.glyph(box, "gift", T.paper, {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromScale(0.7, 0.7),
+				ZIndex = z + 1,
+			})
+		end
+	end
+end
+
+-- One day card: a toy card in its fill with a darker "Day N" strip, the reward's icon over a
+-- sunburst, its label, and a paper status strip along the bottom. renderDaily colors it.
+local function dayCard(parent: Instance, i: number, reward: any): { [string]: any }
 	local last = i == #Config.DailyRewards.Ladder
 	local root = new("Frame", {
 		Name = "Day" .. i,
@@ -1080,7 +1348,7 @@ local function dayCard(parent: Instance, i: number, amount: number): { [string]:
 		ZIndex = 7,
 	})
 	Theme.textStroke(dayLabel, 2)
-	-- the art: a sunburst behind one coin (three on the last day) and the amount
+	-- the art: a sunburst behind the reward's icon, and its label
 	local art = new("Frame", {
 		Name = "Art",
 		Position = UDim2.fromOffset(0, 32),
@@ -1110,29 +1378,23 @@ local function dayCard(parent: Instance, i: number, amount: number): { [string]:
 			ZIndex = 6,
 		}, rays)
 	end
-	local coins = new("Frame", {
-		Name = "Coins",
+	local icon = new("Frame", {
+		Name = "Icon",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.42),
 		Size = UDim2.fromOffset(60, 52),
 		BackgroundTransparency = 1,
 		ZIndex = 7,
 	}, art)
-	local spots: { { number } } = if last then { { 0.28, 0.62 }, { 0.72, 0.62 }, { 0.5, 0.38 } } else { { 0.5, 0.5 } }
-	for n, spot in spots do
-		Theme.coin(coins, if last then 34 else 44, {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(spot[1], spot[2]),
-			ZIndex = 7 + n,
-		})
-	end
-	local amountLabel = Theme.text(art, 22, {
+	rewardIcon(icon, reward)
+	local label = rewardLabel(reward)
+	local amountLabel = Theme.text(art, if #label > 6 then 16 else 22, {
 		Name = "Amount",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -4),
-		Size = UDim2.new(1, 0, 0, 24),
+		Size = UDim2.new(1, -4, 0, 24),
 		FontFace = Theme.DisplayFace,
-		Text = "+" .. commas(amount),
+		Text = label,
 		TextColor3 = T.paper,
 		ZIndex = 10,
 	})
@@ -1201,7 +1463,7 @@ local function dayCard(parent: Instance, i: number, amount: number): { [string]:
 		top = top,
 		topFill = topFill,
 		rays = rays,
-		coins = coins,
+		icon = icon,
 		stamp = stamp,
 		status = status,
 		last = last,
@@ -1209,7 +1471,7 @@ local function dayCard(parent: Instance, i: number, amount: number): { [string]:
 	}
 end
 
--- While the daily sheet is open: today's coin bobs and its glow breathes, sunbursts turn, the Claim button
+-- While the daily sheet is open: today's reward icon bobs and its glow breathes, sunbursts turn, the Claim button
 -- shines. Still under reduced motion.
 local function animateDaily()
 	if not daily.frame.Visible or Theme.settings.reducedMotion then
@@ -1221,7 +1483,7 @@ local function animateDaily()
 			card.rays.Rotation = (t * (if card.today then 45 else 20)) % 360
 		end
 		if card.today then
-			card.coins.Position = UDim2.new(0.5, 0, 0.42, math.sin(t * 3.2) * 4)
+			card.icon.Position = UDim2.new(0.5, 0, 0.42, math.sin(t * 3.2) * 4)
 			card.glowStroke.Transparency = 0.15 + 0.35 * (0.5 + 0.5 * math.sin(t * math.pi * 2 / Theme.Motion.Pulse))
 		end
 	end
@@ -1241,21 +1503,28 @@ local function buildDaily()
 		ShopController.openDaily(false)
 	end)
 	local body = daily.body :: Frame
-	local row = new("Frame", {
-		Name = "Days",
-		Size = UDim2.new(1, 0, 0, CARD.Y + Theme.Ledge + 20),
-		BackgroundTransparency = 1,
-		ZIndex = 4,
-	}, body)
-	new("UIPadding", { PaddingTop = UDim.new(0, 10) }, row)
-	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		Padding = UDim.new(0, 10),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	}, row)
-	for i, amount in Config.DailyRewards.Ladder do
-		table.insert(dailyTiles, dayCard(row, i, amount))
+	-- the day cards, and in their place while a cosmetic pick waits, its choices
+	local function cardRow(name: string, gap: number): Frame
+		local row = new("Frame", {
+			Name = name,
+			Size = UDim2.new(1, 0, 0, CARD.Y + Theme.Ledge + 20),
+			BackgroundTransparency = 1,
+			ZIndex = 4,
+		}, body)
+		new("UIPadding", { PaddingTop = UDim.new(0, 10) }, row)
+		new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			Padding = UDim.new(0, gap),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}, row)
+		return row
+	end
+	daysRow = cardRow("Days", 10)
+	pickRow = cardRow("Pick", 24)
+	pickRow.Visible = false
+	for i, reward in Config.DailyRewards.Ladder do
+		table.insert(dailyTiles, dayCard(daysRow, i, reward))
 	end
 	claimButton = Theme.button(body, "Claim", "primary", {
 		Name = "Claim",
@@ -1433,25 +1702,51 @@ function ShopController.start()
 		end
 	end)
 	Net.on("Profile", function(d)
-		local justClaimed = claimPending and d.daily and d.daily.claimed
 		profile = d
 		refreshTabTags()
-		if justClaimed then
-			claimPending = false
-			renderDaily()
-			celebrateClaim(d.daily.day, Config.DailyRewards.Ladder[d.daily.day] or 0)
-		end
 		if shop.frame.Visible then
 			renderShelf()
 		end
 		renderDaily()
-		-- show the daily sheet once per session when there's something to claim (never auto-claims)
-		if not dailyAutoShown and d.daily and not d.daily.claimed and inHub() then
+		-- show the daily sheet once per session when there's something to claim or pick (never
+		-- auto-claims)
+		if not dailyAutoShown and d.daily and (not d.daily.claimed or picking()) and inHub() then
 			dailyAutoShown = true
 			if not shop.frame.Visible then
 				ShopController.openDaily(true)
 			end
 		end
+	end)
+	-- the server's answer to Claim: the granted reward ({ ok, day, kind, ... }) or why not
+	Net.on("DailyResult", function(d)
+		claimPending = false
+		if d.ok then
+			renderDaily()
+			celebrateClaim(d)
+		else
+			SoundController.play("UIError")
+			HUDController.hint(tostring(d.message or "Can't claim right now"), 1.6)
+		end
+	end)
+	Net.on("PickResult", function(d)
+		pickRequested = false
+		if not d.ok then
+			SoundController.play("UIError")
+			HUDController.hint(tostring(d.message or "Can't pick that"), 1.6)
+			return
+		end
+		SoundController.play("DailyClaim")
+		for _, f in pickCards do
+			if f.Name == d.id then
+				Theme.pop(f, 1.2, Theme.Motion.Slow)
+			end
+		end
+		task.delay(0.9, function()
+			if daily.frame.Visible and not picking() then
+				ShopController.openDaily(false)
+			end
+			announceItem(d)
+		end)
 	end)
 	Net.on("ShopResult", function(d)
 		if not d.ok and d.message then

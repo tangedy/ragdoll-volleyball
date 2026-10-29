@@ -19,7 +19,9 @@ local HUDController = require(script.Parent.HUDController)
 local HubController = require(script.Parent.HubController)
 local ShopController = require(script.Parent.ShopController)
 local SoundController = require(script.Parent.SoundController)
-local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
+local UI = script.Parent.Parent:WaitForChild("UI")
+local Theme = require(UI:WaitForChild("Theme"))
+local WheelSheet = require(UI:WaitForChild("WheelSheet"))
 
 local player = Players.LocalPlayer
 local T = Theme.Toybox
@@ -28,13 +30,10 @@ local new = Theme.new
 
 local SpinController = {}
 
-local SHEET_SIZE = Vector2.new(820, 536)
-
 local sheet: any
 local panel: CanvasGroup
 local rotor: Frame
-local statusLabel: TextLabel
-local oddsList: Frame
+local info: WheelSheet.Info
 local spinButton: TextButton
 local robuxButton: TextButton
 local badge: Frame
@@ -43,6 +42,8 @@ local slotsShown: { string } = {}
 local slotFrames: { Frame } = {}
 local status: any = nil -- profile.spin from the server
 local owned: { [string]: boolean } = {}
+local coins = 0
+local robuxPrice: number? = nil -- the extra spin's price, once MarketplaceService answers
 local spinning = false
 local rotation = 0
 local spinConn: RBXScriptConnection? = nil
@@ -54,7 +55,7 @@ end
 
 -- Draw a wheel's slots around the rim of `target` (the rotor, which is what spins). Prizes already
 -- in `ownedMap` carry a sticker with the coins they'd pay instead (`dupCoins` by rarity). Shared
--- with the loot chests (ChestController).
+-- with the quest chests (QuestController).
 function SpinController.drawWheel(
 	target: Frame,
 	slots: { string },
@@ -119,13 +120,9 @@ local function buildWheel(slots: { string })
 	slotFrames = SpinController.drawWheel(rotor, slots, owned, SP.DuplicateCoins)
 end
 
--- Odds of a wheel by rarity (each slot is 1 in N), as rows in `list`.
-function SpinController.drawOdds(list: Frame, slots: { string })
-	for _, f in list:GetChildren() do
-		if f:IsA("Frame") then
-			f:Destroy()
-		end
-	end
+-- Odds of a wheel by rarity (each slot is 1 in N) into a WheelSheet odds list, with the coins each
+-- rarity pays instead when already owned.
+function SpinController.drawOdds(list: Frame, slots: { string }, dupCoins: { [string]: number })
 	local counts: { [string]: number } = {}
 	for _, id in slots do
 		local item = Catalog.get(id)
@@ -134,46 +131,64 @@ function SpinController.drawOdds(list: Frame, slots: { string })
 			counts[r] = (counts[r] or 0) + 1
 		end
 	end
-	for i, r in { "Legendary", "Epic", "Rare", "Common" } do
-		local n = counts[r] or 0
-		local row = new("Frame", {
-			LayoutOrder = i,
-			Size = UDim2.new(1, 0, 0, 26),
-			BackgroundTransparency = 1,
-			ZIndex = 4,
-		}, list)
-		Theme.sticker(row, r, Theme.Rarity[r], {
-			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.fromScale(0, 0.5),
-			ZIndex = 5,
-		})
-		Theme.text(row, 16, {
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.fromScale(1, 0.5),
-			Size = UDim2.fromScale(0.4, 1),
-			Text = ("%d%%"):format(math.floor(n / math.max(#slots, 1) * 100 + 0.5)),
-			TextColor3 = if n > 0 then T.ink else T.inkMuted,
-			TextXAlignment = Enum.TextXAlignment.Right,
-			ZIndex = 5,
-		})
-	end
+	WheelSheet.setOdds(list, counts, #slots, dupCoins)
 end
 
 local function renderOdds()
-	SpinController.drawOdds(oddsList, slotsShown)
+	SpinController.drawOdds(info.odds, slotsShown, SP.DuplicateCoins)
 end
 
-local function fmtCountdown(seconds: number): string
-	seconds = math.max(0, math.floor(seconds))
-	return ("%02d:%02d:%02d"):format(seconds // 3600, (seconds // 60) % 60, seconds % 60)
+-- Free spins waiting: today's daily spin plus bonus spins from the login ladder (spin.freeSpins).
+-- spin.bonus names the wheel the next one is on (Config.Spin.Wheels), nil for the daily spin.
+local function freeSpins(): number
+	if not status then
+		return 0
+	end
+	local n = tonumber(status.freeSpins)
+	return if n then math.max(0, math.floor(n)) elseif status.free then 1 else 0
+end
+
+-- The free-spin card (also ticks the countdown, so it runs twice a second).
+local function renderStatus()
+	if not status then
+		return
+	end
+	local n = freeSpins()
+	if spinning then
+		WheelSheet.setStatus(info, {
+			fill = T.sun,
+			glyph = "star",
+			title = "Spinning...",
+			detail = "Good luck!",
+		})
+	elseif n > 0 then
+		WheelSheet.setStatus(info, {
+			fill = T.sun,
+			count = n,
+			title = ("%d free spin%s ready"):format(n, if n == 1 then "" else "s"),
+			detail = if status.bonus == "RarePlus"
+				then "This one is Rare or better!"
+				elseif status.bonus then "A bonus spin from your daily reward."
+				else "Your next spin costs nothing.",
+		})
+	else
+		WheelSheet.setStatus(info, {
+			fill = T.surface,
+			count = 0,
+			title = "No free spins right now",
+			detail = ("Next free spin in %s"):format(WheelSheet.untilReset()),
+		})
+	end
 end
 
 local function renderButtons()
 	if not status then
 		return
 	end
-	if status.free then
-		Theme.setText(spinButton, "Spin for free")
+	local free = freeSpins() > 0
+	local wheel = status.bonus and SP.Wheels[status.bonus]
+	if free then
+		Theme.setText(spinButton, if wheel then "Use your " .. string.lower(wheel.Name) else "Spin for free")
 		Theme.recolor(spinButton, "primary")
 		Theme.setEnabled(spinButton, true)
 	elseif status.paidLeft > 0 then
@@ -185,8 +200,20 @@ local function renderButtons()
 		Theme.recolor(spinButton, "secondary")
 		Theme.setEnabled(spinButton, false)
 	end
-	robuxButton.Visible = (status.robux or 0) > 0 and not status.free and player:GetAttribute("RobuxOk") == true
-	badge.Visible = status.free == true
+	-- cost row: what an extra spin costs, and how many are left today
+	info.price.Text = ("%s coins"):format(ShopController.commas(status.cost or SP.ExtraSpinCost))
+	info.priceNote.Text = if status.restricted
+		then "Extra spins aren't available in your region"
+		elseif status.paidLeft > 0 then ("Extra spins left today: %d/%d"):format(status.paidLeft, SP.MaxPaidPerDay)
+		else "No extra spins left today"
+	robuxButton.Visible = (status.robux or 0) > 0 and not free and player:GetAttribute("RobuxOk") == true
+	Theme.setText(
+		robuxButton,
+		if robuxPrice then ("Extra spin for R$ %d"):format(robuxPrice) else "Extra spin with Robux"
+	)
+	info.caption.Text = ("You have %s coins"):format(ShopController.commas(coins))
+	badge.Visible = freeSpins() > 0
+	renderStatus()
 end
 
 function SpinController.open(on: boolean)
@@ -197,7 +224,7 @@ function SpinController.open(on: boolean)
 		if not ShopController.isOpen(panel) then
 			SoundController.play("UIOpen")
 		end
-		ShopController.closeAll() -- shop, daily, settings and the loot chest sheet
+		ShopController.closeAll() -- shop, daily, settings and the quest chest sheet
 		Theme.show(panel, ShopController.getBackdrop())
 		Theme.focus(spinButton)
 	elseif not spinning then
@@ -243,7 +270,7 @@ local function confetti(parent: GuiObject, color: Color3)
 end
 
 -- Fill the prize card `reveal` for a spin/chest result and show it; its buttons hand focus back to
--- `back`. Shared with the loot chests (ChestController).
+-- `back`. Shared with the quest chests (QuestController).
 function SpinController.drawReveal(reveal: Frame, result: any, back: GuiObject)
 	local item = Catalog.get(result.id)
 	if not item then
@@ -436,7 +463,7 @@ function SpinController.spin()
 	if spinning or not status or not inHub() then
 		return
 	end
-	local paid = not status.free
+	local paid = freeSpins() == 0
 	if paid and status.paidLeft <= 0 then
 		SoundController.play("UIError")
 		HUDController.hint("No more spins today", 1.5)
@@ -519,7 +546,7 @@ function SpinController.init()
 	sheet = ShopController.sheet(
 		"Spin",
 		"Daily spin",
-		SHEET_SIZE,
+		WheelSheet.SIZE,
 		"One free spin a day. Every slot is equally likely.",
 		{ tone = T.candy, glyph = "star" }
 	)
@@ -530,75 +557,43 @@ function SpinController.init()
 	local body = sheet.body :: Frame
 	rotor = SpinController.wheelFrame(body, "Spin", T.sun)
 
-	-- info column: status line, odds, buttons
-	local infoCol = new("Frame", {
-		Name = "Info",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromScale(1, 0),
-		Size = UDim2.new(1, -420, 1, 0),
-		BackgroundTransparency = 1,
-		ZIndex = 3,
-	}, body)
-	new("UIListLayout", {
-		Padding = UDim.new(0, Theme.Space.M),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-		VerticalAlignment = Enum.VerticalAlignment.Center,
-	}, infoCol)
-	statusLabel = Theme.label(infoCol, {
-		LayoutOrder = 1,
-		Size = UDim2.new(1, 0, 0, 30),
-		Text = "",
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 4,
-	}, 0)
-	local oddsWell = Theme.well(infoCol, {
-		LayoutOrder = 2,
-		Size = UDim2.new(1, 0, 0, 4 * 26 + 3 * 6 + 24 + 36),
-		ZIndex = 4,
-	}, Theme.Radius.M)
-	Theme.padding(oddsWell, Theme.Space.L, Theme.Space.M)
-	new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, oddsWell)
-	Theme.body(oddsWell, {
-		LayoutOrder = 0,
-		Size = UDim2.new(1, 0, 0, 22),
-		FontFace = Theme.LabelFace,
-		Text = "Odds on this wheel",
-		TextColor3 = T.ink,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 5,
-	})
-	oddsList = new("Frame", {
-		LayoutOrder = 1,
-		Size = UDim2.new(1, 0, 0, 4 * 26 + 3 * 6),
-		BackgroundTransparency = 1,
-		ZIndex = 5,
-	}, oddsWell)
-	new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, oddsList)
-	spinButton = Theme.button(infoCol, "Spin for free", "primary", {
-		LayoutOrder = 4,
-		Size = UDim2.new(1, 0, 0, 60),
-		ZIndex = 4,
-	})
+	-- info column: free spins, odds, cost, buttons, balance
+	info = WheelSheet.info(body, { primary = "Spin for free", secondary = "Extra spin with Robux" })
+	spinButton = info.primary
 	spinButton.Activated:Connect(SpinController.spin)
-	robuxButton = Theme.button(infoCol, "Extra spin with Robux", "secondary", {
-		LayoutOrder = 5,
-		Size = UDim2.new(1, 0, 0, 52),
-		Visible = false,
-		ZIndex = 4,
-	})
+	robuxButton = info.secondary :: TextButton
+	if (SP.RobuxImage or 0) > 0 then
+		-- the product's icon at the left of the button's face, so it moves with the press
+		local face = robuxButton:FindFirstChild("Face") :: GuiObject?
+		new("ImageLabel", {
+			Name = "Icon",
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 8, 0.5, 0),
+			Size = UDim2.fromOffset(36, 36),
+			BackgroundTransparency = 1,
+			Image = "rbxassetid://" .. SP.RobuxImage,
+			ScaleType = Enum.ScaleType.Fit,
+			ZIndex = (face or robuxButton).ZIndex + 2,
+		}, face or robuxButton)
+	end
 	robuxButton.Activated:Connect(function()
 		if SP.RobuxProductId > 0 then
 			MarketplaceService:PromptProductPurchase(player, SP.RobuxProductId)
 		end
 	end)
-	Theme.body(infoCol, {
-		LayoutOrder = 6,
-		Size = UDim2.new(1, 0, 0, 16),
-		FontFace = Theme.TextFace,
-		Text = "Prizes you already own pay coins instead.",
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 4,
-	})
+	-- show the extra spin's Robux price on its button once the store answers
+	task.spawn(function()
+		if SP.RobuxProductId <= 0 then
+			return
+		end
+		local ok, product = pcall(function()
+			return MarketplaceService:GetProductInfo(SP.RobuxProductId, Enum.InfoType.Product)
+		end)
+		if ok and type(product) == "table" and type(product.PriceInRobux) == "number" then
+			robuxPrice = product.PriceInRobux
+			renderButtons()
+		end
+	end)
 
 	-- prize reveal card (over the sheet's content)
 	reveal = new("Frame", {
@@ -620,6 +615,9 @@ function SpinController.init()
 		SpinController.open(not ShopController.isOpen(panel))
 	end)
 	local _ = btn
+	ShopController.onOpenSpin = function()
+		SpinController.open(true)
+	end
 	ShopController.onCloseAll(function()
 		SpinController.open(false)
 	end)
@@ -629,6 +627,7 @@ function SpinController.start()
 	Net.on("Profile", function(d)
 		status = d.spin
 		owned = d.owned or {}
+		coins = tonumber(d.coins) or coins
 		if status and not spinning then
 			buildWheel(status.slots or {})
 			renderOdds()
@@ -690,14 +689,7 @@ function SpinController.start()
 			return
 		end
 		nextStatusAt = os.clock() + 0.5
-		if spinning then
-			statusLabel.Text = "Spinning..."
-		elseif status.free then
-			statusLabel.Text = "Free spin ready!"
-		else
-			local left = 86400 - (os.time() % 86400)
-			statusLabel.Text = ("Next free spin in %s"):format(fmtCountdown(left))
-		end
+		renderStatus()
 		if spinButton then
 			spinButton.Active = not spinning
 		end

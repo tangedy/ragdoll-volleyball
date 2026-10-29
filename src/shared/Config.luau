@@ -210,6 +210,10 @@ Config.PowerUps = {
 	DispenserInterval = 12,
 	MaxPowerBallsPerSide = 1,
 	Weights = { Heavy = 1, Rocket = 1, Pop = 1 },
+	-- Featured ball of the day: one power type a UTC day, in BallDefinitions.PowerTypes order. It
+	-- drops WeightBoost times as often, and its knockouts count MasteryBonus times toward Power Ball
+	-- Mastery (the Catalog Unlock cosmetics).
+	Featured = { Enabled = true, WeightBoost = 3, MasteryBonus = 2 },
 }
 
 Config.Bots = {
@@ -314,6 +318,9 @@ Config.Coins = {
 -- Creator Dashboard (Monetization > Developer Products) and paste its id into ProductId. Robux is only
 -- what the card shows until the real price loads from the product; a bundle whose ProductId is 0
 -- shows "Soon" and can't be bought. Tag is an optional sticker ("Popular", "Best value").
+-- Image (bundles and boosts): optional card icon, an Image asset id (upload a 512x512 decal in
+-- Studio's Asset Manager and use its image id; briefs in docs/PASS_ICONS.md). While it's 0 the card
+-- draws its own art (the coin heap, the 2x disc).
 Config.CoinShop = {
 	-- 2x coins boosts (developer products, BoostService): they double the coins you earn from
 	-- matches and eliminations, never bundles, dailies or wheel refunds. The timed one runs in real
@@ -331,6 +338,7 @@ Config.CoinShop = {
 			Detail = "30 minutes",
 			Robux = 19,
 			ProductId = 3723376951,
+			Image = 0, -- PLACEHOLDER: icon image id (optional)
 			Minutes = 30,
 			Forever = false,
 		},
@@ -340,29 +348,93 @@ Config.CoinShop = {
 			Detail = "Forever",
 			Robux = 199,
 			ProductId = 3723376954,
+			Image = 0, -- PLACEHOLDER: icon image id (optional)
 			Minutes = 0,
 			Forever = true,
 		},
 	},
 	Bundles = {
-		{ Id = "Handful", Name = "Handful of coins", Coins = 1000, Robux = 49, ProductId = 3723376190 },
-		{ Id = "Pouch", Name = "Pouch of coins", Coins = 2750, Robux = 99, ProductId = 3723376232 },
-		{ Id = "Sack", Name = "Sack of coins", Coins = 6000, Robux = 199, ProductId = 3723376234, Tag = "Popular" },
-		{ Id = "Chest", Name = "Chest of coins", Coins = 16000, Robux = 499, ProductId = 3723376237 },
+		{ Id = "Handful", Name = "Handful of coins", Coins = 1000, Robux = 49, ProductId = 3723376190, Image = 0 },
+		{ Id = "Pouch", Name = "Pouch of coins", Coins = 2750, Robux = 99, ProductId = 3723376232, Image = 0 },
+		{
+			Id = "Sack",
+			Name = "Sack of coins",
+			Coins = 6000,
+			Robux = 199,
+			ProductId = 3723376234,
+			Image = 0,
+			Tag = "Popular",
+		},
+		{ Id = "Chest", Name = "Chest of coins", Coins = 16000, Robux = 499, ProductId = 3723376237, Image = 0 },
 		{
 			Id = "Vault",
 			Name = "Vault of coins",
 			Coins = 35000,
 			Robux = 999,
 			ProductId = 3723376239,
+			Image = 0,
 			Tag = "Best value",
+		},
+	},
+	-- ==========================================================================================
+	-- LIMITED-TIME OFFERS: Robux bundles of cosmetics plus coins, shown at the top of the Coins
+	-- sheet only between Start (inclusive) and End (exclusive), UTC, so each one hides itself when
+	-- it ends without a republish. PurchaseService grants Items (catalog ids, each marked with
+	-- Bundle = this offer's Id) and Coins.
+	--   PLACEHOLDERS TO FILL IN (0 until created):
+	--   * ProductId: a developer product (Creator Dashboard > Monetization > Developer Products).
+	--     While it's 0 the card shows "Soon" and can't be bought.
+	--   * Image: optional card art, an Image asset id (upload a decal in Studio's Asset Manager and
+	--     use its image id). While it's 0 the card draws its own pumpkin.
+	-- Robux is only what the card shows until the real price loads from the product.
+	-- ==========================================================================================
+	Offers = {
+		{
+			Id = "Halloween2026",
+			Name = "Haunted Bundle",
+			Items = { "Skin_Witchbrew", "Trail_Ectoplasm", "Title_PumpkinKing" },
+			Coins = 5000,
+			Robux = 299,
+			ProductId = 0, -- PLACEHOLDER: developer product "Haunted Bundle"
+			Image = 0, -- PLACEHOLDER: card art image id (optional)
+			Start = "2026-10-28T00:00:00Z",
+			End = "2026-11-04T00:00:00Z", -- on sale through Nov 3 (UTC)
+			Tag = "Limited",
 		},
 	},
 }
 
--- 7-day login ladder; day 8 starts the ladder again. A missed day resets to day 1.
+-- 7-day login ladder (docs/ECONOMY.md §3); day 8 starts the ladder again. A missed day resets to
+-- day 1, which is a strong welcome back on purpose. Each day is a typed reward that
+-- RewardService.grant hands out (daily quests use the same kinds):
+--   { Kind = "Coins", Amount = n }
+--   { Kind = "Spin", Wheel = id }   a free bonus spin on Config.Spin.Wheels[id], used from the Spin
+--                                   sheet; it stacks with the daily free spin
+--   { Kind = "Boost", Id = id }     a free Config.CoinShop.Boosts entry
+--   { Kind = "Cosmetic", Id = id }  one catalog item (DuplicateCoins if it's already owned)
+--   { Kind = "Cosmetic", Rarity = r, Choices = n, DuplicateCoins = c }  pick 1 of n unowned items of
+--                                   that rarity (c coins when none are left)
+--   { Kind = "Chest", Chest = id }  open a Config.Quests.Chests chest now: one item of its category
+export type Reward = {
+	Kind: string,
+	Amount: number?,
+	Wheel: string?,
+	Id: string?,
+	Rarity: string?,
+	Choices: number?,
+	DuplicateCoins: number?,
+	Chest: string?,
+}
 Config.DailyRewards = {
-	Ladder = { 100, 150, 200, 250, 300, 400, 750 },
+	Ladder = {
+		{ Kind = "Spin", Wheel = "RarePlus" },
+		{ Kind = "Coins", Amount = 250 },
+		{ Kind = "Boost", Id = "Boost30" },
+		{ Kind = "Coins", Amount = 400 },
+		{ Kind = "Spin", Wheel = "Standard" },
+		{ Kind = "Coins", Amount = 600 },
+		{ Kind = "Cosmetic", Rarity = "Epic", Choices = 3, DuplicateCoins = 1000 },
+	} :: { Reward },
 }
 
 -- Daily cosmetic spin (separate from the coin ladder above). One free spin per UTC day; extra spins
@@ -371,16 +443,11 @@ Config.DailyRewards = {
 Config.Spin = {
 	Slots = 12,
 	RarityWeights = { Common = 60, Rare = 28, Epic = 10, Legendary = 2 },
-	-- rarity of a catalog item by coin price (at least this much); free defaults are never prizes
-	RarityByPrice = {
-		{ Rarity = "Legendary", Min = 4000 },
-		{ Rarity = "Epic", Min = 2500 },
-		{ Rarity = "Rare", Min = 1000 },
-	},
 	DuplicateCoins = { Common = 100, Rare = 250, Epic = 500, Legendary = 1000 }, -- already owned
 	ExtraSpinCost = 1000, -- coins
 	MaxPaidPerDay = 5,
 	RobuxProductId = 3723376241, -- developer product "Extra daily spin" (35 Robux; price set in the Creator Dashboard)
+	RobuxImage = 0, -- PLACEHOLDER: icon image id on the Robux spin button (optional; docs/PASS_ICONS.md)
 	SpinDuration = 4.2, -- seconds the wheel spins on the client before the reveal
 	-- Toybox Island fills (the UI's design system): sky, leaf, candy, sun
 	RarityColors = {
@@ -390,72 +457,57 @@ Config.Spin = {
 		Legendary = Color3.fromHex("#f7cd46"),
 	},
 }
+-- Wheels a free bonus spin (a login reward) can be on. Bonus spins are free, so they're allowed where
+-- paid random items are restricted.
+Config.Spin.Wheels = {
+	Standard = { Name = "Bonus spin", RarityWeights = Config.Spin.RarityWeights },
+	RarePlus = { Name = "Rare+ spin", RarityWeights = { Common = 0, Rare = 70, Epic = 24, Legendary = 6 } },
+}
 
--- Loot chests on the hub deck, in three tiers. Each tier's wheel only holds the rarities in its
--- RarityWeights, so the Rare chest guarantees Rare or better and the Epic chest Epic or better.
--- Prices sit a little under the shop value of what they drop (the shop stays the fair way to pick
--- one item). There's no daily cap on paid opens. Free opens: once per UTC day, a tier with
--- FreeAfterMatches opens free after that many finished matches that day.
--- Each spot is in the deck frame (X = right, F = toward the court); Yaw turns the chest (0 = facing
--- the court); Tier names its entry in Tiers.
-Config.Chest = {
-	Tiers = {
-		Common = {
-			Name = "Common Chest",
-			Cost = 1200,
+-- Cosmetic economy (docs/ECONOMY.md §2). Every prize item has an explicit Rarity in the Catalog and
+-- sells for its rarity's flat price, so a price change never moves an item between tiers.
+-- DuplicateCoins (20% of the price) is what a daily quest chest pays when you already own every
+-- item of the rarity it rolled.
+Config.Economy = {
+	PriceByRarity = { Common = 500, Rare = 1750, Epic = 5000, Legendary = 12000 },
+	DuplicateCoins = { Common = 100, Rare = 350, Epic = 1000, Legendary = 2400 },
+}
+
+-- Daily quests (docs/ECONOMY.md §4). Progress resets at UTC midnight; each quest's chest can be
+-- claimed once that UTC day, after its goal is reached. Progress comes from the match events that
+-- already pay rewards: a credited knockout (bots included, the same as the 25-coin knockout
+-- payout), and a finished match you took part in (the anti-AFK rule the match coins use).
+--   Event: "Knockout" | "Played" | "Won"
+-- Quest chests are free, so they're allowed where paid random items are restricted.
+Config.Quests = {
+	List = {
+		{ Id = "Knockouts", Name = "Knock out 3 opponents", Event = "Knockout", Goal = 3, Chest = "Title" },
+		{ Id = "Played", Name = "Play 2 games", Event = "Played", Goal = 2, Chest = "Gesture" },
+		{ Id = "Won", Name = "Win 1 game", Event = "Won", Goal = 1, Chest = "Finisher" },
+	},
+	-- Each chest rolls one item of its Catalog category: a rarity by RarityWeights (rarities the
+	-- category has no prize items in are skipped and the rest renormalized), then an unowned item
+	-- of that rarity at random, or Config.Economy.DuplicateCoins when every one is owned.
+	-- Gestures are the Pose category (the intro poses).
+	Chests = {
+		Title = {
+			Name = "Title Chest",
+			Category = "Title",
+			RarityWeights = { Common = 55, Rare = 30, Epic = 12, Legendary = 3 },
+		},
+		Gesture = {
+			Name = "Gesture Chest",
+			Category = "Pose",
 			RarityWeights = { Common = 60, Rare = 28, Epic = 10, Legendary = 2 },
-			FreeAfterMatches = 1,
 		},
-		Rare = {
-			Name = "Rare Chest",
-			Cost = 2200,
-			RarityWeights = { Common = 0, Rare = 70, Epic = 24, Legendary = 6 },
-			FreeAfterMatches = 3,
-		},
-		Epic = {
-			Name = "Epic Chest",
-			Cost = 3500,
-			RarityWeights = { Common = 0, Rare = 0, Epic = 80, Legendary = 20 },
-			FreeAfterMatches = 0, -- 0 = never free
+		Finisher = {
+			Name = "Finisher Chest",
+			Category = "Finisher",
+			RarityWeights = { Common = 60, Rare = 30, Epic = 9, Legendary = 1 },
 		},
 	},
-	Slots = 12,
-	DuplicateCoins = { Common = 250, Rare = 400, Epic = 700, Legendary = 1200 }, -- already owned
-	SpinDuration = 4.6, -- seconds the wheel spins on the client before the reveal
-	PromptDistance = 11,
-	LidOpenTime = 6, -- seconds the lid stays open after a reveal before it settles shut
-	Spots = {
-		{ X = -10, F = -17, Yaw = 0, Style = "Frost", Tier = "Common" },
-		{ X = 10, F = -17, Yaw = 0, Style = "Gold", Tier = "Rare" },
-		{ X = 38, F = -4, Yaw = 90, Style = "Royal", Tier = "Epic" },
-	},
-	-- wood, banding metal and the treasure glow for each look (all three are the same chest)
-	Styles = {
-		Gold = {
-			Wood = Color3.fromRGB(122, 72, 40),
-			WoodAlt = Color3.fromRGB(104, 60, 34),
-			Metal = Color3.fromRGB(255, 196, 60),
-			Glow = Color3.fromRGB(255, 210, 90),
-			Gem = Color3.fromRGB(255, 70, 90),
-			Stone = Color3.fromRGB(70, 64, 86),
-		},
-		Frost = {
-			Wood = Color3.fromRGB(70, 92, 128),
-			WoodAlt = Color3.fromRGB(58, 78, 112),
-			Metal = Color3.fromRGB(200, 236, 255),
-			Glow = Color3.fromRGB(110, 225, 255),
-			Gem = Color3.fromRGB(90, 200, 255),
-			Stone = Color3.fromRGB(56, 66, 92),
-		},
-		Royal = {
-			Wood = Color3.fromRGB(78, 40, 96),
-			WoodAlt = Color3.fromRGB(64, 32, 80),
-			Metal = Color3.fromRGB(255, 186, 70),
-			Glow = Color3.fromRGB(205, 120, 255),
-			Gem = Color3.fromRGB(190, 90, 255),
-			Stone = Color3.fromRGB(62, 52, 82),
-		},
-	},
+	RevealSlots = 12, -- prizes on the reveal wheel (the chest's drops, the rolled prize among them)
+	SpinDuration = 4.2, -- seconds the reveal wheel spins on the client
 }
 
 Config.Rewards = {
@@ -616,7 +668,7 @@ Config.Camera = {
 
 Config.Data = {
 	StoreName = "PlayerData_v1",
-	SchemaVersion = 10,
+	SchemaVersion = 12,
 	AutosaveInterval = 120,
 	MaxRetries = 4,
 	LockWaitRetries = 10, -- 3 s apart: how long a joiner waits for another server to release their save

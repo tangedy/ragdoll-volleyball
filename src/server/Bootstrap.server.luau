@@ -24,7 +24,7 @@ local ORDER = {
 	"SpinService",
 	"PurchaseService",
 	"BoostService",
-	"ChestService",
+	"QuestService",
 	"LobbyService",
 	"HalloweenService",
 	"DevRoomService",

@@ -7,6 +7,11 @@
 --
 -- Under the bundles, a row of 2x coins boosts (Config.CoinShop.Boosts, granted by BoostService):
 -- the timed one shows its time left, the lifetime one says Owned once bought.
+--
+-- Above the bundles, while one is on sale, a strip for each limited-time cosmetic bundle
+-- (Config.CoinShop.Offers, granted by PurchaseService): what's in it, the time left and Buy, or
+-- Owned once you have everything in it. It hides itself at the offer's End; the sheet grows to fit
+-- it and scales down so it takes no more of the screen than without it.
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -16,6 +21,7 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local Catalog = require(Shared.Catalog)
 local Net = require(script.Parent.Net)
 local HUDController = require(script.Parent.HUDController)
 local SoundController = require(script.Parent.SoundController)
@@ -33,7 +39,10 @@ local SHEET_SIZE = Vector2.new(900, 570)
 local CARD = Vector2.new(156, 300)
 local ART_H = 120
 local BOOST = Vector2.new(400, 76)
+local OFFER = Vector2.new(816, 96)
 local SUBTITLE = "Coins go straight to your wallet."
+-- "Witch's Brew ball skin" in an offer's contents line
+local KIND = { BallSkin = "ball skin", Trail = "trail", Title = "title", Finisher = "finisher", Pose = "pose" }
 
 local sheet: any -- Theme.Sheet
 local walletLabel: TextLabel
@@ -41,6 +50,12 @@ local cards: { [string]: { root: GuiObject, art: GuiObject, buy: TextButton } } 
 local backToShop = false -- opened from the shop's Buy: return there after a purchase
 local boostCards: { [string]: { root: GuiObject, status: TextLabel, buy: TextButton } } = {}
 local boost = { untilTime = 0, forever = false } -- profile.boost from the server
+local offerCards: { [string]: { root: GuiObject, status: TextLabel, buy: TextButton } } = {}
+local owned: { [string]: boolean } = {} -- profile.owned from the server
+local offersShown: boolean? = nil -- is the offer strip up (nil until the first layout)
+local offerRow: Frame
+local bundleRow: Frame
+local boostRow: Frame
 
 local function inHub(): boolean
 	return player:GetAttribute("Status") == "Lobby" and (player:GetAttribute("Team") or "") == ""
@@ -80,6 +95,20 @@ local function drawHeap(parent: GuiObject, rows: number)
 			})
 		end
 	end
+end
+
+-- A card's uploaded icon (Image asset id), filling `parent` and keeping its square shape.
+local function drawIcon(parent: GuiObject, image: number, inset: number)
+	new("ImageLabel", {
+		Name = "Icon",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, -inset * 2, 1, -inset * 2),
+		BackgroundTransparency = 1,
+		Image = "rbxassetid://" .. image,
+		ScaleType = Enum.ScaleType.Fit,
+		ZIndex = parent.ZIndex + 2,
+	}, parent)
 end
 
 local function buy(bundle: any)
@@ -130,22 +159,27 @@ local function boostCard(parent: Instance, def: any, order: number)
 	}, parent)
 	Theme.corner(root, Theme.Radius.M)
 	Theme.stroke(root, T.outline, Theme.StrokeToy)
-	-- the "2x" disc
+	-- the "2x" disc, or the boost's uploaded icon in its place
 	local disc = new("Frame", {
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 10, 0.5, 0),
 		Size = UDim2.fromOffset(56, 56),
 		BackgroundColor3 = if def.Forever then T.sun else T.leaf,
+		BackgroundTransparency = if (def.Image or 0) > 0 then 1 else 0,
 		ZIndex = 6,
 	}, root)
-	Theme.round(disc)
-	Theme.stroke(disc, T.outline, Theme.StrokeToy)
-	Theme.label(disc, {
-		Size = UDim2.fromScale(1, 1),
-		Text = ("%dx"):format(CS.BoostMultiplier),
-		TextXAlignment = Enum.TextXAlignment.Center,
-		ZIndex = 7,
-	}, 2)
+	if (def.Image or 0) > 0 then
+		drawIcon(disc, def.Image, -4)
+	else
+		Theme.round(disc)
+		Theme.stroke(disc, T.outline, Theme.StrokeToy)
+		Theme.label(disc, {
+			Size = UDim2.fromScale(1, 1),
+			Text = ("%dx"):format(CS.BoostMultiplier),
+			TextXAlignment = Enum.TextXAlignment.Center,
+			ZIndex = 7,
+		}, 2)
+	end
 	Theme.text(root, 20, {
 		Position = UDim2.fromOffset(78, 12),
 		Size = UDim2.new(1, -200, 0, 24),
@@ -221,7 +255,11 @@ local function bundleCard(parent: Instance, bundle: any, order: number, tone: Co
 		BackgroundTransparency = 1,
 		ZIndex = 8,
 	}, art)
-	drawHeap(heap, order)
+	if (bundle.Image or 0) > 0 then
+		drawIcon(heap, bundle.Image, 6)
+	else
+		drawHeap(heap, order)
+	end
 	if bundle.Tag then
 		Theme.sticker(root, bundle.Tag, if order == #CS.Bundles then T.sun else T.candy, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -299,6 +337,174 @@ local function bundleCard(parent: Instance, bundle: any, order: number, tone: Co
 	end
 end
 
+-- Limited-time bundles ------------------------------------------------------------------------------
+
+local function stamp(iso: string): number
+	return DateTime.fromIsoDate(iso).UnixTimestamp
+end
+
+-- "2d 5h left", or the clock under a day
+local function endsIn(seconds: number): string
+	if seconds >= 86400 then
+		return ("%dd %dh left"):format(seconds // 86400, (seconds // 3600) % 24)
+	end
+	return timeLeft(seconds)
+end
+
+local function offerOwned(offer: any): boolean
+	for _, id in offer.Items do
+		if not owned[id] then
+			return false
+		end
+	end
+	return true
+end
+
+-- Show each offer only inside its window; the strip (and the room the sheet makes for it) comes
+-- and goes with the first live one.
+local function renderOffers()
+	local now = Workspace:GetServerTimeNow()
+	local any = false
+	for _, offer in CS.Offers do
+		local card = offerCards[offer.Id]
+		if not card then
+			continue
+		end
+		local live = Catalog.offerLive(offer, now)
+		card.root.Visible = live
+		any = any or live
+		if live then
+			local have = offerOwned(offer)
+			card.status.Text = if have
+				then "Owned: equip it in the Shop"
+				else "Limited time · " .. endsIn(stamp(offer.End) - now)
+			card.buy.Visible = not have
+		end
+	end
+	if any ~= offersShown then
+		offersShown = any
+		local shift = if any then OFFER.Y + Theme.Space.L else 0
+		offerRow.Visible = any
+		bundleRow.Position = UDim2.fromOffset(0, 16 + shift)
+		boostRow.Position = UDim2.fromOffset(0, 16 + shift + CARD.Y + Theme.Space.L)
+		local h = SHEET_SIZE.Y + shift
+		sheet.frame.Size = UDim2.fromOffset(SHEET_SIZE.X, h)
+		Theme.autoScale(sheet.frame, SHEET_SIZE.Y / h) -- no taller on screen than without the strip
+	end
+end
+
+local function buyOffer(offer: any)
+	if not Catalog.offerLive(offer, Workspace:GetServerTimeNow()) then
+		SoundController.play("UIError")
+		HUDController.hint("This offer has ended", 1.6)
+		renderOffers()
+		return
+	end
+	buy(offer)
+end
+
+local function offerCard(parent: Instance, offer: any, order: number)
+	local root = new("Frame", {
+		Name = offer.Id,
+		LayoutOrder = order,
+		Size = UDim2.fromOffset(OFFER.X, OFFER.Y),
+		BackgroundColor3 = T.surface,
+		Visible = false,
+		ZIndex = 5,
+	}, parent)
+	Theme.corner(root, Theme.Radius.M)
+	Theme.stroke(root, T.outline, Theme.StrokeToy)
+	-- the art disc: the offer's uploaded image, or a pumpkin until there is one
+	local disc = new("Frame", {
+		Name = "Art",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 12, 0.5, 0),
+		Size = UDim2.fromOffset(72, 72),
+		BackgroundColor3 = T.peach,
+		BackgroundTransparency = if (offer.Image or 0) > 0 then 1 else 0,
+		ZIndex = 6,
+	}, root)
+	if (offer.Image or 0) > 0 then
+		drawIcon(disc, offer.Image, -4)
+	else
+		Theme.round(disc)
+		Theme.stroke(disc, T.outline, Theme.StrokeToy)
+		Theme.text(disc, 40, {
+			Size = UDim2.fromScale(1, 1),
+			Text = "🎃",
+			TextXAlignment = Enum.TextXAlignment.Center,
+			ZIndex = 7,
+		})
+	end
+	if offer.Tag then
+		Theme.sticker(root, offer.Tag, T.candy, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromOffset(48, 0),
+			ZIndex = 20,
+		})
+	end
+	Theme.text(root, 22, {
+		Position = UDim2.fromOffset(98, 10),
+		Size = UDim2.new(1, -240, 0, 26),
+		FontFace = Theme.DisplayFace,
+		Text = offer.Name,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 7,
+	})
+	-- what's inside: "Witch's Brew ball skin · Ectoplasm trail · ... · +5,000 coins"
+	local parts = {}
+	for _, id in offer.Items do
+		local item = Catalog.get(id)
+		if item then
+			table.insert(parts, ("%s %s"):format(item.Name, KIND[item.Category] or ""))
+		end
+	end
+	table.insert(parts, ("+%s coins"):format(commas(offer.Coins)))
+	local contents = Theme.body(root, {
+		Position = UDim2.fromOffset(98, 40),
+		Size = UDim2.new(1, -240, 0, 18),
+		FontFace = Theme.TextFace,
+		Text = table.concat(parts, " · "),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 7,
+	})
+	new("UITextSizeConstraint", { MaxTextSize = 18 }, contents)
+	local status = Theme.text(root, 16, {
+		Position = UDim2.fromOffset(98, 64),
+		Size = UDim2.new(1, -240, 0, 20),
+		Text = "",
+		TextColor3 = T.success,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 7,
+	})
+	local button = Theme.button(root, ("R$ %d"):format(offer.Robux), "primary", {
+		Name = "Buy",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -12, 0.5, 0),
+		Size = UDim2.fromOffset(120, 52),
+		ZIndex = 8,
+	})
+	if offer.ProductId <= 0 then
+		Theme.setText(button, "Soon")
+		Theme.recolor(button, "secondary")
+	end
+	button.Activated:Connect(function()
+		buyOffer(offer)
+	end)
+	offerCards[offer.Id] = { root = root, status = status, buy = button }
+	if offer.ProductId > 0 then
+		task.spawn(function()
+			local ok, info = pcall(function()
+				return MarketplaceService:GetProductInfo(offer.ProductId, Enum.InfoType.Product)
+			end)
+			if ok and type(info) == "table" and type(info.PriceInRobux) == "number" then
+				Theme.setText(button, ("R$ %d"):format(info.PriceInRobux))
+			end
+		end)
+	end
+end
+
 local function build()
 	sheet = ShopController.sheet("Coins", "Get coins", SHEET_SIZE, SUBTITLE, {
 		tone = T.peach,
@@ -328,6 +534,23 @@ local function build()
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 5,
 	})
+	offerRow = new("Frame", {
+		Name = "Offers",
+		Position = UDim2.fromOffset(0, 16),
+		Size = UDim2.new(1, 0, 0, OFFER.Y),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 4,
+	}, sheet.body)
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		Padding = UDim.new(0, Theme.Space.L),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, offerRow)
+	for i, offer in CS.Offers do
+		offerCard(offerRow, offer, i)
+	end
 	local row = new("Frame", {
 		Name = "Bundles",
 		Position = UDim2.fromOffset(0, 16),
@@ -335,6 +558,7 @@ local function build()
 		BackgroundTransparency = 1,
 		ZIndex = 4,
 	}, sheet.body)
+	bundleRow = row
 	new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
@@ -351,6 +575,7 @@ local function build()
 		BackgroundTransparency = 1,
 		ZIndex = 4,
 	}, sheet.body)
+	boostRow = boosts
 	new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
@@ -361,6 +586,7 @@ local function build()
 		boostCard(boosts, def, i)
 	end
 	renderBoosts()
+	renderOffers()
 	local action = ShopController.addAction("Coins", T.peach, "coin", 5, function()
 		CoinShopController.open(not ShopController.isOpen(sheet.frame))
 	end)
@@ -389,6 +615,7 @@ function CoinShopController.open(on: boolean, need: number?)
 		sheet.subtitle.Text = if need
 			then ("You need %s more coins for that. Grab a bundle!"):format(commas(need))
 			else SUBTITLE
+		renderOffers()
 		Theme.show(f, ShopController.getBackdrop())
 		-- point at the smallest bundle that covers what's missing (or the first one)
 		local pick = CS.Bundles[1]
@@ -428,6 +655,24 @@ function CoinShopController.start()
 			boost = { untilTime = tonumber(d.boost.untilTime) or 0, forever = d.boost.forever == true }
 			renderBoosts()
 		end
+		if type(d.owned) == "table" then
+			owned = d.owned
+			renderOffers()
+		end
+	end)
+	-- the server granted a limited-time bundle: its coins and its cosmetics (equip them in the shop)
+	Net.on("BundleBought", function(d)
+		SoundController.play("Purchase")
+		HUDController.coinPop(tonumber(d.coins) or 0)
+		local card = offerCards[tostring(d.id)]
+		if card then
+			Theme.pop(card.root, 1.08, Theme.Motion.Slow)
+		end
+		for _, offer in CS.Offers do
+			if offer.Id == d.id then
+				HUDController.hint(("%s unlocked! Equip it in the Shop"):format(offer.Name), 2.4)
+			end
+		end
 	end)
 	Net.on("BoostBought", function(d)
 		SoundController.play("Purchase")
@@ -466,10 +711,11 @@ function CoinShopController.start()
 		if not inHub() and sheet.frame.Visible then
 			CoinShopController.open(false)
 		end
-		-- the timed boost's countdown, once a second while the sheet is up
+		-- the timed boost's and the offers' countdowns, once a second while the sheet is up
 		if sheet.frame.Visible and os.clock() >= nextTick then
 			nextTick = os.clock() + 1
 			renderBoosts()
+			renderOffers()
 		end
 	end)
 end

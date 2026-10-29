@@ -1,11 +1,13 @@
 --!strict
--- Coins shop, cosmetic equip and daily login rewards. Everything is decided here; the client only
--- sends requests. Buying and equipping are hub-only (never during a match), and coins are never
--- spent without the server confirming ownership, price and balance.
+-- Coins shop, cosmetic equip and the daily login ladder (its rewards land through
+-- RewardService.grant). Everything is decided here; the client only sends requests. Buying and
+-- equipping are hub-only (never during a match), and coins are never spent without the server
+-- confirming ownership, price and balance.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local BallDefinitions = require(Shared.BallDefinitions)
 local Config = require(Shared.Config)
 local Catalog = require(Shared.Catalog)
 local NetSchema = require(Shared.NetSchema)
@@ -30,38 +32,46 @@ function ShopService.owns(c: any, id: string): boolean
 	return item.Default == true or c.profile.OwnedCosmetics[id] == true
 end
 
--- Daily ladder state for the HUD: which day is next, how much it pays, whether today is claimed.
-function ShopService.dailyStatus(c: any): { day: number, amount: number, claimed: boolean }
+-- Daily ladder state for the HUD: which day is next (or was claimed today), its typed reward
+-- (Config.DailyRewards), whether today is claimed, and the cosmetic pick still waiting, if any.
+function ShopService.dailyStatus(c: any): { day: number, reward: any, claimed: boolean, pick: any? }
 	local ladder = Config.DailyRewards.Ladder
 	local ls = c.profile and c.profile.LoginStreak or { day = 0, claimedDate = "" }
 	local today = dateOf(os.time())
-	if ls.claimedDate == today then
-		local nextDay = ls.day % #ladder + 1
-		return { day = ls.day, amount = ladder[nextDay], claimed = true }
+	local pending = S.RewardService.pendingPick(c)
+	local pick = if pending then { ids = pending.ids, rarity = pending.rarity, coins = pending.coins } else nil
+	if ls.claimedDate == today and ls.day >= 1 then
+		return { day = ls.day, reward = ladder[ls.day], claimed = true, pick = pick }
 	end
 	local yesterday = dateOf(os.time() - 86400)
 	local nextDay = if ls.claimedDate == yesterday then ls.day % #ladder + 1 else 1
-	return { day = nextDay, amount = ladder[nextDay], claimed = false }
+	return { day = nextDay, reward = ladder[nextDay], claimed = false, pick = pick }
 end
 
-function ShopService.claimDaily(c: any): boolean
+-- Claim today's rung. Returns the granted result (RewardService.grant) with `day`, or nil and a reason.
+function ShopService.claimDaily(c: any): ({ [string]: any }?, string?)
 	if not c.profileLoaded or not c.profile then
-		return false
+		return nil, "Not ready yet"
 	end
 	local status = ShopService.dailyStatus(c)
 	if status.claimed then
-		return false -- one claim per UTC day; repeated requests never pay twice
+		return nil, "Already claimed today" -- one claim per UTC day; repeated requests never pay twice
+	end
+	local result, why = S.RewardService.grant(c, status.reward, "Daily" .. status.day)
+	if not result then
+		return nil, why
 	end
 	local ls = c.profile.LoginStreak
 	local today = dateOf(os.time())
 	ls.day = status.day
 	ls.claimedDate = today
 	ls.lastDate = today
-	c.profile.Coins += status.amount
+	result.ok = true
+	result.day = status.day
 	S.AnalyticsService.event(c, "DailyClaim", status.day)
 	S.DataService.push(c)
 	task.spawn(S.DataService.save, c, false)
-	return true
+	return result, nil
 end
 
 local function inHub(c: any): boolean
@@ -81,6 +91,12 @@ function ShopService.buy(c: any, id: string): (boolean, string?)
 	end
 	if item.Price <= 0 then
 		return false, "Not for sale"
+	end
+	if item.Bundle then
+		return false, "Only in a bundle"
+	end
+	if item.Unlock then
+		return false, "Earn it with power-ball knockouts"
 	end
 	if not Catalog.isOffered(item) then
 		return false, ("Only during %s"):format(item.Event or "its event")
@@ -112,7 +128,67 @@ function ShopService.equip(c: any, id: string): (boolean, string?)
 	return true, nil
 end
 
--- Name-tag badge: level, win-streak flame and title.
+-- Power Ball Mastery ------------------------------------------------------------------------------
+
+-- Today's featured power ball (Config.PowerUps.Featured), or nil when the feature is off. Rotates
+-- through BallDefinitions.PowerTypes one UTC day at a time.
+function ShopService.featuredBall(): string?
+	if not Config.PowerUps.Featured.Enabled then
+		return nil
+	end
+	local types = BallDefinitions.PowerTypes
+	return types[(os.time() // 86400) % #types + 1]
+end
+
+-- Grant every Unlock cosmetic whose mastery goal is met and isn't owned yet. Returns the new ids.
+function ShopService.checkUnlocks(c: any): { string }
+	local granted = {}
+	if not c.profile then
+		return granted
+	end
+	for _, item in Catalog.Items do
+		if item.Unlock and not ShopService.owns(c, item.Id) then
+			local have, need = Catalog.unlockProgress(item, c.profile.PowerKOs)
+			if have >= need then
+				c.profile.OwnedCosmetics[item.Id] = true
+				table.insert(granted, item.Id)
+				S.AnalyticsService.event(c, "MasteryUnlock_" .. item.Id)
+				if c.player then
+					S.NetService.send(c.player, "Banner", {
+						text = "🔓 UNLOCKED: " .. item.Name,
+						color = Config.Spin.RarityColors[Catalog.rarity(item)],
+						duration = 2.2,
+						sound = "JailEscape",
+					})
+				end
+			end
+		end
+	end
+	return granted
+end
+
+-- Count a credited knockout made with `ballType` toward Power Ball Mastery (Standard balls don't
+-- count; the featured ball counts MasteryBonus times). Real, loaded players only; grants any
+-- unlock it completes. The caller pushes the profile; a new unlock also saves.
+function ShopService.recordPowerKO(c: any, ballType: string?): { string }
+	if not c.player or not c.profileLoaded or not c.profile or not BallDefinitions.Defs[ballType or ""] then
+		return {}
+	end
+	if ballType == "Standard" then
+		return {}
+	end
+	local kos = c.profile.PowerKOs
+	local amount = if ballType == ShopService.featuredBall() then Config.PowerUps.Featured.MasteryBonus else 1
+	kos[ballType] = (tonumber(kos[ballType]) or 0) + amount
+	local granted = ShopService.checkUnlocks(c)
+	if #granted > 0 then
+		task.spawn(S.DataService.save, c, false)
+	end
+	return granted
+end
+
+-- Name-tag badge (RichText): level, win-streak flame and title, the title in its rarity's color
+-- (Legendary ones framed in ✦).
 function ShopService.applyCosmetics(c: any)
 	if not c.profile then
 		return
@@ -122,9 +198,15 @@ function ShopService.applyCosmetics(c: any)
 	if p.CurrentWinStreak >= Config.Progression.StreakFlameAt then
 		badge ..= (" 🔥%d"):format(p.CurrentWinStreak)
 	end
-	local title = Catalog.equipped(p.Equipped, "Title").Data.Text
+	local item = Catalog.equipped(p.Equipped, "Title")
+	local title = item.Data.Text
 	if title and title ~= "" then
-		badge ..= " · " .. title
+		local rarity = Catalog.rarity(item)
+		title = string.gsub(string.gsub(string.gsub(title, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+		if rarity == "Legendary" then
+			title = "✦ " .. title .. " ✦"
+		end
+		badge ..= (' · <font color="#%s">%s</font>'):format(Config.Spin.RarityColors[rarity]:ToHex(), title)
 	end
 	S.CharacterService.setBadge(c, badge)
 end
@@ -260,7 +342,8 @@ function ShopService.start()
 	S.NetService.on(A.ClaimDaily, function(player, _p)
 		local c = S.PlayerStateService.get(player)
 		if c then
-			ShopService.claimDaily(c)
+			local result, why = ShopService.claimDaily(c)
+			S.NetService.send(player, "DailyResult", result or { ok = false, message = why })
 		end
 	end)
 end

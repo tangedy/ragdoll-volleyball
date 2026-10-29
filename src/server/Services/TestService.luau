@@ -18,6 +18,7 @@ local Config = require(Shared.Config)
 local ArenaLayout = require(Shared.ArenaLayout)
 local ProjectileMath = require(Shared.ProjectileMath)
 local Catalog = require(Shared.Catalog)
+local BallDefinitions = require(Shared.BallDefinitions)
 
 local TestService = {}
 
@@ -431,7 +432,7 @@ test("rolling (not yet settled) balls can be picked up", function()
 	assertTrue(ball.holder == bot, "rolling ball was not picked up")
 end)
 
-test("an elimination pays the eliminator 25 coins instantly", function()
+test("an elimination pays the eliminator 25 coins instantly and counts toward the knockout quest", function()
 	local me
 	for _, c in S.MatchService.roster() do
 		if c.player and c.profile then
@@ -445,6 +446,9 @@ test("an elimination pays the eliminator 25 coins instantly", function()
 	ready(victim, point(enemyTeam, 0, 20))
 	task.wait(0.2)
 	local before = me.profile.Coins
+	local quests = S.QuestService.daily(me)
+	local savedKnockouts = quests.progress.Knockouts
+	quests.progress.Knockouts = 0
 	victim.lastHitBy = me
 	victim.lastHitAt = now()
 	victim.character:PivotTo(CFrame.new(victim.root.Position - Vector3.new(0, 60, 0)))
@@ -458,6 +462,9 @@ test("an elimination pays the eliminator 25 coins instantly", function()
 		me.profile.Coins == before + Config.Coins.Elimination * S.BoostService.multiplier(me),
 		("coins %d -> %d"):format(before, me.profile.Coins)
 	)
+	local counted = quests.progress.Knockouts
+	quests.progress.Knockouts = savedKnockouts -- leave the tester's real quest as it was
+	assertTrue(counted == 1, ("knockout quest at %s after a bot knockout"):format(tostring(counted)))
 	S.PlayerStateService.setStatus(victim, "Active")
 	ready(victim, point(enemyTeam, 0, 20))
 end)
@@ -746,7 +753,7 @@ test("a character removed mid-ragdoll counts as a fall and is rebuilt", function
 	ready(me, point(me.team, 0, 20))
 end)
 
-test("paid random items: restricted players can't open chests or buy spins", function()
+test("paid random items: restricted players can't buy spins but still open quest chests", function()
 	Workspace:SetAttribute("RD_PaidRandomRestricted", true)
 	local ok, err = pcall(function()
 		local c: any = {
@@ -759,19 +766,20 @@ test("paid random items: restricted players can't open chests or buy spins", fun
 				Coins = 100000,
 				OwnedCosmetics = {},
 				Equipped = {},
-				ChestOpens = 0,
 				Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} },
 			},
 		}
-		local chest, why = S.ChestService.open(c, 1)
-		assertTrue(chest == nil and why ~= nil, "chest opened for a restricted player")
-		assertTrue(S.ChestService.status(c).restricted == true, "chest status not marked restricted")
 		local st = S.SpinService.status(c)
 		assertTrue(st.restricted and st.paidLeft == 0 and st.robux == 0, "spin status still offers paid spins")
 		assertTrue(S.SpinService.spin(c, "Coins") == nil, "paid spin for a restricted player")
 		assertTrue(S.SpinService.spin(c, "Robux") == nil, "Robux spin for a restricted player")
 		assertTrue(c.profile.Coins == 100000, "a refused open cost coins")
 		assertTrue(st.free == true, "the free spin should stay open")
+		local player = c.player
+		c.player = nil -- (a claim pushes the profile, which needs a real Player)
+		S.QuestService.daily(c).progress.Won = 1
+		assertTrue(S.QuestService.claim(c, "Won") ~= nil, "quest chest refused in a restricted region")
+		c.player = player
 		-- (granting a prize pushes the profile, which needs a real Player, so the successful paths
 		-- are checked through the policy itself)
 		Workspace:SetAttribute("RD_PaidRandomRestricted", false)
@@ -829,6 +837,7 @@ test("purchases: every product grants once, retries never double-grant, failures
 		untilTime = p.CoinBoostUntil,
 		forever = p.CoinBoostForever,
 		receipts = table.clone(p.Receipts),
+		owned = table.clone(p.OwnedCosmetics),
 	}
 	local Granted = Enum.ProductPurchaseDecision.PurchaseGranted
 	local Later = Enum.ProductPurchaseDecision.NotProcessedYet
@@ -872,6 +881,25 @@ test("purchases: every product grants once, retries never double-grant, failures
 			p.CoinBoostForever == true and S.BoostService.multiplier(me) == CS.BoostMultiplier,
 			"lifetime boost off"
 		)
+		-- limited-time bundle (a test id routes to its grant while the real one is a placeholder):
+		-- items and coins once, the same receipt again changes nothing
+		for _, offer in CS.Offers do
+			local offerId = 999000222
+			S.PurchaseService.register(offerId, function(c: any): boolean
+				return S.PurchaseService.grantOffer(c, offer)
+			end)
+			for _, id in offer.Items do
+				p.OwnedCosmetics[id] = nil
+			end
+			local br = receipt(offerId)
+			local coinsBefore = p.Coins
+			assertTrue(S.PurchaseService.process(br) == Granted, offer.Id .. " not granted")
+			assertTrue(S.PurchaseService.process(br) == Granted, offer.Id .. " retry not acknowledged")
+			assertTrue(p.Coins == coinsBefore + offer.Coins, offer.Id .. " coins wrong after a retry")
+			for _, id in offer.Items do
+				assertTrue(p.OwnedCosmetics[id] == true, offer.Id .. " missing " .. id)
+			end
+		end
 		-- a grant that throws is retried later and lands then, exactly once
 		local fakeId = 999000111
 		local fail = true
@@ -895,8 +923,8 @@ test("purchases: every product grants once, retries never double-grant, failures
 		away.PlayerId = 1
 		assertTrue(S.PurchaseService.process(away) == Later, "receipt for an absent player acknowledged")
 	end)
-	p.Coins, p.CoinBoostUntil, p.CoinBoostForever, p.Receipts =
-		saved.coins, saved.untilTime, saved.forever, saved.receipts
+	p.Coins, p.CoinBoostUntil, p.CoinBoostForever, p.Receipts, p.OwnedCosmetics =
+		saved.coins, saved.untilTime, saved.forever, saved.receipts, saved.owned
 	S.DataService.push(me)
 	assertTrue(ok, tostring(err))
 end)
@@ -1000,23 +1028,59 @@ test("coins: highest win tier only; 50 for playing on the losing team", function
 	assertTrue(S.RewardService.coins(killer, abortCtx) == 0, "aborted match paid coins")
 end)
 
-test("daily reward: pays once per UTC day, ladder advances, missed day resets", function()
+test("daily reward: one claim per UTC day, ladder advances, missed day resets, every kind lands", function()
 	local yesterday = os.date("!%Y-%m-%d", os.time() - 86400)
-	local c: any = {
-		profileLoaded = true,
-		profile = { Coins = 0, LoginStreak = { day = 3, lastDate = yesterday, claimedDate = yesterday } },
-	}
+	local function fresh(day: number, claimed: string): any
+		return {
+			id = 900010,
+			profileLoaded = true,
+			inMatch = false,
+			status = "Lobby",
+			profile = {
+				Coins = 0,
+				OwnedCosmetics = {},
+				Equipped = {},
+				BonusSpins = {},
+				RewardPicks = {},
+				CoinBoostUntil = 0,
+				LoginStreak = { day = day, lastDate = claimed, claimedDate = claimed },
+			},
+		}
+	end
 	local ladder = Config.DailyRewards.Ladder
-	assertTrue(S.ShopService.claimDaily(c), "first claim refused")
-	assertTrue(c.profile.LoginStreak.day == 4 and c.profile.Coins == ladder[4], "did not advance to day 4")
+	assertTrue(ladder[1].Kind == "Spin", "day 1 isn't a free spin")
+	for i, reward in ladder do
+		assertTrue(S.RewardService.valid(reward), ("day %d isn't a valid reward"):format(i))
+	end
+	-- day 4 pays its coins, once
+	local c = fresh(3, yesterday)
+	local r = S.ShopService.claimDaily(c)
+	assertTrue(r and r.day == 4 and c.profile.LoginStreak.day == 4, "did not advance to day 4")
+	assertTrue(c.profile.Coins == ladder[4].Amount, "day 4 didn't pay its coins")
 	assertTrue(not S.ShopService.claimDaily(c), "second claim the same day paid")
-	assertTrue(c.profile.Coins == ladder[4], "coins changed on a refused claim")
-	c.profile.LoginStreak = { day = 5, lastDate = "2000-01-01", claimedDate = "2000-01-01" }
-	S.ShopService.claimDaily(c)
-	assertTrue(c.profile.LoginStreak.day == 1, "missed day did not reset the ladder")
-	c.profile.LoginStreak = { day = 7, lastDate = yesterday, claimedDate = yesterday }
+	assertTrue(c.profile.Coins == ladder[4].Amount, "coins changed on a refused claim")
+	-- a missed day starts over at day 1: a Rare+ bonus spin
+	c = fresh(5, "2000-01-01")
+	r = S.ShopService.claimDaily(c)
+	assertTrue(r and c.profile.LoginStreak.day == 1, "missed day did not reset the ladder")
+	assertTrue(r.kind == "Spin" and c.profile.BonusSpins[1] == ladder[1].Wheel, "day 1 spin not queued")
+	-- day 7 wraps to day 1
+	c = fresh(7, yesterday)
 	S.ShopService.claimDaily(c)
 	assertTrue(c.profile.LoginStreak.day == 1, "day 7 did not wrap to day 1")
+	-- day 3: the free boost
+	c = fresh(2, yesterday)
+	r = S.ShopService.claimDaily(c)
+	assertTrue(r and r.kind == "Boost" and c.profile.CoinBoostUntil > os.time(), "day 3 boost not running")
+	-- day 7: pick one of the offered Epics, exactly once
+	c = fresh(6, yesterday)
+	r = S.ShopService.claimDaily(c)
+	assertTrue(r and r.kind == "Pick" and #r.ids >= 1, "day 7 offered no pick")
+	assertTrue(S.ShopService.dailyStatus(c).pick ~= nil, "pick missing from the daily status")
+	assertTrue(not S.RewardService.pick(c, "Skin_Lime"), "took an item that wasn't offered")
+	local got = S.RewardService.pick(c, r.ids[1])
+	assertTrue(got and got.ok and c.profile.OwnedCosmetics[r.ids[1]], "picked item not owned")
+	assertTrue(not S.RewardService.pick(c, r.ids[1]), "a pick granted twice")
 end)
 
 test("daily spin: one free spin a day, paid spins cost coins and are capped, duplicates pay coins", function()
@@ -1070,86 +1134,179 @@ test("daily spin: one free spin a day, paid spins cost coins and are capped, dup
 	assertTrue(S.SpinService.spin(c, "Free") == nil, "spun during a match")
 end)
 
-test("chests: each tier's wheel only holds its guaranteed rarities", function()
-	local order = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
-	for index, spot in Config.Chest.Spots do
-		local tier = (Config.Chest.Tiers :: any)[spot.Tier]
-		assertTrue(tier ~= nil, "spot " .. index .. " names an unknown tier")
-		local lowest = 4
-		for r, w in tier.RarityWeights do
-			if w > 0 then
-				lowest = math.min(lowest, order[r])
+-- A loaded, in-hub combatant with no Player (claims push the profile only for real players).
+local function questTester(id: number): any
+	return {
+		id = id,
+		profileLoaded = true,
+		inMatch = false,
+		status = "Lobby",
+		profile = { Coins = 0, OwnedCosmetics = {}, Equipped = {} },
+	}
+end
+
+local function questStatus(c: any, id: string): any
+	for _, q in S.QuestService.status(c).quests do
+		if q.id == id then
+			return q
+		end
+	end
+	return nil
+end
+
+test("quests: progress counts up to each goal; only real players track it", function()
+	local c = questTester(900030)
+	c.player = { UserId = 900030 } -- record() only tracks real players
+	S.QuestService.record(c, "Knockout")
+	S.QuestService.record(c, "Knockout")
+	assertTrue(questStatus(c, "Knockouts").progress == 2, "2 knockouts not counted")
+	assertTrue(not questStatus(c, "Knockouts").ready, "ready at 2 of 3")
+	S.QuestService.record(c, "Knockout", 4)
+	local q = questStatus(c, "Knockouts")
+	assertTrue(q.progress == 3 and q.ready, "knockouts not capped at the goal")
+	assertTrue(questStatus(c, "Played").progress == 0, "a knockout counted as a game")
+	S.QuestService.record(c, "Played")
+	S.QuestService.record(c, "Won")
+	assertTrue(questStatus(c, "Played").progress == 1 and questStatus(c, "Won").ready, "played/won not counted")
+	local bot = questTester(900031)
+	S.QuestService.record(bot, "Knockout")
+	assertTrue(bot.profile.DailyQuests == nil, "a bot's quests were tracked")
+end)
+
+test("mastery: power-ball knockouts count by type; mastery cosmetics stay out of shop and pools", function()
+	local c = questTester(900035)
+	c.player = { UserId = 900035 } -- recordPowerKO() only tracks real players
+	c.profile.PowerKOs = {}
+	local featured = S.ShopService.featuredBall()
+	local plain = "Heavy"
+	for _, t in BallDefinitions.PowerTypes do
+		if t ~= featured then
+			plain = t
+		end
+	end
+	S.ShopService.recordPowerKO(c, "Standard")
+	assertTrue(next(c.profile.PowerKOs) == nil, "a Standard knockout counted")
+	S.ShopService.recordPowerKO(c, plain)
+	assertTrue(c.profile.PowerKOs[plain] == 1, "a power knockout wasn't counted")
+	if featured then
+		S.ShopService.recordPowerKO(c, featured)
+		local bonus = Config.PowerUps.Featured.MasteryBonus
+		assertTrue(c.profile.PowerKOs[featured] == bonus, "the featured ball didn't count double")
+	end
+	for _, item in Catalog.Items do
+		if item.Unlock then
+			assertTrue(not Catalog.isOffered(item), item.Id .. " is offered for coins")
+			for _, list in S.SpinService.pool() do
+				for _, it in list do
+					assertTrue(it.Id ~= item.Id, item.Id .. " is on the wheels")
+				end
 			end
 		end
-		for i = 1, 60 do
-			local c: any = { id = 700000 + i, profile = { ChestOpens = i } }
-			for _, id in S.ChestService.wheel(c, index) do
-				local r = Catalog.rarity(Catalog.get(id) :: any)
-				assertTrue(order[r] >= lowest, ("%s wheel has a %s prize"):format(spot.Tier, r))
-			end
+	end
+	for _, q in Config.Quests.List do
+		local pool = S.RewardService.chestPool(q.Chest)
+		for _, r in { "Common", "Rare", "Epic", "Legendary" } do
+			assertTrue(#pool[r] > 0, q.Chest .. " chest has no " .. r .. " items")
 		end
 	end
 end)
 
-test("chests: paid opens cost the tier's price; free ones unlock after 1 and 3 matches, once a day", function()
-	local function fresh(): any
-		return {
-			id = 900003,
-			profileLoaded = true,
-			inMatch = false,
-			status = "Lobby",
-			profile = {
-				Coins = 0,
-				OwnedCosmetics = {},
-				Equipped = {},
-				ChestOpens = 0,
-				ChestDaily = { date = "", matches = 0, claimed = {} },
-			},
-		}
+test("quests: a new UTC day clears progress and claims", function()
+	local c = questTester(900032)
+	local d = S.QuestService.daily(c)
+	d.progress.Won = 1
+	assertTrue(S.QuestService.claim(c, "Won") ~= nil, "claim refused")
+	d.progress.Knockouts = 2
+	d.date = "2000-01-01" -- yesterday, as far as the service can tell
+	for _, q in S.QuestService.status(c).quests do
+		assertTrue(q.progress == 0 and not q.claimed, q.id .. " survived the reset")
 	end
-	local indexOf: { [string]: number } = {}
-	for i, spot in Config.Chest.Spots do
-		indexOf[spot.Tier] = i
+	local resetsAt = S.QuestService.status(c).resetsAt
+	assertTrue(resetsAt % 86400 == 0 and resetsAt > os.time(), "reset isn't the next UTC midnight")
+	assertTrue(resetsAt - os.time() <= 86400, "reset more than a day away")
+end)
+
+test("quests: a chest is claimed once, only when done and only in the hub", function()
+	local c = questTester(900033)
+	assertTrue(S.QuestService.claim(c, "Played") == nil, "claimed an unfinished quest")
+	S.QuestService.daily(c).progress.Played = 2
+	c.status, c.inMatch = "Active", true
+	assertTrue(S.QuestService.claim(c, "Played") == nil, "claimed during a match")
+	c.status, c.inMatch = "Lobby", false
+	local r = S.QuestService.claim(c, "Played")
+	assertTrue(r and r.ok and r.kind == "Chest" and r.chest == "Gesture", "claim refused")
+	assertTrue((Catalog.get(r.id) :: any).Category == "Pose", "the Gesture Chest dropped a non-gesture")
+	assertTrue(c.profile.OwnedCosmetics[r.id] == true, "prize not owned")
+	assertTrue(r.slots[r.index] == r.id, "reveal wheel doesn't land on the prize")
+	local coins = c.profile.Coins
+	assertTrue(S.QuestService.claim(c, "Played") == nil, "claimed twice")
+	assertTrue(c.profile.Coins == coins, "a refused claim paid coins")
+	assertTrue(questStatus(c, "Played").claimed, "not shown as claimed")
+end)
+
+test("quests: chest drops follow the rarity odds and stay in the chest's category", function()
+	for _, def in Config.Quests.List do
+		local odds = S.RewardService.chestOdds(def.Chest)
+		local category = (Config.Quests.Chests :: any)[def.Chest].Category
+		local counts: { [string]: number } = {}
+		local n = 1500
+		for i = 1, n do
+			local r = S.RewardService.grant(questTester(910000 + i), { Kind = "Chest", Chest = def.Chest }, "Test")
+			local item = Catalog.get(r.id) :: any
+			assertTrue(item.Category == category, def.Chest .. " dropped a " .. item.Category)
+			assertTrue(Catalog.rarity(item) == r.rarity and not r.duplicate, def.Chest .. " prize mislabeled")
+			counts[r.rarity] = (counts[r.rarity] or 0) + 1
+		end
+		for rarity, p in odds do
+			local got = (counts[rarity] or 0) / n
+			assertTrue(
+				math.abs(got - p) < 0.04,
+				("%s: %s %.1f%%, want %.1f%%"):format(def.Chest, rarity, got * 100, p * 100)
+			)
+		end
 	end
-	local T = Config.Chest.Tiers :: any
-	-- nothing is free before a match, and coins are needed
-	local c = fresh()
-	assertTrue(S.ChestService.open(c, indexOf.Common) == nil, "opened with no coins and no free chest")
-	-- paid: costs exactly the tier price (plus any duplicate refund)
-	c.profile.Coins = T.Epic.Cost
-	local r = S.ChestService.open(c, indexOf.Epic)
-	assertTrue(r and r.ok and not r.free, "paid Epic open refused")
-	assertTrue(c.profile.Coins == r.coins, ("Epic open cost %d"):format(T.Epic.Cost - (c.profile.Coins - r.coins)))
-	-- free Common after 1 match, free Rare after 3, each once a day
-	c = fresh()
-	S.ChestService.matchPlayed(c)
-	assertTrue(S.ChestService.isFree(c, "Common"), "Common not free after 1 match")
-	assertTrue(not S.ChestService.isFree(c, "Rare"), "Rare free after only 1 match")
-	local fc = S.ChestService.open(c, indexOf.Common)
-	assertTrue(fc and fc.free and c.profile.Coins == fc.coins, "free Common cost coins")
-	assertTrue(not S.ChestService.isFree(c, "Common"), "Common free twice in a day")
-	S.ChestService.matchPlayed(c)
-	S.ChestService.matchPlayed(c)
-	assertTrue(S.ChestService.isFree(c, "Rare"), "Rare not free after 3 matches")
-	local fr = S.ChestService.open(c, indexOf.Rare)
-	assertTrue(fr and fr.free, "free Rare refused")
-	S.ChestService.matchPlayed(c)
-	assertTrue(
-		not S.ChestService.isFree(c, "Rare") and not S.ChestService.isFree(c, "Common"),
-		"a second free chest today"
-	)
-	assertTrue(not S.ChestService.isFree(c, "Epic"), "Epic should never be free")
-	-- a new UTC day starts over
-	c.profile.ChestDaily.date = "2000-01-01"
-	assertTrue(not S.ChestService.isFree(c, "Common"), "new day kept yesterday's matches")
-	S.ChestService.matchPlayed(c)
-	assertTrue(S.ChestService.isFree(c, "Common"), "free Common didn't come back the next day")
-	-- free opens are allowed where paid random items are restricted (they aren't paid)
-	Workspace:SetAttribute("RD_PaidRandomRestricted", true)
-	c.player = nil -- bots/fake players are never restricted, so check the rule directly
-	local ok = S.ChestService.isFree(c, "Common")
-	Workspace:SetAttribute("RD_PaidRandomRestricted", nil)
-	assertTrue(ok, "free chest blocked")
+end)
+
+test("quests: duplicates only once a rarity is all owned, and pay that rarity's coins", function()
+	local c = questTester(900034)
+	local pool = S.RewardService.chestPool("Title")
+	for _, items in pool do
+		for _, item in items do
+			c.profile.OwnedCosmetics[item.Id] = true
+		end
+	end
+	local spare = pool.Rare[1].Id
+	local sawRare, sawDup = false, false
+	for _ = 1, 150 do
+		c.profile.OwnedCosmetics[spare] = nil -- one unowned Rare title
+		local before = c.profile.Coins
+		local r = S.RewardService.grant(c, { Kind = "Chest", Chest = "Title" }, "Test")
+		if r.rarity == "Rare" then
+			sawRare = true
+			assertTrue(r.id == spare and not r.duplicate and r.coins == 0, "an owned Rare title dropped")
+		else
+			sawDup = true
+			assertTrue(r.duplicate and r.coins == Config.Economy.DuplicateCoins[r.rarity], "wrong duplicate payout")
+			assertTrue(c.profile.Coins - before == r.coins, "duplicate coins not paid")
+		end
+	end
+	assertTrue(sawRare and sawDup, "150 rolls never hit both cases")
+end)
+
+test("save schema v12 migration turns today's unopened free chests into bonus spins", function()
+	local today = os.date("!%Y-%m-%d", os.time())
+	local m = S.DataService.migrate({
+		SchemaVersion = 11,
+		Coins = 7,
+		ChestOpens = 4,
+		ChestDaily = { date = today, matches = 3, claimed = { Common = true } },
+	})
+	assertTrue(m.SchemaVersion == Config.Data.SchemaVersion, "schema not bumped")
+	assertTrue(#m.BonusSpins == 1 and m.BonusSpins[1] == "RarePlus", "the unopened Rare chest wasn't converted")
+	assertTrue((m :: any).ChestDaily == nil and (m :: any).ChestOpens == nil, "lobby chest data kept")
+	assertTrue(m.Coins == 7, "coins lost")
+	local stale = S.DataService.migrate({ SchemaVersion = 11, ChestDaily = { date = "2000-01-01", matches = 5 } })
+	assertTrue(#stale.BonusSpins == 0, "an expired free chest was granted")
 end)
 
 test("daily spin: wheels follow the rarity weights", function()
@@ -1175,6 +1332,49 @@ test("daily spin: wheels follow the rarity weights", function()
 			("%s is %.1f%% of slots, expected %.1f%%"):format(r, got * 100, want * 100)
 		)
 	end
+end)
+
+test("daily spin: bonus spins go first on their own wheel and stack with the daily spin", function()
+	local c: any = {
+		id = 900011,
+		profileLoaded = true,
+		inMatch = false,
+		status = "Lobby",
+		profile = {
+			Coins = 0,
+			OwnedCosmetics = {},
+			Equipped = {},
+			BonusSpins = { "RarePlus" },
+			Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} },
+		},
+	}
+	local st = S.SpinService.status(c)
+	assertTrue(st.freeSpins == 2 and st.bonus == "RarePlus", "bonus spin not counted")
+	for _, id in st.slots do
+		assertTrue(Catalog.rarity(Catalog.get(id) :: any) ~= "Common", "a Common on the Rare+ wheel")
+	end
+	local r = S.SpinService.spin(c, "Free")
+	assertTrue(r and r.how == "Bonus" and r.slots[r.index] == r.id, "bonus spin not used first")
+	assertTrue(#c.profile.BonusSpins == 0 and not c.profile.Spin.freeUsed, "bonus spin used the daily one")
+	assertTrue(S.SpinService.spin(c, "Free") ~= nil, "daily spin gone after a bonus spin")
+	assertTrue(S.SpinService.spin(c, "Free") == nil, "a third free spin")
+end)
+
+test("save schema v11 migration keeps login streaks and adds bonus spins and picks", function()
+	local yesterday = os.date("!%Y-%m-%d", os.time() - 86400)
+	local migrated = S.DataService.migrate({
+		SchemaVersion = 10,
+		Coins = 50,
+		LoginStreak = { day = 6, lastDate = yesterday, claimedDate = yesterday },
+	})
+	assertTrue(migrated.SchemaVersion == Config.Data.SchemaVersion, "schema not bumped")
+	assertTrue(migrated.LoginStreak.day == 6 and migrated.LoginStreak.claimedDate == yesterday, "streak lost")
+	assertTrue(migrated.Coins == 50, "coins lost")
+	assertTrue(type(migrated.BonusSpins) == "table" and type(migrated.RewardPicks) == "table", "no v11 fields")
+	local c: any = { profileLoaded = true, profile = migrated }
+	assertTrue(S.ShopService.dailyStatus(c).day == 7, "streak didn't continue at day 7")
+	local damaged = S.DataService.migrate({ SchemaVersion = 10, LoginStreak = { day = "4", claimedDate = yesterday } })
+	assertTrue(damaged.LoginStreak.day == 4, "a damaged streak was reset")
 end)
 
 test("save schema v5 migration keeps v4 data and adds the daily spin", function()
@@ -1518,9 +1718,11 @@ function TestService.runAll()
 	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
 	local results = {}
 	-- start in a normal live round (not sudden death), then keep its timer from running out
-	if not waitUntil(function()
-		return ms:GetAttribute("State") == "RoundActive" and ms:GetAttribute("Overtime") ~= true
-	end, 90) then
+	if
+		not waitUntil(function()
+			return ms:GetAttribute("State") == "RoundActive" and ms:GetAttribute("Overtime") ~= true
+		end, 90)
+	then
 		running = false
 		Workspace:SetAttribute("RD_TestResults", "SKIPPED: no live round (outside sudden death) within 90 s")
 		return

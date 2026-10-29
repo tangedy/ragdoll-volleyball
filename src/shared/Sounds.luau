@@ -56,6 +56,49 @@ local function charge(): { Layer }
 	return layers
 end
 
+-- A buzzy brass note (Sad Trombone, Air Horn): a distorted, mid-boosted bass tone with a quieter
+-- octave ping for pitch, `semis` from the base pitch, starting at `at`, lasting `hold` seconds.
+-- `wobble` re-strikes it a hair sharp and flat for a vibrato.
+local function brass(semis: number, at: number, hold: number, wobble: boolean?): { Layer }
+	local pitch = 1.6 * 2 ^ (semis / 12)
+	local layers: { Layer } = {}
+	local step = if wobble then 0.12 else hold
+	local t, i = 0, 0
+	while t < hold - 1e-3 do
+		local p = if wobble then pitch * (if i % 2 == 0 then 1.015 else 0.985) else pitch
+		local len = math.min(step + 0.04, hold - t)
+		table.insert(layers, {
+			id = S .. "bass.wav",
+			volume = 0.6,
+			pitch = p,
+			delay = at + t,
+			eq = { low = -4, mid = 8, high = -2 },
+			distortion = 0.55,
+			stopAfter = len,
+		})
+		table.insert(layers, {
+			id = S .. "electronicpingshort.wav",
+			volume = 0.12,
+			pitch = p * 0.5,
+			delay = at + t,
+			stopAfter = len,
+		})
+		t += step
+		i += 1
+	end
+	return layers
+end
+
+local function concat(...: { Layer }): { Layer }
+	local out: { Layer } = {}
+	for _, list in { ... } do
+		for _, l in list do
+			table.insert(out, l)
+		end
+	end
+	return out
+end
+
 -- UI vocabulary (Nintendo UX audio study): a few short, dry sounds that each mean one thing, so a
 -- menu can be read by ear. Pitch carries the meaning: up = forward / on / success, down = back /
 -- off, dull and toneless = a wall or a refusal. Navigation ticks stay under ~100 ms so fast input
@@ -697,7 +740,7 @@ local Cues: { [string]: { Layer } } = {
 	Banner = {
 		{ id = S .. "swordslash.wav", volume = 0.25, pitch = 1.4, jitter = 0.05 },
 	},
-	-- Loot chests: the lid rattling, bursting open, and thudding shut
+	-- Quest chests: rattling while the server rolls the prize, then bursting open
 	ChestRattle = {
 		{ id = S .. "clickfast.wav", volume = 0.35, pitch = 0.6, jitter = 0.1 },
 		{ id = S .. "collide.wav", volume = 0.2, pitch = 1.4, delay = 0.04, jitter = 0.1 },
@@ -709,9 +752,27 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 1.8, delay = 0.18 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.4, delay = 0.3 },
 	},
-	ChestThud = {
-		{ id = S .. "collide.wav", volume = 0.4, pitch = 0.55 },
-		{ id = S .. "bass.wav", volume = 0.25, pitch = 1.3, delay = 0.02 },
+	-- Common / Rare finishers (Finishers/ConfettiPop, AirHorn, SadTrombone, Bonk, Paparazzi)
+	ConfettiPop = {
+		{ id = S .. "snap.wav", volume = 0.8, pitch = 0.8 },
+		{ id = S .. "glassbreak.wav", volume = 0.25, pitch = 2.2, delay = 0.02 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.0, delay = 0.06 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 2.67, delay = 0.12 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 3.0, delay = 0.18 },
+	},
+	-- three blasts, short short long
+	AirHorn = concat(brass(7, 0, 0.22), brass(7, 0.3, 0.22), brass(7, 0.6, 0.9), brass(12, 0.6, 0.9)),
+	-- wah, wah, wah, waaah (each a semitone lower, the last one wobbling)
+	SadTrombone = concat(brass(0, 0, 0.42), brass(-1, 0.5, 0.42), brass(-2, 1.0, 0.42), brass(-3, 1.5, 1.2, true)),
+	Bonk = {
+		{ id = S .. "metal.ogg", volume = 0.9, pitch = 1.6, stopAfter = 0.6 },
+		{ id = S .. "hit.wav", volume = 0.6, pitch = 0.7 },
+		{ id = S .. "bass.wav", volume = 0.6, pitch = 1.3, eq = { low = 8, mid = 0, high = -6 }, stopAfter = 0.35 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.25, pitch = 3.2, delay = 0.08 },
+	},
+	ShutterClick = {
+		{ id = S .. "clickfast.wav", volume = 0.5, pitch = 1.5, jitter = 0.08 },
+		{ id = S .. "switch.wav", volume = 0.3, pitch = 1.8, delay = 0.04, jitter = 0.08 },
 	},
 	-- Match intro (each team's shot)
 	IntroStinger = {

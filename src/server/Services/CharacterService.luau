@@ -64,6 +64,7 @@ local function makeTag(character: Model, c: any)
 	badge.TextScaled = true
 	badge.TextColor3 = Color3.fromRGB(255, 230, 120)
 	badge.TextStrokeTransparency = 0.3
+	badge.RichText = true -- the title is colored by its rarity (ShopService.applyCosmetics)
 	badge.Text = if c.isBot then "BOT" elseif c.isDummy then "DUMMY" else ""
 	badge.Parent = bb
 	bb.Parent = head
@@ -250,12 +251,15 @@ end
 -- too, so they see the action straight away instead of whatever way they were facing.
 function CharacterService.placeFacing(c: any, pos: Vector3, focus: Vector3)
 	CharacterService.teleport(c, pos, focus)
-	CharacterService.faceCamera(c, focus)
+	CharacterService.faceCamera(c, focus, pos)
 end
 
-function CharacterService.faceCamera(c: any, focus: Vector3)
+-- `from` is where the character was just placed: the client aims from there rather than from
+-- wherever its copy of the body happens to be when the message lands (the teleport and this
+-- message replicate separately, so the body can still be down in the void it fell into).
+function CharacterService.faceCamera(c: any, focus: Vector3, from: Vector3?)
 	if c.player then
-		S.NetService.send(c.player, "FaceCourt", { focus = focus })
+		S.NetService.send(c.player, "FaceCourt", { focus = focus, from = from })
 	end
 end
 

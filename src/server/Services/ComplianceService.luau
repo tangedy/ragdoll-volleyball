@@ -1,8 +1,8 @@
 --!strict
--- Per-player Roblox policy checks (PolicyService). Chest opens and paid spins hand out random
--- cosmetics for coins, and coins can be bought with Robux, so Roblox counts them as paid random
--- items: they must be refused wherever `ArePaidRandomItemsRestricted` is true. The free daily spin
--- isn't paid, so it stays open to everyone.
+-- Per-player Roblox policy checks (PolicyService). Paid spins hand out random cosmetics for coins,
+-- and coins can be bought with Robux, so Roblox counts them as paid random items: they must be
+-- refused wherever `ArePaidRandomItemsRestricted` is true. The free daily spin, bonus spins and
+-- daily quest chests aren't paid, so they stay open to everyone.
 --
 -- Until a player's policy has loaded (or if every lookup fails), they're treated as restricted.
 -- In Studio, `workspace:SetAttribute("RD_PaidRandomRestricted", true)` simulates a restricted region.
@@ -20,8 +20,8 @@ function ComplianceService.init(services: any)
 	S = services
 end
 
--- Look up the player's policy (yields). Pushes the profile afterwards so the client's chest and spin
--- buttons pick up the answer.
+-- Look up the player's policy (yields). Pushes the profile afterwards so the client's spin buttons
+-- pick up the answer.
 function ComplianceService.load(c: any)
 	local player = c.player :: Player?
 	if not player then

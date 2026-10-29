@@ -1,6 +1,8 @@
 --!strict
--- Daily cosmetic spin (separate from the daily coin ladder). One free spin per UTC day, plus extra
--- spins bought with coins (capped per day) or, once a developer product exists, Robux.
+-- Daily cosmetic spin. One free spin per UTC day, plus extra spins bought with coins (capped per
+-- day) or, once a developer product exists, Robux. Free bonus spins from the login ladder
+-- (profile.BonusSpins, oldest first) stack with the daily one and are used before it; each is on its
+-- own wheel (Config.Spin.Wheels), and like the daily spin they're allowed in restricted regions.
 --
 -- Every spin has a wheel of Config.Spin.Slots prizes. The wheel is generated from a seed of
 -- (player, UTC day, spin number), so the client can show exactly the wheel it will spin before it
@@ -40,8 +42,9 @@ function SpinService.pool(): { [string]: { Catalog.Item } }
 	end
 	local p: { [string]: { Catalog.Item } } = { Common = {}, Rare = {}, Epic = {}, Legendary = {} }
 	for _, item in Catalog.Items do
-		-- event cosmetics are never on the wheels (they're only sold during their event)
-		if not item.Default and item.Price > 0 and not item.Event then
+		-- event cosmetics are never on the wheels (they're only sold during their event), and mastery
+		-- cosmetics are only earned
+		if not item.Default and item.Price > 0 and not item.Event and not item.Unlock then
 			table.insert(p[Catalog.rarity(item)], item)
 		end
 	end
@@ -67,18 +70,35 @@ function SpinService.state(c: any): SpinState
 	return st
 end
 
+-- Free bonus spins waiting (Config.Spin.Wheels ids), oldest first.
+function SpinService.bonusSpins(c: any): { string }
+	local q = c.profile.BonusSpins
+	if type(q) ~= "table" then
+		q = {}
+		c.profile.BonusSpins = q
+	end
+	return q
+end
+
 -- The wheel for this player's next spin today (deterministic, so the preview is the real wheel).
-function SpinService.wheel(c: any): { string }
+-- `bonus` is a Config.Spin.Wheels id for a bonus spin; without it, it's the daily/paid wheel.
+function SpinService.wheel(c: any, bonus: string?): { string }
 	local st = SpinService.state(c)
 	local who = if c.player then c.player.UserId else c.id
 	local day = os.time() // 86400
 	local spinNumber = (if st.freeUsed then 1 else 0) + st.paid
+	local weights = SP.RarityWeights
+	if bonus then
+		-- its own seed stream, moved on by every spin (so each bonus spin gets a fresh wheel)
+		spinNumber = 1000 + st.total
+		weights = (SP.Wheels[bonus] or SP.Wheels.Standard).RarityWeights
+	end
 	local seeded = Random.new(math.abs(who) * 7919 + day * 104729 + spinNumber * 31 + 17)
 	local p = SpinService.pool()
 	local total = 0
 	for _, r in RARITIES do
 		if #p[r] > 0 then
-			total += SP.RarityWeights[r]
+			total += weights[r] or 0
 		end
 	end
 	local slots: { string } = {}
@@ -88,8 +108,9 @@ function SpinService.wheel(c: any): { string }
 		local roll = seeded:NextNumber() * total
 		local rarity = RARITIES[1]
 		for _, r in RARITIES do
-			if #p[r] > 0 then
-				roll -= SP.RarityWeights[r]
+			if #p[r] > 0 and (weights[r] or 0) > 0 then
+				rarity = r -- also the fallback if rounding leaves a sliver of roll
+				roll -= weights[r]
 				if roll <= 0 then
 					rarity = r
 					break
@@ -110,10 +131,13 @@ function SpinService.wheel(c: any): { string }
 	return slots
 end
 
--- What the HUD needs: is the free spin ready, paid spins left today, and the next wheel.
--- Paid spins are off where paid random items are restricted (the free spin stays).
+-- What the HUD needs: free spins waiting (bonus spins plus today's daily one), the bonus wheel the
+-- next free spin is on (nil for the daily one), paid spins left today, and the next wheel.
+-- Paid spins are off where paid random items are restricted (free and bonus spins stay).
 function SpinService.status(c: any): {
 	free: boolean,
+	freeSpins: number,
+	bonus: string?,
 	paidLeft: number,
 	cost: number,
 	slots: { string },
@@ -122,14 +146,26 @@ function SpinService.status(c: any): {
 }
 	local restricted = S.ComplianceService.paidRandomRestricted(c)
 	if not c.profile then
-		return { free = false, paidLeft = 0, cost = SP.ExtraSpinCost, slots = {}, robux = 0, restricted = restricted }
+		return {
+			free = false,
+			freeSpins = 0,
+			paidLeft = 0,
+			cost = SP.ExtraSpinCost,
+			slots = {},
+			robux = 0,
+			restricted = restricted,
+		}
 	end
 	local st = SpinService.state(c)
+	local bonus = SpinService.bonusSpins(c)[1]
+	local freeSpins = #SpinService.bonusSpins(c) + (if st.freeUsed then 0 else 1)
 	return {
-		free = not st.freeUsed,
+		free = freeSpins > 0,
+		freeSpins = freeSpins,
+		bonus = bonus,
 		paidLeft = if restricted then 0 else math.max(0, SP.MaxPaidPerDay - st.paid),
 		cost = SP.ExtraSpinCost,
-		slots = SpinService.wheel(c),
+		slots = SpinService.wheel(c, bonus),
 		robux = if restricted then 0 else SP.RobuxProductId,
 		restricted = restricted,
 	}
@@ -139,7 +175,8 @@ local function inHub(c: any): boolean
 	return not c.inMatch and c.status == "Lobby"
 end
 
--- Roll the current wheel and grant the prize. `how` is "Free", "Coins" or "Robux".
+-- Roll the current wheel and grant the prize. `how` is "Free", "Coins" or "Robux"; a free spin uses
+-- the oldest bonus spin first (the result says how = "Bonus" and its wheel), then the daily one.
 -- Returns the result table, or nil and a reason.
 function SpinService.spin(c: any, how: string): (any?, string?)
 	if not c.profileLoaded or not c.profile then
@@ -152,8 +189,12 @@ function SpinService.spin(c: any, how: string): (any?, string?)
 		return nil, "Paid spins aren't available in your region"
 	end
 	local st = SpinService.state(c)
+	local bonus: string? = nil
 	if how == "Free" then
-		if st.freeUsed then
+		bonus = SpinService.bonusSpins(c)[1]
+		if bonus then
+			how = "Bonus"
+		elseif st.freeUsed then
 			return nil, "Free spin used today"
 		end
 	elseif how == "Coins" then
@@ -166,7 +207,7 @@ function SpinService.spin(c: any, how: string): (any?, string?)
 	elseif how ~= "Robux" then
 		return nil, "Not available"
 	end
-	local slots = SpinService.wheel(c)
+	local slots = SpinService.wheel(c, bonus)
 	local index = rng:NextInteger(1, #slots)
 	local item = Catalog.get(slots[index]) :: Catalog.Item
 	local rarity = Catalog.rarity(item)
@@ -174,7 +215,9 @@ function SpinService.spin(c: any, how: string): (any?, string?)
 	if how == "Coins" then
 		c.profile.Coins -= SP.ExtraSpinCost
 	end
-	if how == "Free" then
+	if how == "Bonus" then
+		table.remove(SpinService.bonusSpins(c), 1)
+	elseif how == "Free" then
 		st.freeUsed = true
 	else
 		st.paid += 1
@@ -200,6 +243,7 @@ function SpinService.spin(c: any, how: string): (any?, string?)
 		duplicate = duplicate,
 		coins = coins,
 		how = how,
+		wheel = bonus,
 	},
 		nil
 end

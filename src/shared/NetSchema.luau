@@ -24,9 +24,10 @@ NetSchema.Actions = {
 	BuyItem = "BuyItem",
 	EquipItem = "EquipItem",
 	ClaimDaily = "ClaimDaily",
+	PickReward = "PickReward", -- choose one cosmetic from a waiting reward pick (day 7 of the ladder)
 	Spin = "Spin",
 	MarkSeen = "MarkSeen",
-	OpenChest = "OpenChest",
+	ClaimQuest = "ClaimQuest", -- open a finished daily quest's chest (Config.Quests.List id)
 	Practice = "Practice",
 	Dev = "Dev",
 }
@@ -131,6 +132,13 @@ NetSchema.Validators = {
 	ClaimDaily = function(_p: any): any
 		return {}
 	end,
+	PickReward = function(p: any): any
+		-- a catalog id from the oldest waiting pick; the server checks it's one of the choices
+		if not isTable(p) or type(p.id) ~= "string" or #p.id > 64 then
+			return nil
+		end
+		return { id = p.id }
+	end,
 	MarkSeen = function(p: any): any
 		-- a shop category the player just looked at
 		if not isTable(p) or type(p.category) ~= "string" or #p.category > 32 then
@@ -145,15 +153,12 @@ NetSchema.Validators = {
 		end
 		return { paid = p.paid == true }
 	end,
-	OpenChest = function(p: any): any
-		-- which hub chest (Config.Chest.Spots index); the server checks you're standing at it
-		if not isTable(p) or type(p.chest) ~= "number" or p.chest ~= math.floor(p.chest) then
+	ClaimQuest = function(p: any): any
+		-- a Config.Quests.List id; the server checks the quest is done and unclaimed today
+		if not isTable(p) or type(p.id) ~= "string" or #p.id > 32 then
 			return nil
 		end
-		if p.chest < 1 or p.chest > 16 then
-			return nil
-		end
-		return { chest = p.chest }
+		return { id = p.id }
 	end,
 	Practice = function(p: any): any
 		if not isTable(p) or (p.event ~= "Pickup" and p.event ~= "Throw" and p.event ~= "HitDummy") then

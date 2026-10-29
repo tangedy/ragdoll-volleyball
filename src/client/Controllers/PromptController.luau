@@ -1,8 +1,7 @@
 --!strict
--- Interaction prompts in the Toybox style. The hub's kiosks (Shop, Spin, Daily) and the loot chests
--- use ProximityPrompts with Style = Custom, so Roblox draws nothing of its own; this draws each one
--- floating over the thing it opens: the station's name in outlined paper text over a toned toy
--- button with the key to press (E, or the gamepad button) and the action. The key still works
+-- Interaction prompts in the Toybox style. The hub's kiosks (Shop, Spin, Daily) use ProximityPrompts
+-- with Style = Custom, so Roblox draws nothing of its own; this draws each one floating over the
+-- thing it opens: the station's name in outlined paper text over a toned toy button with the key to press (E, or the gamepad button) and the action. The key still works
 -- through the prompt itself; clicking or tapping the button triggers it the same way.
 
 local Players = game:GetService("Players")
@@ -24,7 +23,6 @@ local TONES: { [string]: Color3 } = {
 	ShopPrompt = T.sun,
 	SpinPrompt = T.candy,
 	DailyPrompt = T.leaf,
-	ChestPrompt = T.peach,
 }
 local BUTTON = Vector2.new(250, 58)
 local KEY = 34

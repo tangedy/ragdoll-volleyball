@@ -1,9 +1,9 @@
 --!strict
 -- Robux purchases (developer products). Roblox allows one ProcessReceipt callback per game, so every
--- product registers a handler here by product id: coin bundles (Config.CoinShop) and the extra spin
--- (SpinService). A handler grants the purchase and returns true; nothing is reported as granted
--- until the profile holding it has saved, and every PurchaseId is remembered on the profile so a
--- retried receipt never grants twice.
+-- product registers a handler here by product id: coin bundles and limited-time cosmetic bundles
+-- (Config.CoinShop), boosts (BoostService) and the extra spin (SpinService). A handler grants the
+-- purchase and returns true; nothing is reported as granted until the profile holding it has saved,
+-- and every PurchaseId is remembered on the profile so a retried receipt never grants twice.
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local Catalog = require(Shared.Catalog)
 
 local PurchaseService = {}
 
@@ -83,6 +84,31 @@ function PurchaseService.robuxUnlocked(c: any): boolean
 		and (tonumber(p.PlaySeconds) or 0) >= Config.CoinShop.RobuxAfterSeconds
 end
 
+-- Grant one limited-time bundle (Config.CoinShop.Offers): its cosmetics and its coins. This runs
+-- whenever the receipt arrives, even after the offer has ended (the card is hidden by then, but a
+-- receipt that never grants is never resolved), and cosmetics already owned simply stay owned.
+-- Nothing is equipped: the player picks that in the shop. The client celebrates on "BundleBought".
+function PurchaseService.grantOffer(c: any, offer: any): boolean
+	local p = c.profile
+	if not p then
+		return false
+	end
+	local items = {}
+	for _, id in offer.Items do
+		if Catalog.get(id) then
+			p.OwnedCosmetics[id] = true
+			table.insert(items, id)
+		else
+			warn(("[Purchase] offer %s names unknown item %s"):format(offer.Id, id))
+		end
+	end
+	p.Coins += offer.Coins
+	if c.player then
+		S.NetService.send(c.player, "BundleBought", { id = offer.Id, coins = offer.Coins, items = items })
+	end
+	return true
+end
+
 local TICK = 10
 local function playClock()
 	while true do
@@ -109,6 +135,12 @@ function PurchaseService.start()
 				S.NetService.send(c.player, "CoinsBought", { id = bundle.Id, coins = bundle.Coins })
 			end
 			return true
+		end)
+	end
+	-- limited-time cosmetic bundles (products still at the placeholder id 0 aren't registered)
+	for _, offer in Config.CoinShop.Offers do
+		PurchaseService.register(offer.ProductId, function(c: any): boolean
+			return PurchaseService.grantOffer(c, offer)
 		end)
 	end
 	MarketplaceService.ProcessReceipt = processReceipt

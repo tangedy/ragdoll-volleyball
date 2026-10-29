@@ -1,5 +1,40 @@
 # Implementation status (Oct 24, 2026)
 
+## Oct 28 power-ball mastery, featured ball, fuller chest pools
+
+Not run in Studio yet. `selene`, `luau-lsp` and the 55 offline tests pass. Details are in docs/ECONOMY.md §6.
+
+- **Power Ball Mastery:**
+  - Each credited knockout made with a Heavy, Rocket or Pop ball adds to a lifetime `PowerKOs` count (`ShopService.recordPowerKO`, called from `MatchService.eliminate`; bot victims count). It's additive profile data, so there's no schema bump.
+  - At the goal, an earn-only cosmetic (Catalog `Unlock`) unlocks with a banner: Heavyweight, Rocketeer and Pop Star titles at 10 each, and the Power Surge trail at 25 of each.
+  - Unlock items are never sold, spun or put in a chest. The shop shows them locked, with their progress.
+- **Featured ball of the day** (`Config.PowerUps.Featured`, `ShopService.featuredBall`): one power type per UTC day drops 3x as often and counts x2 for mastery. It's announced in the feed at the start of round 1 and shown under the daily quests.
+- **Chest pools:**
+  - Title: 7 Common / 6 Rare / 4 Epic / 2 Legendary.
+  - Gesture: 4 / 4 / 3 / 1.
+  - Finisher: 4 / 3 / 4 / 2.
+  - Every rarity now has items, so each chest uses its configured weights as they are.
+- **New titles** are colored by rarity on the name tag (`Badge` is RichText now; Legendary titles get ✦ marks).
+- **New gestures** are frames in `IntroPoses`. Trophy Lift (Legendary) adds a confetti burst on each loop (`Fx`, played by `IntroController`, including the shop TRY).
+- **The shop tab** is now "Gestures".
+- **New finishers** use `Shared/FinisherKit` (the default camera beats, shared with `Default`), plus existing `ctx.fx` effects and 5 new synthesized cues (`ConfettiPop`, `AirHorn`, `SadTrombone`, `Bonk`, `ShutterClick`). They respect Reduced motion.
+- **Bots:** bots draw Common finishers about 50% of the time (`Config.Bots.FinisherGamma`), so they'll show the new Commons often.
+- **To check in Studio:**
+  - Preview each new finisher and gesture (especially how the arm frames look on real rigs).
+  - Confirm the synthesized horn and trombone sound right.
+  - Check the colored name-tag title.
+
+## Oct 28 daily quests replace the lobby chests
+
+Not run in Studio yet. `selene`, `luau-lsp` and the 50 offline tests pass.
+
+- **Lobby chests removed:** the chest models (`ChestBuilder`), `ChestService`, `ChestController`, `Config.Chest`, the `OpenChest` remote and the `ChestResult` / `ChestOpened` feedback are gone. The wheel sheet, the spin-and-land code and the prize card (`SpinController.drawReveal`) are reused for the quest chests. The in-world lid burst needed a chest model, so it went with them.
+- **Daily quests** (`Config.Quests`, `QuestService`, save schema v12 `DailyQuests`): knock out 3 opponents for a Title Chest, play 2 games for a Gesture Chest (the Pose category) and win 1 game for a Finisher Chest. They reset at UTC midnight, and each chest can be claimed once a day in the hub. Progress uses the existing events: knockouts where the 25 knockout coins are paid (bots count), and played and won matches where the match is banked (finished, not aborted, at least one action; bot-filled matches count, the same as for coins and wins).
+- **Chests** open through `RewardService.grant` (`Kind = "Chest"`) using the docs/ECONOMY.md §4 odds and duplicate rule. With today's catalog, the Title and Gesture chests have no Legendary items and the Finisher Chest has no Common ones, so those rarities are skipped and the rest renormalized (Finisher: 75% Rare, 22.5% Epic, 2.5% Legendary).
+- **Migration:** today's free chest opens that were ready but unopened become bonus spins on the wheel with the same odds (Common: Standard, Rare: Rare+). `ChestDaily` and `ChestOpens` are dropped.
+- **Prices:** each item now has an explicit `Rarity` and costs `Config.Economy.PriceByRarity` (500 / 1,750 / 5,000 / 12,000). Pumpkin Reaper stays at 2,500 until its event ends, and the bundle-only items keep their value prices.
+- **UI** (`QuestController`): a foldable quest panel on the hub's left edge shows the progress bars, Claim buttons, the reset countdown and each chest's odds per rarity. Tapping a chest opens a sheet with its drops on the wheel and the full odds table. On touch screens the panel starts folded.
+
 ## Oct 28 offline tests
 
 `lune run tests/offline/run` runs **37 offline tests** against the real server modules (`tests/offline/`): save migration and session locks (DataStore down, a stale lock, leaving mid-load, a takeover), rewards and streaks, chest tiers and odds, free chests, spins, boosts, policy lookups, every Robux product and receipt edge case, the shop, the daily ladder and the Halloween window. All 37 pass. A deliberate break (free chests never marked used) made the right test fail.

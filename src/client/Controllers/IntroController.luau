@@ -13,7 +13,9 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local IntroPoses = require(Shared.IntroPoses)
 local Net = require(script.Parent.Net)
+local EffectsController = require(script.Parent.EffectsController)
 local HUDController = require(script.Parent.HUDController)
 local FinisherController = require(script.Parent.FinisherController)
 local PoseKit = require(script.Parent.PoseKit)
@@ -28,6 +30,34 @@ local IntroController = {}
 IntroController.playing = false
 
 local finish: (() -> ())? = nil
+
+-- A pose's one-shot effect (IntroPoses Fx), replayed each time its sequence loops, until the
+-- returned stop function is called. Poses without one return a no-op.
+local function poseFx(model: Instance, poseId: string?): () -> ()
+	local pose = IntroPoses.get(poseId)
+	if pose.Fx ~= "Confetti" then
+		return function() end
+	end
+	local cycle = 0
+	for _, step in pose.Frames do
+		cycle += step.hold
+	end
+	local running = true
+	task.spawn(function()
+		while running do
+			local head = model:FindFirstChild("Head") :: BasePart?
+			if head then
+				local at = head.Position + Vector3.new(0, 2.5, 0)
+				EffectsController.burst(at, Color3.fromRGB(247, 205, 70), 24, 22, 0.6)
+				EffectsController.burst(at, Color3.new(1, 1, 1), 12, 18, 0.45)
+			end
+			task.wait(math.max(cycle, 0.5))
+		end
+	end)
+	return function()
+		running = false
+	end
+end
 
 local function smooth(a: number): number
 	return a * a * (3 - 2 * a)
@@ -144,6 +174,7 @@ function IntroController.play(d: any)
 		for _, m in team.members do
 			if typeof(m.model) == "Instance" then
 				table.insert(stops, PoseKit.playSequence(m.model, m.pose))
+				table.insert(stops, poseFx(m.model, m.pose))
 			end
 		end
 	end
@@ -180,7 +211,11 @@ function IntroController.preview(poseId: string)
 		return
 	end
 	local s = PoseKit.playSequence(character, poseId)
-	task.delay(2.6, s)
+	local fx = poseFx(character, poseId)
+	task.delay(2.6, function()
+		s()
+		fx()
+	end)
 end
 
 function IntroController.init() end

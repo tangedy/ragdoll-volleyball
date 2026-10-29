@@ -30,15 +30,14 @@ export type Profile = {
 	-- Amendment A4 additions (schema v2)
 	Level: number,
 	XP: number,
-	DailyQuests: { date: string, ids: { string }, progress: { number } },
+	-- schema v12: today's quest progress and claimed chests by Config.Quests.List id (QuestService)
+	DailyQuests: { date: string, progress: { [string]: number }, claimed: { [string]: boolean } },
 	LoginStreak: { day: number, lastDate: string, claimedDate: string },
 	IndexOwned: { [string]: boolean },
 	CurrentWinStreak: number,
 	BestWinStreak: number,
 	-- schema v5: daily cosmetic spin counters (SpinService)
 	Spin: { date: string, freeUsed: boolean, paid: number, total: number, receipts: { string } },
-	-- schema v6: hub loot chests opened (seeds the next chest wheel, ChestService)
-	ChestOpens: number,
 	-- schema v7: Robux receipts already granted (PurchaseService), newest last
 	Receipts: { string },
 	-- schema v8: shop items this player has already seen (a shop tab says NEW! until they look)
@@ -48,8 +47,12 @@ export type Profile = {
 	CoinBoostForever: boolean,
 	-- schema v9: seconds played (PurchaseService unlocks Robux buttons after Config.CoinShop.RobuxAfterSeconds)
 	PlaySeconds: number,
-	-- schema v10: today's finished matches and which free chests were opened (ChestService)
-	ChestDaily: { date: string, matches: number, claimed: { [string]: boolean } },
+	-- schema v11: typed login rewards (RewardService.grant): free bonus spins waiting, oldest first
+	-- (Config.Spin.Wheels ids), and cosmetic picks waiting for the player's choice
+	BonusSpins: { string },
+	RewardPicks: { { source: string, ids: { string }, rarity: string, coins: number } },
+	-- lifetime credited knockouts by power-ball type (Power Ball Mastery, ShopService.recordPowerKO)
+	PowerKOs: { [string]: number },
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -65,19 +68,20 @@ local function default(): Profile
 		Matches = 0,
 		Level = 1,
 		XP = 0,
-		DailyQuests = { date = "", ids = {}, progress = {} },
+		DailyQuests = { date = "", progress = {}, claimed = {} },
 		LoginStreak = { day = 0, lastDate = "", claimedDate = "" },
 		IndexOwned = {},
 		CurrentWinStreak = 0,
 		BestWinStreak = 0,
 		Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} },
-		ChestOpens = 0,
 		Receipts = {},
 		ShopSeen = {}, -- a brand-new player finds every tab NEW!
 		CoinBoostUntil = 0,
 		CoinBoostForever = false,
 		PlaySeconds = 0,
-		ChestDaily = { date = "", matches = 0, claimed = {} },
+		BonusSpins = {},
+		RewardPicks = {},
+		PowerKOs = {},
 		Lock = nil,
 	}
 end
@@ -96,7 +100,6 @@ function DataService.migrate(old: any): Profile
 		-- v1 (spec v0.1) had no progression spine
 		data.Level = 1
 		data.XP = 0
-		data.DailyQuests = { date = "", ids = {}, progress = {} }
 		data.LoginStreak = { day = 0, lastDate = "", claimedDate = "" }
 		data.IndexOwned = {}
 		data.CurrentWinStreak = 0
@@ -115,10 +118,6 @@ function DataService.migrate(old: any): Profile
 	if version < 5 then
 		-- v5: the daily cosmetic spin; everyone starts with today's free spin available
 		data.Spin = { date = "", freeUsed = false, paid = 0, total = 0, receipts = {} }
-	end
-	if version < 6 then
-		-- v6: loot chests
-		data.ChestOpens = tonumber(data.ChestOpens) or 0
 	end
 	if version < 7 or type(data.Receipts) ~= "table" then
 		-- v7: Robux receipts move to one list for every product
@@ -141,9 +140,52 @@ function DataService.migrate(old: any): Profile
 		-- returning players who've finished a few matches are past the Robux wait already
 		data.PlaySeconds = if (tonumber(data.Matches) or 0) >= 3 then Config.CoinShop.RobuxAfterSeconds else 0
 	end
-	if version < 10 or type(data.ChestDaily) ~= "table" then
-		-- v10: free daily chests; today's count starts fresh
-		data.ChestDaily = { date = "", matches = 0, claimed = {} }
+	if version < 11 then
+		-- v11: the login ladder pays typed rewards. It's still 7 days, so the streak carries over as
+		-- it is (same day, same claimed date); only a damaged entry is repaired, never reset.
+		local ls = data.LoginStreak :: any
+		if type(ls) ~= "table" then
+			ls = { day = 0, lastDate = "", claimedDate = "" }
+			data.LoginStreak = ls
+		end
+		local day = math.floor(tonumber(ls.day) or 0)
+		ls.day = if day >= 1 then (day - 1) % #Config.DailyRewards.Ladder + 1 else 0
+		ls.claimedDate = if type(ls.claimedDate) == "string" then ls.claimedDate else ""
+		ls.lastDate = if type(ls.lastDate) == "string" then ls.lastDate else ls.claimedDate
+	end
+	if type(data.BonusSpins) ~= "table" then
+		data.BonusSpins = {}
+	end
+	if version < 12 then
+		-- v12: the lobby chests are gone (chests come from daily quests now). Paid opens were instant,
+		-- so the only chest a player could still be owed is today's free open that was ready but not
+		-- taken yet (v10 ChestDaily: Common after 1 match, Rare after 3). Each one becomes a free bonus
+		-- spin on the wheel with the same odds, used from the Spin sheet.
+		local cd = (data :: any).ChestDaily
+		if type(cd) == "table" and cd.date == os.date("!%Y-%m-%d", os.time()) then
+			local matches = tonumber(cd.matches) or 0
+			local claimed = if type(cd.claimed) == "table" then cd.claimed else {}
+			local owedChests = {
+				{ Tier = "Common", After = 1, Wheel = "Standard" },
+				{ Tier = "Rare", After = 3, Wheel = "RarePlus" },
+			}
+			for _, owed in owedChests do
+				if matches >= owed.After and not claimed[owed.Tier] then
+					table.insert(data.BonusSpins, owed.Wheel)
+				end
+			end
+		end
+		local anyData = data :: any
+		anyData.ChestDaily = nil
+		anyData.ChestOpens = nil
+		-- the v2 placeholder ({ date, ids, progress }) was never used
+		data.DailyQuests = { date = "", progress = {}, claimed = {} }
+	end
+	if type(data.RewardPicks) ~= "table" then
+		data.RewardPicks = {}
+	end
+	if type(data.PowerKOs) ~= "table" then
+		data.PowerKOs = {}
 	end
 	data.SchemaVersion = D.SchemaVersion
 	return data
@@ -201,7 +243,7 @@ local function pushProfile(c: any)
 		equipped = p.Equipped,
 		daily = S.ShopService.dailyStatus(c),
 		spin = S.SpinService.status(c),
-		chest = S.ChestService.status(c),
+		quests = S.QuestService.status(c),
 		level = p.Level,
 		xp = p.XP,
 		xpNext = Progression.xpToNext(p.Level),
@@ -210,6 +252,7 @@ local function pushProfile(c: any)
 		tutorialStep = p.TutorialStep,
 		seen = p.ShopSeen,
 		boost = S.BoostService.status(c),
+		powerKOs = p.PowerKOs,
 	})
 	S.PlayerStateService.setAttr(c, "Level", p.Level)
 	S.PlayerStateService.setAttr(c, "Streak", p.CurrentWinStreak)

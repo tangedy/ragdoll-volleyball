@@ -44,5 +44,11 @@ The shop preview has no court, so it uses where you and the dummy actually stand
 
 Letterbox bars, hidden name tags and camera/FOV restore are handled for you.
 
+Simple finishers can reuse the default camera from `Shared/FinisherKit.luau`: `heroShot(ctx, seconds)`
+(push-in on the winner), `followLaunch(ctx, seconds)` (chase the victim's launch), `facing(root)` and
+`tint(saturation, brightness, color?)` (a ColorCorrectionEffect you destroy when done). The Common
+and Rare variants (Confetti Pop, Air Horn, Sad Trombone, BONK!, Slow-Mo Replay, Paparazzi) are
+built this way: the default beats plus one effect and one sound cue.
+
 The controller restores the normal camera and HUD afterwards, even if `play` errors, so a broken
 finisher never breaks the match. Finishers are cosmetic only: they run after the match is decided.
