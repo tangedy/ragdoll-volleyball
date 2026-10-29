@@ -7,7 +7,10 @@
 --  * Music: the event tracks loop in turn, quieter while you're on the court.
 --  * Jack-o-lantern balls: every Standard ball (match, in flight, practice) wears a carved pumpkin a
 --    little bigger than the ball, so the sphere stays hidden inside. It's a look only: the ball's
---    size, physics and hit checks never change, and power-up balls keep their own colors.
+--    size, physics and hit checks never change, and power-up balls keep their own colors. A ball
+--    wearing a skin (held or thrown by someone with one equipped) turns its pumpkin that color.
+--    The Jack-o'-Lantern skin (Haunted Bundle) keeps the classic pumpkin on its owner's balls all
+--    year, event or not.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -15,7 +18,10 @@ local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local BallDefinitions = require(Shared:WaitForChild("BallDefinitions"))
+local Config = require(Shared:WaitForChild("Config"))
+local JackOLantern = require(Shared:WaitForChild("JackOLantern"))
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
 local H = Config.Halloween
@@ -163,80 +169,40 @@ end)
 local PUMPKIN = "RD_Pumpkin"
 local B = H.Ball
 
-local function piece(props: { [string]: any }, parent: Instance): Part
-	local p = Instance.new("Part")
-	p.Anchored = false
-	p.Massless = true
-	p.CanCollide = false
-	p.CanQuery = false
-	p.CanTouch = false
-	p.CastShadow = false
-	p.Material = Enum.Material.SmoothPlastic
-	for k, v in props do
-		(p :: any)[k] = v
-	end
-	p.Parent = parent
-	return p
-end
-
 -- A carved pumpkin around `ball` (face on its -Z side), welded to it so it follows every move.
 local function makePumpkin(ball: BasePart): Model
-	local model = Instance.new("Model")
-	model.Name = PUMPKIN
-	local r = ball.Size.X / 2 * B.Scale
-	local k = r / 1.35 -- the face layout is drawn for the Pumpkin finisher's 1.35-stud pumpkin
-	local cf = ball.CFrame
-	local parts: { BasePart } = {}
-	local function add(p: BasePart, off: CFrame)
-		p.CFrame = cf * off
-		table.insert(parts, p)
-	end
-	-- a slightly squashed body with darker ribs round the vertical axis
-	local body = piece({ Shape = Enum.PartType.Ball, Size = Vector3.one * r * 2, Color = B.Body }, model)
-	local squash = Instance.new("SpecialMesh")
-	squash.MeshType = Enum.MeshType.Sphere
-	squash.Scale = Vector3.new(1, 0.88, 1)
-	squash.Parent = body
-	add(body, CFrame.identity)
-	for i = 0, 2 do
-		local rib = piece({
-			Shape = Enum.PartType.Cylinder,
-			Size = Vector3.new(0.1 * k, r * 2.02 * 0.88, r * 2.02),
-			Color = B.Rib,
-		}, model)
-		add(rib, CFrame.Angles(0, math.rad(60 * i), 0) * CFrame.Angles(0, math.rad(90), 0))
-	end
-	local stem = piece({
-		Shape = Enum.PartType.Cylinder,
-		Size = Vector3.new(0.5 * k, 0.3 * k, 0.3 * k),
-		Color = B.Stem,
-	}, model)
-	add(stem, CFrame.new(0, r * 0.88 + 0.15 * k, 0) * CFrame.Angles(0, 0, math.rad(80)))
-	-- the glowing carved face: diamond eyes, a nose and a jagged grin
-	local function feature(x: number, y: number, size: Vector3, rotZ: number)
-		x, y = x * k, y * k * 0.88
-		local z = -math.sqrt(math.max(0.05 * k, r * r - x * x - (y / 0.88) ^ 2)) * 1.0 + 0.02
-		local pos = Vector3.new(x, y, z)
-		local f = piece({ Size = size * k, Color = B.Carve, Material = Enum.Material.Neon }, model)
-		add(f, CFrame.lookAt(pos, pos * 2) * CFrame.Angles(0, 0, math.rad(rotZ)))
-	end
-	feature(-0.48, 0.32, Vector3.new(0.42, 0.42, 0.06), 45)
-	feature(0.48, 0.32, Vector3.new(0.42, 0.42, 0.06), 45)
-	feature(0, 0.02, Vector3.new(0.2, 0.2, 0.06), 45)
-	for i = -2, 2 do
-		feature(i * 0.27, -0.42 + (if i % 2 == 0 then 0.06 else -0.06), Vector3.new(0.26, 0.2, 0.06), 0)
-	end
-	for _, p in parts do
-		local w = Instance.new("WeldConstraint")
-		w.Part0 = ball
-		w.Part1 = p
-		w.Parent = p
-	end
+	local model = JackOLantern.build(ball.CFrame, ball.Size.X / 2 * B.Scale, PUMPKIN)
+	JackOLantern.weld(model, ball)
 	model.Parent = ball
 	return model
 end
 
 local decorated: { [BasePart]: { model: Model, conns: { RBXScriptConnection } } } = {}
+
+-- The pumpkin takes the ball's skin: the body in the skin's color and material, the ribs a shade
+-- darker. A ball in the plain Standard look stays a classic orange pumpkin. Neon skins keep a
+-- matte body so the carved face still glows brighter than the shell.
+local STANDARD = BallDefinitions.get("Standard")
+local function tint(model: Model, ball: BasePart)
+	local skinned = ball:GetAttribute("Pumpkin") ~= true -- the Jack-o'-Lantern skin is the classic pumpkin
+		and (ball.Color:ToHex() ~= STANDARD.Color:ToHex() or ball.Material ~= STANDARD.Material)
+	local color = if skinned then ball.Color else B.Body
+	local material = if skinned and ball.Material ~= Enum.Material.Neon
+		then ball.Material
+		else Enum.Material.SmoothPlastic
+	for _, p in model:GetChildren() do
+		if not p:IsA("BasePart") then
+			continue
+		end
+		if p.Name == "Body" then
+			p.Color = color
+			p.Material = material
+		elseif p.Name == "Rib" then
+			p.Color = if skinned then color:Lerp(Color3.new(0, 0, 0), 0.18) else B.Rib
+			p.Material = material
+		end
+	end
+end
 
 local function undecorate(ball: BasePart)
 	local d = decorated[ball]
@@ -269,9 +235,15 @@ local function decorate(ball: BasePart)
 		end
 	end
 	syncHidden()
+	tint(model, ball)
+	local function retint()
+		tint(model, ball)
+	end
 	decorated[ball] = {
 		model = model,
 		conns = {
+			ball:GetPropertyChangedSignal("Color"):Connect(retint),
+			ball:GetPropertyChangedSignal("Material"):Connect(retint),
 			ball:GetPropertyChangedSignal("LocalTransparencyModifier"):Connect(syncHidden),
 			ball:GetPropertyChangedSignal("Transparency"):Connect(syncHidden),
 			-- only when the ball itself goes (the hub, practice balls and all, is lifted out of the
@@ -285,27 +257,51 @@ local function decorate(ball: BasePart)
 	}
 end
 
--- a ball changing type (picked up a power-up, spent back to Standard) gains or loses its pumpkin
-local typeConns: { [BasePart]: RBXScriptConnection } = {}
+-- Does this ball wear a pumpkin now? Every Standard ball while the event is on, and all year a
+-- Standard ball whose owner has the Jack-o'-Lantern skin (the "Pumpkin" attribute: BallService on
+-- server balls, BallVisualController on flying visuals, PracticeController on practice balls).
+local function wantsPumpkin(ball: BasePart): boolean
+	return isStandard(ball) and (HalloweenController.on or ball:GetAttribute("Pumpkin") == true)
+end
+
+local function refresh(ball: BasePart)
+	if wantsPumpkin(ball) then
+		decorate(ball)
+		local d = decorated[ball]
+		if d then
+			tint(d.model, ball)
+		end
+	else
+		undecorate(ball)
+	end
+end
+
+-- a ball changing type (picked up a power-up, spent back to Standard) or skin gains or loses its pumpkin
+local tracked: { [BasePart]: { RBXScriptConnection } } = {}
 local function track(ball: Instance)
 	if not ball:IsA("BasePart") then
 		return
 	end
-	if not typeConns[ball] then
-		typeConns[ball] = ball:GetAttributeChangedSignal("BallType"):Connect(function()
-			if not HalloweenController.on then
-				return
-			end
-			if isStandard(ball) then
-				decorate(ball)
-			else
-				undecorate(ball)
-			end
-		end)
+	if not tracked[ball] then
+		local function changed()
+			refresh(ball)
+		end
+		local conns = {
+			ball:GetAttributeChangedSignal("BallType"):Connect(changed),
+			ball:GetAttributeChangedSignal("Pumpkin"):Connect(changed),
+		}
+		tracked[ball] = conns
+		table.insert(
+			conns,
+			ball.Destroying:Connect(function()
+				tracked[ball] = nil
+				for _, c in conns do
+					c:Disconnect()
+				end
+			end)
+		)
 	end
-	if HalloweenController.on then
-		decorate(ball)
-	end
+	refresh(ball)
 end
 
 local function ballFolders(): { Instance }
@@ -337,7 +333,7 @@ local function setBalls(on: boolean)
 		end
 	else
 		for ball in decorated do
-			undecorate(ball)
+			refresh(ball) -- a Jack-o'-Lantern skin keeps its pumpkin
 		end
 	end
 end
@@ -359,12 +355,17 @@ function HalloweenController.init() end
 
 function HalloweenController.start()
 	-- new balls: match balls, the flying visuals, and practice balls (the hub can stream in late)
+	-- (tracked whether or not the event is on: a Jack-o'-Lantern skin wears its pumpkin all year)
 	local function follow(folder: Instance, filter: ((Instance) -> boolean)?)
-		folder.ChildAdded:Connect(function(b)
+		local function add(b: Instance)
 			if not filter or filter(b) then
 				track(b)
 			end
-		end)
+		end
+		folder.ChildAdded:Connect(add)
+		for _, b in folder:GetChildren() do
+			add(b)
+		end
 	end
 	task.spawn(function()
 		for _, name in { "Balls", "BallVisuals" } do

@@ -21,6 +21,9 @@ export type Pose = {
 	-- a one-shot effect replayed each time the sequence loops (IntroController): "Confetti" = a gold
 	-- and white particle burst above the head
 	Fx: string?,
+	-- something worn for the whole pose (IntroController, and the shop portrait): "PumpkinHead" = a
+	-- jack-o-lantern over the head (the head and its hats hidden inside)
+	Prop: string?,
 }
 
 local REST_R: Segment = { upper = Vector3.new(0.12, -1, 0.02), fore = Vector3.new(0.08, -1, -0.12) }
@@ -61,6 +64,9 @@ local robotDown: Segment = { upper = Vector3.new(1, 0, 0), fore = Vector3.new(0,
 -- both hands together overhead, holding the trophy up
 local trophyHigh: Segment = { upper = Vector3.new(0.2, 1, 0), fore = Vector3.new(-0.18, 1, 0) }
 local trophyPump: Segment = { upper = Vector3.new(0.3, 0.8, -0.2), fore = Vector3.new(-0.3, 0.95, -0.05) }
+-- Frankenstein's monster: both arms stuck straight out in front, rocking side to side
+local zombieHigh: Segment = { upper = Vector3.new(0.14, 0.05, -1), fore = Vector3.new(0.08, 0.06, -1) }
+local zombieLow: Segment = { upper = Vector3.new(0.18, -0.12, -1), fore = Vector3.new(0.1, -0.08, -1) }
 
 local IntroPoses = {}
 
@@ -101,6 +107,8 @@ IntroPoses.Frames = {
 	RobotB = { Right = robotDown, Left = mirror(robotUp), neck = 0, twist = -15 },
 	TrophyHigh = { Right = trophyHigh, Left = mirror(trophyHigh), neck = 25, waist = 6 },
 	TrophyPump = { Right = trophyPump, Left = mirror(trophyPump), neck = 18, waist = 2 },
+	FrankLeft = { Right = zombieLow, Left = mirror(zombieHigh), neck = -6, waist = -4, twist = 12 },
+	FrankRight = { Right = zombieHigh, Left = mirror(zombieLow), neck = -6, waist = -4, twist = -12 },
 } :: { [string]: Frame }
 
 IntroPoses.Poses = {
@@ -162,6 +170,13 @@ IntroPoses.Poses = {
 		Blend = 0.2,
 		Fx = "Confetti",
 		Frames = { { frame = "TrophyHigh", hold = 0.8 }, { frame = "TrophyPump", hold = 0.45 } },
+	},
+	-- slow, stiff blends: a lumbering monster with a jack-o-lantern for a head
+	PumpkinHead = {
+		Name = "Pumpkin Head",
+		Blend = 0.5,
+		Prop = "PumpkinHead",
+		Frames = { { frame = "FrankLeft", hold = 0.75 }, { frame = "FrankRight", hold = 0.75 } },
 	},
 } :: { [string]: Pose }
 

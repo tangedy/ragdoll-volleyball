@@ -32,7 +32,7 @@ Already decided (not open for discussion here): the lobby chests are removed, an
 | Rare Chest (lobby) | Rare+ (70/24/6) | 2,200 coins; free once a day after 3 matches |
 | Epic Chest (lobby) | Epic+ (80/20) | 3,500 coins; never free |
 | 2x Coins boost | Doubles match and KO coins | 19 R per 30 min, or 199 R forever |
-| Haunted Bundle (`Config.CoinShop.Offers`) | Witch's Brew skin, Ectoplasm trail, Pumpkin King title (all bundle-only Limited items) + 5,000 coins | 299 R, Oct 28 – Nov 3 UTC. Its product id is still 0, so it shows "Soon". This was added in the working tree during this audit and isn't committed yet. |
+| Haunted Bundle (`Config.CoinShop.Offers`) | Jack-o'-Lantern skin (the carved pumpkin ball, kept all year), Pumpkin Head pose, Pumpkin Reaper finisher, Ghost title (special name tag), Witch's Brew skin, Ectoplasm trail, Pumpkin King title (all bundle-only Limited items) + 5,000 coins | 299 R, Oct 28 – Nov 3 UTC. Developer product 3723612223 (created Oct 29). |
 
 Bundle-only items (`Item.Bundle`) are never sold for coins and never appear on the wheels, so they're left out of the cosmetics table and the chest pools below.
 
@@ -65,7 +65,7 @@ Rarity is **derived from price** (`Config.Spin.RarityByPrice`): Legendary is ≥
 | Title | Untouchable | 3,000 | Epic |
 | Finisher | Spotlight | 2,000 | Rare |
 | Finisher | Meteor Strike | 3,000 | Epic |
-| Finisher | Pumpkin Reaper (Halloween, Limited) | 2,500 | Epic |
+| Finisher | Pumpkin Reaper (Halloween, Limited; Haunted Bundle only since Oct 29) | 2,500 | Epic |
 | Finisher | Purple Flash | 4,000 | Legendary |
 | Finisher | Black Hole | 4,000 | Legendary |
 | Finisher | Dodgeball Rush | 4,500 | Legendary |
@@ -99,7 +99,7 @@ Without Pumpkin Reaper there are 23 prize items (6 Common, 7 Rare, 5 Epic, 5 Leg
 - **Give each item an explicit `Rarity` and charge one flat price per rarity** (a `Config.Economy.PriceByRarity` table). Today price decides rarity, so any price change silently moves items between tiers and changes the wheel odds. Flat prices also make the shop easy to read.
 - **Use one duplicate table, at 20% of the tier price, for every random source** (spin, quest chests, login spins), replacing the two tables that exist now.
 - **Raise the paid spin to 1,500 coins.** At the new prices a standard wheel is worth about 1,530 in shop value, so 1,000 would bring back the "wheels beat the shop" problem from STATUS.md.
-- **Keep Pumpkin Reaper at 2,500 until the event ends on Nov 2.** Repricing a Limited item in its last days would feel bad, and it goes off sale anyway.
+- **Pumpkin Reaper moved into the Haunted Bundle (Oct 29).** It's no longer sold for coins; 2,500 is now only its value, like the other bundle items. Players who already bought it keep it.
 
 **Re-tiering the current items**, mostly keeping today's order:
 

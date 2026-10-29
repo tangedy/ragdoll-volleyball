@@ -47,6 +47,31 @@ function FinisherKit.followLaunch(ctx: any, seconds: number, onFrame: ((number) 
 	end)
 end
 
+-- Roblox's default R15 walk and idle (Roblox-owned, usable in any game). The walk is made for
+-- 16 studs/s: AdjustSpeed(pace / 16) to match a slower stride.
+FinisherKit.WalkAnim = "rbxassetid://507777826"
+FinisherKit.IdleAnim = "rbxassetid://507766388"
+
+-- Load an animation on a stand-in's Animator (one is made if it has none). Nil if it can't load.
+function FinisherKit.loadTrack(model: Model, id: string): AnimationTrack?
+	local h = model:FindFirstChildOfClass("Humanoid")
+	if not h then
+		return nil
+	end
+	local animator = h:FindFirstChildOfClass("Animator")
+	if not animator then
+		local made = Instance.new("Animator")
+		made.Parent = h
+		animator = made
+	end
+	local anim = Instance.new("Animation")
+	anim.AnimationId = id
+	local ok, track = pcall(function()
+		return (animator :: Animator):LoadAnimation(anim)
+	end)
+	return if ok then track else nil
+end
+
 -- A ColorCorrectionEffect on Lighting for tinting the world; destroy it when done.
 function FinisherKit.tint(saturation: number, brightness: number, color: Color3?): ColorCorrectionEffect
 	local cc = Instance.new("ColorCorrectionEffect")

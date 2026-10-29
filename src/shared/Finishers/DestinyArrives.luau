@@ -15,6 +15,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local FinisherKit = require(script.Parent.Parent.FinisherKit)
 
 local SHOT2 = 2.0
 local SNAP = 2.65
@@ -70,28 +71,9 @@ local function attach(on: BasePart, props: { [string]: any }, offset: CFrame): P
 	return p
 end
 
--- Roblox's default R15 walk and idle (Roblox-owned, usable in any game).
-local WALK_ANIM = "rbxassetid://507777826"
-local IDLE_ANIM = "rbxassetid://507766388"
-
-local function loadTrack(model: Model, id: string): AnimationTrack?
-	local h = model:FindFirstChildOfClass("Humanoid")
-	if not h then
-		return nil
-	end
-	local animator = h:FindFirstChildOfClass("Animator")
-	if not animator then
-		local made = Instance.new("Animator")
-		made.Parent = h
-		animator = made
-	end
-	local anim = Instance.new("Animation")
-	anim.AnimationId = id
-	local ok, track = pcall(function()
-		return (animator :: Animator):LoadAnimation(anim)
-	end)
-	return if ok then track else nil
-end
+local WALK_ANIM = FinisherKit.WalkAnim
+local IDLE_ANIM = FinisherKit.IdleAnim
+local loadTrack = FinisherKit.loadTrack
 
 -- A light in the left (snapping) hand that flares on the snap.
 local function snapGlow(giant: Model)

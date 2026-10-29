@@ -15,6 +15,7 @@ local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Catalog = require(Shared.Catalog)
@@ -25,8 +26,10 @@ local AimController = require(script.Parent.AimController)
 local SoundController = require(script.Parent.SoundController)
 local GraphicsController = require(script.Parent.GraphicsController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
+local FinisherIcons = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("FinisherIcons"))
 local PoseKit = require(script.Parent.PoseKit)
 local IntroPoses = require(Shared.IntroPoses)
+local JackOLantern = require(Shared.JackOLantern)
 
 local player = Players.LocalPlayer
 local T = Theme.Toybox
@@ -50,7 +53,7 @@ local settings: any -- Theme.Sheet
 local shelf: ScrollingFrame
 local walletLabel: TextLabel
 local setTab: (string) -> ()
-local tiles: { { item: any, card: any } } = {}
+local tiles: { { item: any, card: any, row: number, col: number } } = {}
 local selectedId: string? = nil
 local dailyTiles: { any } = {}
 local daysRow: Frame
@@ -72,6 +75,22 @@ end
 
 local function owns(item: Catalog.Item): boolean
 	return item.Default == true or (profile.owned and profile.owned[item.Id] == true)
+end
+
+-- The limited-time Robux bundle (Config.CoinShop.Offers) a bundle-only item comes in, while that
+-- bundle is on sale and Robux buttons are unlocked. Its items sit on the shelf with a button that
+-- buys the whole bundle.
+local function liveOffer(item: Catalog.Item): any
+	if not item.Bundle or player:GetAttribute("RobuxOk") ~= true then
+		return nil
+	end
+	local now = Workspace:GetServerTimeNow()
+	for _, offer in Config.CoinShop.Offers do
+		if offer.Id == item.Bundle and Catalog.offerLive(offer, now) then
+			return offer
+		end
+	end
+	return nil
 end
 
 -- NEW! tags on the category tabs: a tab is new while it has something on sale this player has never
@@ -159,7 +178,8 @@ local function toneOf(item: Catalog.Item): Color3
 	return Theme.Rarity[Catalog.rarity(item)]
 end
 
--- The art inside a tile: a ball, a trail stripe, the title text, or the item's icon.
+-- The art inside a tile: a ball, a trail stripe, the title text, a finisher's drawn icon
+-- (FinisherIcons), or the item's icon.
 -- Pose portraits: the practice dummy standing in a pose, drawn live in a ViewportFrame (like a
 -- screenshot, but nothing to upload). A ViewportFrame doesn't simulate, so the posed rig is built by
 -- hand: every body part is placed from the root outward through its joints, with the pose's joint
@@ -246,8 +266,13 @@ local function posedDummy(poseId: string): Model?
 	if h then
 		h.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	end
+	if pose.Prop == "PumpkinHead" then
+		JackOLantern.onHead(rig, true)
+	end
 	return rig
 end
+-- the posed dummy, for the Haunted Bundle's stand in the hub (BundleDisplayController)
+ShopController.posedDummy = posedDummy
 
 local function posePortrait(art: Frame, poseId: string, z: number): boolean
 	local rig = posedDummy(poseId)
@@ -275,6 +300,8 @@ local function posePortrait(art: Frame, poseId: string, z: number): boolean
 	return true
 end
 
+local GHOST_TEXT = Color3.fromRGB(214, 255, 244)
+
 local function drawArt(item: Catalog.Item, art: Frame)
 	local d = item.Data
 	local z = art.ZIndex + 1
@@ -299,6 +326,28 @@ local function drawArt(item: Catalog.Item, art: Frame)
 			ZIndex = z + 1,
 		}, ball)
 		Theme.round(shine)
+		if d.Pumpkin then
+			-- the Jack-o'-Lantern skin: a carved face glowing on the ball
+			local carve = Config.Halloween.Ball.Carve
+			for _, x in { 0.3, 0.7 } do
+				new("Frame", {
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromScale(x, 0.4),
+					Size = UDim2.fromScale(0.17, 0.17),
+					Rotation = 45,
+					BackgroundColor3 = carve,
+					ZIndex = z + 2,
+				}, ball)
+			end
+			local grin = new("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.7),
+				Size = UDim2.fromScale(0.56, 0.14),
+				BackgroundColor3 = carve,
+				ZIndex = z + 2,
+			}, ball)
+			Theme.round(grin)
+		end
 	elseif item.Category == "Trail" then
 		local colors: { Color3 }? = d.Colors
 		if colors and #colors > 0 then
@@ -333,6 +382,17 @@ local function drawArt(item: Catalog.Item, art: Frame)
 		end
 	elseif item.Category == "Pose" and type(d.Pose) == "string" and posePortrait(art, d.Pose, z) then
 		art:SetAttribute("Portrait", true) -- the dummy, posed (the icon below is the fallback)
+	elseif item.Category == "Title" and d.Style == "Ghost" then
+		-- the Ghost tag looks like it does on your name tag: pale, see-through, framed in ghosts
+		Theme.label(art, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.86, 0.32),
+			Text = ("%s %s %s"):format(d.Icon, d.Text, d.Icon),
+			TextColor3 = GHOST_TEXT,
+			TextTransparency = 0.15,
+			ZIndex = z,
+		}, 0)
 	elseif item.Category == "Title" then
 		Theme.label(art, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -342,6 +402,8 @@ local function drawArt(item: Catalog.Item, art: Frame)
 			TextColor3 = Theme.textOn(art.BackgroundColor3),
 			ZIndex = z,
 		}, 0)
+	elseif item.Category == "Finisher" and FinisherIcons.has(d.Module) then
+		FinisherIcons.draw(art, d.Module, z)
 	else
 		Theme.label(art, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -403,6 +465,9 @@ local function primaryAction(item: Catalog.Item?)
 	elseif item.Unlock then
 		SoundController.play("UIError")
 		HUDController.hint("Earn it with power-ball knockouts", 1.6)
+	elseif liveOffer(item) then
+		local CoinShopController = require(script.Parent.CoinShopController) :: any
+		CoinShopController.buyOffer(liveOffer(item))
 	elseif (profile.coins or 0) >= item.Price then
 		Net.request(Net.Actions.BuyItem, { id = item.Id })
 	else
@@ -459,6 +524,11 @@ local function renderAction(item: Catalog.Item, b: TextButton)
 		Theme.setText(b, ("🔒 %d/%d %s KOs"):format(have, need, ball))
 		Theme.recolor(b, "secondary")
 		Theme.setEnabled(b, false)
+	elseif liveOffer(item) then
+		-- bundle-only: the button buys the whole bundle
+		Theme.setText(b, ("Bundle · R$ %d"):format(liveOffer(item).Robux))
+		Theme.recolor(b, T.candy)
+		Theme.setEnabled(b, true)
 	elseif coins >= item.Price then
 		Theme.setText(b, ("Buy · %s"):format(commas(item.Price)))
 		Theme.recolor(b, T.sun)
@@ -499,7 +569,7 @@ local function selectItem(id: string)
 	end
 end
 
-local function itemCard(item: Catalog.Item, order: number): { [string]: any }
+local function itemCard(item: Catalog.Item, order: number, parent: Instance): { [string]: any }
 	local id = item.Id
 	local tone = toneOf(item)
 	local b = new("TextButton", {
@@ -509,7 +579,7 @@ local function itemCard(item: Catalog.Item, order: number): { [string]: any }
 		AutoButtonColor = false,
 		BackgroundTransparency = 1,
 		ZIndex = 5,
-	}, shelf)
+	}, parent)
 	local face = new("Frame", {
 		Name = "Face",
 		Size = UDim2.fromScale(1, 1),
@@ -604,30 +674,134 @@ local function itemCard(item: Catalog.Item, order: number): { [string]: any }
 	return { button = b, art = art, action = action }
 end
 
+-- The shelf is grouped by tier, cheapest first: Free, then Common, Rare, Epic and Legendary. Each
+-- group has a header (the tier's colored tag, a rule and how many of them you own) over its own
+-- four-wide grid.
+local TIERS = { "Free", "Common", "Rare", "Epic", "Legendary" }
+local SECTION_W = COLUMNS * ITEM_CARD.X + (COLUMNS - 1) * Theme.Space.L
+
+local function tierOf(item: Catalog.Item): string
+	return if item.Price <= 0 then "Free" else Catalog.rarity(item)
+end
+
+local function shelfSection(tier: string, order: number, have: number, total: number): Frame
+	local tone = if tier == "Free" then T.line else Theme.Rarity[tier]
+	local root = new("Frame", {
+		Name = "Section_" .. tier,
+		LayoutOrder = order,
+		Size = UDim2.fromOffset(SECTION_W, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		ZIndex = 5,
+	}, shelf)
+	root:SetAttribute("ShelfSection", true)
+	new("UIListLayout", { Padding = UDim.new(0, Theme.Space.S), SortOrder = Enum.SortOrder.LayoutOrder }, root)
+	local head = new("Frame", {
+		Name = "Header",
+		LayoutOrder = 0,
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundTransparency = 1,
+		ZIndex = 5,
+	}, root)
+	-- the rule runs the full width behind the tag and the count
+	new("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromScale(0, 0.5),
+		Size = UDim2.new(1, 0, 0, 3),
+		BackgroundColor3 = tone,
+		BorderSizePixel = 0,
+		ZIndex = 5,
+	}, head)
+	local tag = new("Frame", {
+		Name = "Tag",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromScale(0, 0.5),
+		Size = UDim2.fromOffset(0, 32),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = tone,
+		ZIndex = 6,
+	}, head)
+	Theme.round(tag)
+	Theme.stroke(tag, T.outline, Theme.StrokeToy)
+	new("UIPadding", { PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16) }, tag)
+	Theme.text(tag, 20, {
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromScale(0, 1),
+		FontFace = Theme.DisplayFace,
+		Text = string.upper(tier),
+		TextColor3 = Theme.textOn(tone),
+		ZIndex = 7,
+	})
+	Theme.sticker(head, ("%d/%d owned"):format(have, total), if have == total then T.leaf else T.surface, {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.fromScale(1, 0.5),
+		Size = UDim2.fromOffset(0, 24),
+		ZIndex = 6,
+	})
+	local grid = new("Frame", {
+		Name = "Grid",
+		LayoutOrder = 1,
+		Size = UDim2.fromScale(1, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		ZIndex = 5,
+	}, root)
+	new("UIGridLayout", {
+		CellSize = UDim2.fromOffset(ITEM_CARD.X, ITEM_CARD.Y),
+		CellPadding = UDim2.fromOffset(Theme.Space.L, Theme.Space.L),
+		FillDirectionMaxCells = COLUMNS,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, grid)
+	return grid
+end
+
 local function renderShelf()
 	for _, child in shelf:GetChildren() do
-		if child:IsA("GuiButton") then
+		if child:IsA("GuiButton") or child:GetAttribute("ShelfSection") then
 			child:Destroy()
 		end
 	end
 	table.clear(tiles)
 	walletLabel.Text = commas(profile.coins or 0)
+	local CoinShopController = require(script.Parent.CoinShopController) :: any
+	CoinShopController.renderOffers() -- the Haunted Bundle banner at the top of the shelf
 	-- event cosmetics show while their event runs (and forever once owned); mastery cosmetics always,
-	-- locked until earned
-	local items = {}
+	-- locked until earned; bundle items while their bundle is on sale
+	local byTier: { [string]: { Catalog.Item } } = {}
 	local events = Catalog.activeEvents()
 	for _, item in Catalog.inCategory(currentTab) do
-		if Catalog.isOffered(item, events) or owns(item) or item.Unlock then
-			table.insert(items, item)
+		if Catalog.isOffered(item, events) or owns(item) or item.Unlock or liveOffer(item) then
+			local tier = tierOf(item)
+			byTier[tier] = byTier[tier] or {}
+			table.insert(byTier[tier], item)
 		end
 	end
+	local items = {}
 	local keep = selectedId
 	selectedId = nil
 	local pick: string? = nil
-	for i, item in items do
-		table.insert(tiles, { item = item, card = itemCard(item, i) })
-		if isEquipped(item) then
-			pick = pick or item.Id
+	local row = 0
+	for order, tier in TIERS do
+		local list = byTier[tier]
+		if not list then
+			continue
+		end
+		local have = 0
+		for _, item in list do
+			have += if owns(item) then 1 else 0
+		end
+		local grid = shelfSection(tier, order, have, #list)
+		for i, item in list do
+			table.insert(items, item)
+			local col = (i - 1) % COLUMNS + 1
+			if col == 1 then
+				row += 1
+			end
+			table.insert(tiles, { item = item, card = itemCard(item, i, grid), row = row, col = col })
+			if isEquipped(item) then
+				pick = pick or item.Id
+			end
 		end
 	end
 	-- keep the selection when re-rendering the same tab; otherwise start on the equipped item
@@ -639,11 +813,21 @@ local function renderShelf()
 	return items
 end
 
--- Move the selection through the grid (arrows: left/right by one, up/down by a row).
-local function step(delta: number)
+-- Move the selection through the grid: left/right by one card (delta), up/down to the nearest card
+-- in the row above or below (rows = -1 or 1), across the tier headers.
+local function step(delta: number, rows: number?)
 	for i, e in tiles do
 		if e.item.Id == selectedId then
 			local nxt = tiles[math.clamp(i + delta, 1, #tiles)]
+			if rows then
+				nxt = e
+				for _, t in tiles do
+					local closer = nxt == e or math.abs(t.col - e.col) < math.abs(nxt.col - e.col)
+					if t.row == e.row + rows and closer then
+						nxt = t
+					end
+				end
+			end
 			if nxt and nxt.item.Id ~= selectedId then
 				selectItem(nxt.item.Id)
 				Theme.setHome(nxt.card.button)
@@ -893,9 +1077,9 @@ local function bindShopKeys(on: boolean)
 				elseif input.KeyCode == Enum.KeyCode.Right then
 					step(1)
 				elseif input.KeyCode == Enum.KeyCode.Up then
-					step(-COLUMNS)
+					step(0, -1)
 				elseif input.KeyCode == Enum.KeyCode.Down then
-					step(COLUMNS)
+					step(0, 1)
 				elseif input.KeyCode == Enum.KeyCode.Return then
 					primaryAction()
 				elseif input.KeyCode == Enum.KeyCode.ButtonB then
@@ -920,6 +1104,10 @@ end
 
 function ShopController.isOpen(p: GuiObject): boolean
 	return p.Visible and p:GetAttribute("ThemeOpen") ~= false
+end
+
+function ShopController.isShopOpen(): boolean
+	return shop ~= nil and ShopController.isOpen(shop.frame)
 end
 
 function ShopController.openShop(on: boolean)
@@ -1167,7 +1355,7 @@ local function buildShop()
 			tabTags[cat] = newTag(tab)
 		end
 	end
-	-- the grid: four cards a row, scrolling down
+	-- the shelf: tier sections of four-wide grids, scrolling down
 	shelf = new("ScrollingFrame", {
 		Name = "Shelf",
 		Position = UDim2.fromOffset(-8, 56),
@@ -1189,13 +1377,17 @@ local function buildShop()
 		PaddingLeft = UDim.new(0, 8),
 		PaddingRight = UDim.new(0, 8),
 	}, shelf)
-	new("UIGridLayout", {
-		CellSize = UDim2.fromOffset(ITEM_CARD.X, ITEM_CARD.Y),
-		CellPadding = UDim2.fromOffset(Theme.Space.L, Theme.Space.L),
-		FillDirectionMaxCells = COLUMNS,
+	-- the tier sections stacked down the shelf (a live Robux bundle's banner sits above them)
+	new("UIListLayout", {
+		Padding = UDim.new(0, Theme.Space.L),
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, shelf)
+end
+
+-- The shop's scrolling shelf, for the Haunted Bundle banner (CoinShopController) to sit on.
+function ShopController.shelf(): ScrollingFrame?
+	return shelf
 end
 
 -- A reward's icon (Config.DailyRewards kinds) centred in `holder`: coins (three for a big pile), a
@@ -1699,6 +1891,12 @@ function ShopController.start()
 		refreshTabTags()
 		if shop.frame.Visible then
 			markSeen(currentTab)
+			renderShelf()
+		end
+	end)
+	-- Robux unlocking brings the bundle items (and their banner) onto the shelf
+	player:GetAttributeChangedSignal("RobuxOk"):Connect(function()
+		if shop.frame.Visible then
 			renderShelf()
 		end
 	end)

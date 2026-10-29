@@ -93,6 +93,19 @@ local items: { Item } = {
 		Bundle = "Halloween2026", -- Haunted Bundle only
 		Data = { Color = Color3.fromRGB(140, 60, 220), Material = Enum.Material.Neon },
 	},
+	{
+		Id = "Skin_JackOLantern",
+		Category = "BallSkin",
+		Name = "Jack-o'-Lantern",
+		Price = 2500,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Event = "Halloween",
+		Limited = true,
+		Bundle = "Halloween2026", -- Haunted Bundle only
+		-- Pumpkin: your Standard balls wear the carved Halloween pumpkin all year (HalloweenController)
+		Data = { Color = Config.Halloween.Ball.Body, Material = Enum.Material.SmoothPlastic, Pumpkin = true },
+	},
 	-- Trails behind YOUR throws.
 	{ Id = "Trail_None", Category = "Trail", Name = "None", Price = 0, RobuxProductId = 0, Default = true, Data = {} },
 	{
@@ -377,6 +390,19 @@ local items: { Item } = {
 		Bundle = "Halloween2026", -- Haunted Bundle only
 		Data = { Text = "Pumpkin King" },
 	},
+	{
+		Id = "Title_Ghost",
+		Category = "Title",
+		Name = "Ghost",
+		Price = 2500,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Event = "Halloween",
+		Limited = true,
+		Bundle = "Halloween2026", -- Haunted Bundle only
+		-- Style "Ghost": a special name tag, pale and see-through and framed in ghosts (ShopService)
+		Data = { Text = "Ghost", Style = "Ghost", Icon = "👻" },
+	},
 	-- Finishers: the cutscene everyone in the match watches when you score the final knockout.
 	-- Data.Module names a module in ReplicatedStorage.Shared.Finishers.
 	{
@@ -464,11 +490,12 @@ local items: { Item } = {
 		Id = "Finisher_Pumpkin",
 		Category = "Finisher",
 		Name = "Pumpkin Reaper",
-		Price = 2500, -- kept below the Epic price until the event ends (docs/ECONOMY.md §2)
+		Price = 2500,
 		Rarity = "Epic",
 		RobuxProductId = 0,
-		Event = "Halloween", -- Halloween exclusive: on sale only during the event, kept once owned
+		Event = "Halloween",
 		Limited = true,
+		Bundle = "Halloween2026", -- Haunted Bundle only (no longer sold for coins)
 		Data = { Module = "Pumpkin", Icon = "🎃" },
 	},
 	{
@@ -506,6 +533,15 @@ local items: { Item } = {
 		Rarity = "Epic",
 		RobuxProductId = 0,
 		Data = { Module = "DodgeballRush", Icon = "🥊" },
+	},
+	{
+		Id = "Finisher_BubbleTrouble",
+		Category = "Finisher",
+		Name = "Bubble Trouble",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Module = "BubbleTrouble", Icon = "🫧" },
 	},
 	{
 		Id = "Finisher_OutOfThePark",
@@ -634,6 +670,19 @@ local items: { Item } = {
 		Rarity = "Legendary",
 		RobuxProductId = 0,
 		Data = { Pose = "TrophyLift", Icon = "🏆" }, -- its pose plays a confetti burst (IntroPoses Fx)
+	},
+	{
+		Id = "Pose_PumpkinHead",
+		Category = "Pose",
+		Name = "Pumpkin Head",
+		Price = 2500,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Event = "Halloween",
+		Limited = true,
+		Bundle = "Halloween2026", -- Haunted Bundle only
+		-- a jack-o-lantern over your head while you shuffle like Frankenstein's monster (IntroPoses Prop)
+		Data = { Pose = "PumpkinHead", Icon = "🎃" },
 	},
 }
 

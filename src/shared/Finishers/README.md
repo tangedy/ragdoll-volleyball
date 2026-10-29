@@ -46,9 +46,12 @@ Letterbox bars, hidden name tags and camera/FOV restore are handled for you.
 
 Simple finishers can reuse the default camera from `Shared/FinisherKit.luau`: `heroShot(ctx, seconds)`
 (push-in on the winner), `followLaunch(ctx, seconds)` (chase the victim's launch), `facing(root)` and
-`tint(saturation, brightness, color?)` (a ColorCorrectionEffect you destroy when done). The Common
-and Rare variants (Confetti Pop, Air Horn, Sad Trombone, BONK!, Slow-Mo Replay, Paparazzi) are
-built this way: the default beats plus one effect and one sound cue.
+`tint(saturation, brightness, color?)` (a ColorCorrectionEffect you destroy when done), and
+`loadTrack(model, FinisherKit.WalkAnim | IdleAnim)` to walk or idle a stand-in. The Common and Rare
+variants (Air Horn, Sad Trombone, BONK!, Paparazzi) are built this way: the default beats plus one
+effect and one sound cue. Confetti Pop gives the winner a giant party cannon whose confetti gust
+blows the victim off the stage, then reuses `followLaunch`. Slow-Mo Replay is a full scene instead (a time stop: the
+winner walks over to the frozen enemy, takes their ball and hits them with it point-blank).
 
 The controller restores the normal camera and HUD afterwards, even if `play` errors, so a broken
 finisher never breaks the match. Finishers are cosmetic only: they run after the match is decided.

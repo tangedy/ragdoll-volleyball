@@ -568,6 +568,42 @@ local Cues: { [string]: { Layer } } = {
 		},
 		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.4, delay = 0.45, reverb = true },
 	},
+	-- Slow-Mo Replay finisher (the time stop)
+	TimeTick = {
+		-- a clock ticking, heard just before it stops
+		{ id = S .. "clickfast.wav", volume = 0.5, pitch = 0.7 },
+		{ id = S .. "clickfast.wav", volume = 0.4, pitch = 0.62, delay = 0.33 },
+	},
+	TimeStop = {
+		-- the air sucked out of the world, then a deep frozen hum
+		{ id = S .. "swordlunge.wav", volume = 0.8, pitch = 0.3, reverb = true },
+		{
+			id = S .. "bass.wav",
+			volume = 0.9,
+			pitch = 0.28,
+			eq = { low = 10, mid = -2, high = -10 },
+			distortion = 0.3,
+			reverb = true,
+			stopAfter = 1.4,
+		},
+		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 0.4, delay = 0.05, reverb = true },
+	},
+	TimeStep = {
+		-- a lone footstep echoing in the frozen silence
+		{ id = S .. "collide.wav", volume = 0.3, pitch = 0.85, jitter = 0.08, reverb = true },
+	},
+	TimeResume = {
+		-- the world snapping back, and the clock starting again
+		{ id = S .. "swordlunge.wav", volume = 0.8, pitch = 0.5 },
+		{
+			id = S .. "bass.wav",
+			volume = 0.7,
+			pitch = 0.55,
+			eq = { low = 8, mid = 0, high = -8 },
+			stopAfter = 0.6,
+		},
+		{ id = S .. "clickfast.wav", volume = 0.5, pitch = 0.7, delay = 0.3 },
+	},
 	-- Black Hole finisher
 	BallWhoosh = {
 		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.9 },
@@ -752,6 +788,43 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 1.8, delay = 0.18 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.4, delay = 0.3 },
 	},
+	-- Bubble Trouble finisher
+	BubbleWand = {
+		-- the wand pops into the winner's hand with a twinkle
+		{ id = S .. "button.wav", volume = 0.5, pitch = 1.3 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 2.8, delay = 0.04 },
+	},
+	BubbleBlow = {
+		-- a long breathy blow through the ring
+		{ id = S .. "swordlunge.wav", volume = 0.45, pitch = 0.45, eq = { low = -10, mid = -2, high = 4 } },
+		{ id = S .. "action_swim.mp3", volume = 0.35, pitch = 1.6, stopAfter = 0.6 },
+	},
+	BubblePop = {
+		{ id = S .. "button.wav", volume = 0.35, pitch = 2.2, jitter = 0.2 },
+		{ id = S .. "snap.wav", volume = 0.2, pitch = 2.6, jitter = 0.15 },
+	},
+	BubbleGrow = {
+		-- a stretching, rising wobble as the one bubble swells
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 0.8, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.25, pitch = 1.2, delay = 0.25, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.2, pitch = 1.6, delay = 0.5, reverb = true },
+	},
+	BubbleEngulf = {
+		-- a deep rubbery gulp as it closes over the victim
+		{ id = S .. "button.wav", volume = 0.8, pitch = 0.35 },
+		{ id = S .. "bass.wav", volume = 0.5, pitch = 1.1, stopAfter = 0.3, eq = { low = 6, mid = 0, high = -8 } },
+		{ id = S .. "impact_water.mp3", volume = 0.3, pitch = 1.4, delay = 0.05 },
+	},
+	BubbleBoing = {
+		-- the victim pounding on the film
+		{ id = S .. "button.wav", volume = 0.35, pitch = 0.6, jitter = 0.12 },
+	},
+	BubbleBigPop = {
+		{ id = S .. "snap.wav", volume = 1.0, pitch = 0.9 },
+		{ id = S .. "button.wav", volume = 0.8, pitch = 0.5 },
+		{ id = S .. "impact_water.mp3", volume = 0.8, pitch = 1.1, delay = 0.02 },
+		{ id = S .. "glassbreak.wav", volume = 0.2, pitch = 2.4, delay = 0.03 },
+	},
 	-- Common / Rare finishers (Finishers/ConfettiPop, AirHorn, SadTrombone, Bonk, Paparazzi)
 	ConfettiPop = {
 		{ id = S .. "snap.wav", volume = 0.8, pitch = 0.8 },
@@ -759,6 +832,31 @@ local Cues: { [string]: { Layer } } = {
 		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 2.0, delay = 0.06 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 2.67, delay = 0.12 },
 		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 3.0, delay = 0.18 },
+	},
+	-- Confetti Pop's giant cannon: a rubbery pop as it appears, a fizzing fuse, then the boom
+	ConfettiCannonSummon = {
+		{ id = S .. "button.wav", volume = 0.6, pitch = 0.55 },
+		{ id = S .. "snap.wav", volume = 0.5, pitch = 1.4, delay = 0.03 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.25, pitch = 2.4, delay = 0.08 },
+	},
+	ConfettiCannonFuse = {
+		{ id = S .. "swordlunge.wav", volume = 0.35, pitch = 2.2, eq = { low = -10, mid = -2, high = 4 } },
+		{ id = S .. "clickfast.wav", volume = 0.25, pitch = 2.0, delay = 0.15 },
+		{ id = S .. "clickfast.wav", volume = 0.25, pitch = 2.3, delay = 0.32 },
+		{ id = S .. "clickfast.wav", volume = 0.25, pitch = 2.6, delay = 0.47 },
+	},
+	ConfettiCannonFire = {
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.7,
+			eq = { low = 10, mid = 2, high = -4 },
+			distortion = 0.5,
+			reverb = true,
+		},
+		{ id = S .. "snap.wav", volume = 1.0, pitch = 0.6 },
+		{ id = S .. "swordlunge.wav", volume = 0.8, pitch = 0.5, delay = 0.03, reverb = true },
+		{ id = S .. "glassbreak.wav", volume = 0.3, pitch = 2.0, delay = 0.05 },
 	},
 	-- three blasts, short short long
 	AirHorn = concat(brass(7, 0, 0.22), brass(7, 0.3, 0.22), brass(7, 0.6, 0.9), brass(12, 0.6, 0.9)),

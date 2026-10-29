@@ -125,6 +125,7 @@ local function applyLook(ball: Ball)
 	part.Color = def.Color
 	part.Material = def.Material
 	part:SetAttribute(Types.Attr.BallType, ball.type)
+	part:SetAttribute("Pumpkin", nil) -- the Jack-o'-Lantern skin's pumpkin (applyOwnerLook)
 	local trail = part:FindFirstChild("Trail") :: Trail?
 	if trail then
 		trail.Enabled = def.Trail
@@ -153,6 +154,9 @@ local function applyOwnerLook(ball: Ball, c: any)
 	end
 	if look.material then
 		part.Material = look.material
+	end
+	if look.pumpkin then
+		part:SetAttribute("Pumpkin", true)
 	end
 	local trail = part:FindFirstChild("Trail") :: Trail?
 	if trail and look.trail and #look.trail > 0 then

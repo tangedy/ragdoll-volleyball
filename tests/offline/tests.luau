@@ -48,8 +48,8 @@ return function(H)
 			if not item.Default then
 				check(Config.Economy.PriceByRarity[item.Rarity] ~= nil, item.Id .. " has no rarity")
 				eq(Catalog.rarity(item), item.Rarity, item.Id .. " rarity")
-				-- bundle items are never sold, and the Limited Pumpkin Reaper keeps its event price
-				if not item.Bundle and item.Id ~= "Finisher_Pumpkin" then
+				-- bundle items are never sold for coins
+				if not item.Bundle then
 					eq(item.Price, Config.Economy.PriceByRarity[item.Rarity], item.Id .. " price")
 				end
 			end
@@ -884,20 +884,23 @@ return function(H)
 		check(not S.ShopService.buy(c, "Nope_Nothing"), "bought a made-up item")
 	end)
 
-	test("shop: event items sell only during their event", function()
+	test("shop: event items sell only during their event; bundle items never", function()
+		-- every Halloween item is in the Haunted Bundle now, so the event gate is checked on a stand-in
+		local plain = { Id = "Test_Event", Event = "Halloween" } :: any
+		check(not Catalog.isOffered(plain, { Halloween = false }), "event item offered outside its event")
+		check(Catalog.isOffered(plain, { Halloween = true }), "event item not offered during its event")
 		local c = H.combatant()
-		local item
+		H.game:GetService("ReplicatedStorage"):SetAttribute("Halloween", true)
 		for _, it in Catalog.Items do
-			if it.Event == "Halloween" and not it.Bundle then
-				item = it
+			if it.Event == "Halloween" then
+				c.profile.Coins = it.Price
+				if it.Bundle then
+					check(not S.ShopService.buy(c, it.Id), it.Id .. " (bundle only) sold for coins")
+				else
+					check(S.ShopService.buy(c, it.Id), it.Id .. " refused during its event")
+				end
 			end
 		end
-		check(item, "no Halloween item")
-		c.profile.Coins = item.Price
-		H.game:GetService("ReplicatedStorage"):SetAttribute("Halloween", false)
-		check(not S.ShopService.buy(c, item.Id), "event item sold outside its event")
-		H.game:GetService("ReplicatedStorage"):SetAttribute("Halloween", true)
-		check(S.ShopService.buy(c, item.Id), "event item refused during its event")
 	end)
 
 	test("daily reward: once per UTC day, ladder advances, a missed day resets", function()

@@ -11,7 +11,8 @@
 -- Above the bundles, while one is on sale, a strip for each limited-time cosmetic bundle
 -- (Config.CoinShop.Offers, granted by PurchaseService): what's in it, the time left and Buy, or
 -- Owned once you have everything in it. It hides itself at the offer's End; the sheet grows to fit
--- it and scales down so it takes no more of the screen than without it.
+-- it and scales down so it takes no more of the screen than without it. The same strip also sits at
+-- the top of the Shop's shelf while you don't own it yet (its items are on the shelf too).
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -50,7 +51,9 @@ local cards: { [string]: { root: GuiObject, art: GuiObject, buy: TextButton } } 
 local backToShop = false -- opened from the shop's Buy: return there after a purchase
 local boostCards: { [string]: { root: GuiObject, status: TextLabel, buy: TextButton } } = {}
 local boost = { untilTime = 0, forever = false } -- profile.boost from the server
-local offerCards: { [string]: { root: GuiObject, status: TextLabel, buy: TextButton } } = {}
+type OfferCard = { offer: any, root: GuiObject, status: TextLabel, buy: TextButton, inShop: boolean }
+local offerCards: { OfferCard } = {} -- the Coins sheet's strips, then the Shop shelf's banners
+local shopBanners = false -- built the Shop shelf's banners yet
 local owned: { [string]: boolean } = {} -- profile.owned from the server
 local offersShown: boolean? = nil -- is the offer strip up (nil until the first layout)
 local offerRow: Frame
@@ -362,19 +365,28 @@ end
 
 -- Show each offer only inside its window; the strip (and the room the sheet makes for it) comes
 -- and goes with the first live one.
+local offerCard: (parent: Instance, offer: any, order: number, inShop: boolean) -> ()
 local function renderOffers()
+	local shelf = ShopController.shelf()
+	if not shopBanners and shelf then
+		shopBanners = true
+		for _, offer in CS.Offers do
+			offerCard(shelf, offer, 0, true)
+		end
+	end
 	local now = Workspace:GetServerTimeNow()
 	local any = false
-	for _, offer in CS.Offers do
-		local card = offerCards[offer.Id]
-		if not card then
-			continue
-		end
+	for _, card in offerCards do
+		local offer = card.offer
 		local live = Catalog.offerLive(offer, now)
-		card.root.Visible = live
-		any = any or live
+		local have = offerOwned(offer)
+		if card.inShop then
+			card.root.Visible = live and not have and CoinShopController.unlocked()
+		else
+			card.root.Visible = live
+			any = any or live
+		end
 		if live then
-			local have = offerOwned(offer)
 			card.status.Text = if have
 				then "Owned: equip it in the Shop"
 				else "Limited time · " .. endsIn(stamp(offer.End) - now)
@@ -403,7 +415,7 @@ local function buyOffer(offer: any)
 	buy(offer)
 end
 
-local function offerCard(parent: Instance, offer: any, order: number)
+function offerCard(parent: Instance, offer: any, order: number, inShop: boolean)
 	local root = new("Frame", {
 		Name = offer.Id,
 		LayoutOrder = order,
@@ -452,11 +464,15 @@ local function offerCard(parent: Instance, offer: any, order: number)
 		ZIndex = 7,
 	})
 	-- what's inside: "Witch's Brew ball skin · Ectoplasm trail · ... · +5,000 coins"
+	-- (just the names once there are more than four, so the line still fits)
 	local parts = {}
 	for _, id in offer.Items do
 		local item = Catalog.get(id)
 		if item then
-			table.insert(parts, ("%s %s"):format(item.Name, KIND[item.Category] or ""))
+			table.insert(
+				parts,
+				if #offer.Items > 4 then item.Name else ("%s %s"):format(item.Name, KIND[item.Category] or "")
+			)
 		end
 	end
 	table.insert(parts, ("+%s coins"):format(commas(offer.Coins)))
@@ -492,7 +508,7 @@ local function offerCard(parent: Instance, offer: any, order: number)
 	button.Activated:Connect(function()
 		buyOffer(offer)
 	end)
-	offerCards[offer.Id] = { root = root, status = status, buy = button }
+	table.insert(offerCards, { offer = offer, root = root, status = status, buy = button, inShop = inShop })
 	if offer.ProductId > 0 then
 		task.spawn(function()
 			local ok, info = pcall(function()
@@ -549,7 +565,7 @@ local function build()
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, offerRow)
 	for i, offer in CS.Offers do
-		offerCard(offerRow, offer, i)
+		offerCard(offerRow, offer, i, false)
 	end
 	local row = new("Frame", {
 		Name = "Bundles",
@@ -644,6 +660,11 @@ function CoinShopController.open(on: boolean, need: number?)
 	end
 end
 
+-- Buy a limited-time bundle (the Shop's bundle items and banner use this too).
+CoinShopController.buyOffer = buyOffer
+-- Show, hide and count down the bundle strips (the Shop calls this when it draws its shelf).
+CoinShopController.renderOffers = renderOffers
+
 function CoinShopController.init()
 	build()
 end
@@ -664,9 +685,10 @@ function CoinShopController.start()
 	Net.on("BundleBought", function(d)
 		SoundController.play("Purchase")
 		HUDController.coinPop(tonumber(d.coins) or 0)
-		local card = offerCards[tostring(d.id)]
-		if card then
-			Theme.pop(card.root, 1.08, Theme.Motion.Slow)
+		for _, card in offerCards do
+			if card.offer.Id == d.id and card.root.Visible then
+				Theme.pop(card.root, 1.08, Theme.Motion.Slow)
+			end
 		end
 		for _, offer in CS.Offers do
 			if offer.Id == d.id then
@@ -711,8 +733,8 @@ function CoinShopController.start()
 		if not inHub() and sheet.frame.Visible then
 			CoinShopController.open(false)
 		end
-		-- the timed boost's and the offers' countdowns, once a second while the sheet is up
-		if sheet.frame.Visible and os.clock() >= nextTick then
+		-- the timed boost's and the offers' countdowns, once a second while this sheet or the shop is up
+		if (sheet.frame.Visible or ShopController.isShopOpen()) and os.clock() >= nextTick then
 			nextTick = os.clock() + 1
 			renderBoosts()
 			renderOffers()

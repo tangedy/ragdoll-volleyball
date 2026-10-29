@@ -188,7 +188,8 @@ function ShopService.recordPowerKO(c: any, ballType: string?): { string }
 end
 
 -- Name-tag badge (RichText): level, win-streak flame and title, the title in its rarity's color
--- (Legendary ones framed in ✦).
+-- (Legendary ones framed in ✦). The Ghost title (Data.Style "Ghost") is its own special tag: pale,
+-- see-through and framed in ghosts.
 function ShopService.applyCosmetics(c: any)
 	if not c.profile then
 		return
@@ -203,16 +204,27 @@ function ShopService.applyCosmetics(c: any)
 	if title and title ~= "" then
 		local rarity = Catalog.rarity(item)
 		title = string.gsub(string.gsub(string.gsub(title, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
-		if rarity == "Legendary" then
-			title = "✦ " .. title .. " ✦"
+		if item.Data.Style == "Ghost" then
+			badge ..= (' · %s <font color="#D6FFF4" transparency="0.3"><i>%s</i></font> %s'):format(
+				item.Data.Icon,
+				title,
+				item.Data.Icon
+			)
+		else
+			if rarity == "Legendary" then
+				title = "✦ " .. title .. " ✦"
+			end
+			badge ..= (' · <font color="#%s">%s</font>'):format(Config.Spin.RarityColors[rarity]:ToHex(), title)
 		end
-		badge ..= (' · <font color="#%s">%s</font>'):format(Config.Spin.RarityColors[rarity]:ToHex(), title)
 	end
 	S.CharacterService.setBadge(c, badge)
 end
 
 -- Cosmetic look for a Standard ball owned by this combatant, or nil for the default look.
-function ShopService.ballLook(c: any): { color: Color3?, material: Enum.Material?, trail: { Color3 }? }?
+-- `pumpkin`: the Jack-o'-Lantern skin, drawn as a carved pumpkin all year (HalloweenController).
+function ShopService.ballLook(
+	c: any
+): { color: Color3?, material: Enum.Material?, trail: { Color3 }?, pumpkin: boolean? }?
 	if not c or not c.profile then
 		return nil
 	end
@@ -221,7 +233,12 @@ function ShopService.ballLook(c: any): { color: Color3?, material: Enum.Material
 	if skin.Default and trail.Default then
 		return nil
 	end
-	return { color = skin.Data.Color, material = skin.Data.Material, trail = trail.Data.Colors }
+	return {
+		color = skin.Data.Color,
+		material = skin.Data.Material,
+		trail = trail.Data.Colors,
+		pumpkin = if skin.Data.Pumpkin then true else nil,
+	}
 end
 
 -- The intro pose a combatant strikes in the match-start camera pan. Bots show off a random one.

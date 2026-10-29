@@ -14,6 +14,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local IntroPoses = require(Shared.IntroPoses)
+local JackOLantern = require(Shared.JackOLantern)
 local Net = require(script.Parent.Net)
 local EffectsController = require(script.Parent.EffectsController)
 local HUDController = require(script.Parent.HUDController)
@@ -31,10 +32,14 @@ IntroController.playing = false
 
 local finish: (() -> ())? = nil
 
--- A pose's one-shot effect (IntroPoses Fx), replayed each time its sequence loops, until the
--- returned stop function is called. Poses without one return a no-op.
+-- A pose's one-shot effect (IntroPoses Fx), replayed each time its sequence loops, and its worn
+-- prop (IntroPoses Prop), until the returned stop function is called. Poses with neither return a
+-- no-op.
 local function poseFx(model: Instance, poseId: string?): () -> ()
 	local pose = IntroPoses.get(poseId)
+	if pose.Prop == "PumpkinHead" and model:IsA("Model") then
+		return JackOLantern.onHead(model)
+	end
 	if pose.Fx ~= "Confetti" then
 		return function() end
 	end

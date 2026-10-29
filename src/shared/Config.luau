@@ -384,14 +384,24 @@ Config.CoinShop = {
 		{
 			Id = "Halloween2026",
 			Name = "Haunted Bundle",
-			Items = { "Skin_Witchbrew", "Trail_Ectoplasm", "Title_PumpkinKing" },
+			Items = {
+				"Skin_JackOLantern",
+				"Pose_PumpkinHead",
+				"Finisher_Pumpkin",
+				"Title_Ghost",
+				"Skin_Witchbrew",
+				"Trail_Ectoplasm",
+				"Title_PumpkinKing",
+			},
 			Coins = 5000,
 			Robux = 299,
-			ProductId = 0, -- PLACEHOLDER: developer product "Haunted Bundle"
+			ProductId = 3723612223, -- developer product "Haunted Bundle"
 			Image = 0, -- PLACEHOLDER: card art image id (optional)
 			Start = "2026-10-28T00:00:00Z",
 			End = "2026-11-04T00:00:00Z", -- on sale through Nov 3 (UTC)
 			Tag = "Limited",
+			-- its stand in the hub (BundleDisplayController), in deck coordinates like Config.Lobby
+			Display = { X = 12, F = -14 },
 		},
 	},
 }

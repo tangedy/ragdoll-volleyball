@@ -331,6 +331,9 @@ function BallVisualController.applyLook(part: Part, look: any)
 	if typeof(look.material) == "EnumItem" and (look.material :: EnumItem).EnumType == Enum.Material then
 		part.Material = look.material :: any
 	end
+	if look.pumpkin == true then
+		part:SetAttribute("Pumpkin", true) -- the Jack-o'-Lantern skin (HalloweenController)
+	end
 	if type(look.trail) == "table" and #look.trail > 0 and not part:FindFirstChildOfClass("Trail") then
 		local a0 = Instance.new("Attachment")
 		a0.Position = Vector3.new(0, 0.4, 0)

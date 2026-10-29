@@ -4,6 +4,7 @@
 -- open end of the deck and falls into the void, then a fresh one stands back up. Everything lives
 -- in Workspace.Lobby.Practice, so it disappears with the hub while you're on the court
 -- (HubController). The only thing sent to the server is the tutorial event (Practice remote).
+-- A ball you hold or throw wears your equipped skin, as match balls do.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,6 +15,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local ArenaLayout = require(Shared.ArenaLayout)
 local BallDefinitions = require(Shared.BallDefinitions)
+local Catalog = require(Shared.Catalog)
 local ProjectileMath = require(Shared.ProjectileMath)
 local Net = require(script.Parent.Net)
 local AimController = require(script.Parent.AimController)
@@ -63,8 +65,21 @@ local function active(): boolean
 	return lobby ~= nil and lobby.Parent == Workspace and folder ~= nil
 end
 
+local equipped: { [string]: string } = {} -- from the server's Profile
+
+-- Your skin while the ball is yours (held or in flight), the plain Standard look otherwise.
+local function applySkin(b: PBall)
+	local def = BallDefinitions.get("Standard")
+	local skin = Catalog.equipped(equipped, "BallSkin").Data
+	local mine = b.state == "Held" or b.state == "InFlight"
+	b.part.Color = if mine and typeof(skin.Color) == "Color3" then skin.Color else def.Color
+	b.part.Material = if mine and typeof(skin.Material) == "EnumItem" then skin.Material :: any else def.Material
+	b.part:SetAttribute("Pumpkin", if mine and skin.Pumpkin then true else nil) -- HalloweenController
+end
+
 local function setState(b: PBall, state: string)
 	b.state = state
+	applySkin(b)
 	b.part:SetAttribute(
 		"BallState",
 		if state == "Loose" then "Spent" elseif state == "Gone" then "Resetting" else state
@@ -487,6 +502,12 @@ function PracticeController.init()
 end
 
 function PracticeController.start()
+	Net.on("Profile", function(d)
+		equipped = if type(d) == "table" and type(d.equipped) == "table" then d.equipped else {}
+		for _, b in balls do
+			applySkin(b)
+		end
+	end)
 	task.spawn(function()
 		local l = Workspace:WaitForChild("Lobby", 60)
 		if not l then
