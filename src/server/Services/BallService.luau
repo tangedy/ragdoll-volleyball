@@ -517,6 +517,7 @@ local function simulate(ball: Ball, dt: number)
 			local v = ball.vel
 			local reflected = (v - 2 * v:Dot(n) * n) * 0.45
 			S.BallService.spend(ball, hitPos + n * (r + 0.05), reflected)
+			S.NetService.broadcast("Sound", { cue = "BallLand", position = hitPos }) -- a miss
 		end
 		return
 	end

@@ -3,7 +3,7 @@
 -- low thump + a sharp crack + a slap instead of one thin sample. Layers use Roblox's built-in
 -- engine sounds (rbxasset://sounds, verified to load in Studio), shaped with EQ/distortion.
 -- To use your own uploaded audio, replace a layer's `id` with "rbxassetid://<id>".
--- The dodgeball smacks are free Creator Store sound effects (kirbyzaz's Dodgeball_Impact set).
+-- The dodgeball hit and floor-bounce sounds are the game's own uploads (group-owned audio).
 
 export type Layer = {
 	id: string,
@@ -229,8 +229,8 @@ local Cues: { [string]: { Layer } } = {
 		},
 	},
 	Hit = {
-		-- a real rubber dodgeball smack
-		{ id = "rbxassetid://8254245367", volume = 1.0, pitch = 1, jitter = 0.06, stopAfter = 1.2 },
+		-- a real rubber dodgeball smack ("Dodgeball Hit", uploaded to the group)
+		{ id = "rbxassetid://71330531636395", volume = 1.0, pitch = 1, jitter = 0.06, stopAfter = 1.2 },
 		-- body: a soft low thump under it
 		{
 			id = S .. "bass.wav",
@@ -242,8 +242,8 @@ local Cues: { [string]: { Layer } } = {
 		},
 	},
 	HitHeavy = {
-		{ id = "rbxassetid://8254247881", volume = 1.0, pitch = 0.95, jitter = 0.05, stopAfter = 1.2 },
-		{ id = "rbxassetid://8254245367", volume = 0.5, pitch = 0.8, jitter = 0.05, stopAfter = 1.2 },
+		-- the same smack, pitched down for a harder throw
+		{ id = "rbxassetid://71330531636395", volume = 1.0, pitch = 0.85, jitter = 0.05, stopAfter = 1.2 },
 		{
 			id = S .. "bass.wav",
 			volume = 0.7,
@@ -253,6 +253,10 @@ local Cues: { [string]: { Layer } } = {
 			distortion = 0.2,
 			stopAfter = 0.45,
 		},
+	},
+	-- a missed throw's first bounce off the floor (BallService); "Dodgeball Ground", uploaded to the group
+	BallLand = {
+		{ id = "rbxassetid://85066767818771", volume = 0.8, pitch = 1, jitter = 0.06, stopAfter = 2 },
 	},
 	Catch = {
 		{ id = S .. "snap.wav", volume = 0.7, pitch = 1.35, jitter = 0.05 },
