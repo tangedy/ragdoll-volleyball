@@ -1,8 +1,7 @@
 --!strict
 -- Hub UI: the action row of destinations (Shop, Spin, Daily, Settings), the shop and the daily
--- reward ladder. Shown only in the hub, never during a match. While the shop is open the player stays in
--- the hub (auto-queue is paused and restored on close) so the short intermission never yanks them out
--- mid-purchase.
+-- reward ladder. Shown only in the hub, never during a match. An open sheet never holds a player back:
+-- when a match pulls them in, every sheet closes (purchases, spins and claims are already server-side).
 --
 -- Layout follows the Toybox Island design system: the shop is a sheet with segmented category tabs
 -- over a grid of item cards (name, tier color and sticker, preview, and an action on every card). The daily reward
@@ -40,7 +39,7 @@ local new = Theme.new
 
 local ShopController = {}
 ShopController.onOpenSpin = nil :: (() -> ())? -- set by SpinController: a claimed bonus spin opens its sheet
-ShopController.holdBusy = false -- set by QuestController while a quest chest opens: keeps you out of matches
+ShopController.hubHidden = false -- set by SpectatorController while watching the match from the hub
 
 local SHOP_SIZE = Vector2.new(880, 600)
 local DAILY_SIZE = Vector2.new(760, 438)
@@ -1469,7 +1468,7 @@ end
 -- While it moves the row also clips at the disc's centre, a line the hamburger's own disc covers, so
 -- nothing can ever show on the hamburger's left.
 local ACTION_W, ACTION_H = 84, 56 + Theme.Ledge + 26 -- one Theme.roundAction button
-local ACTIONS = 6 -- Bundles, Coins, Shop, Spin, Daily, Settings
+local ACTIONS = 7 -- Spectate, Bundles, Coins, Shop, Spin, Daily, Settings
 local ROW_W = ACTIONS * ACTION_W + (ACTIONS - 1) * Theme.Space.L
 local TOUCH_W = ROW_W + ACTION_W + Theme.Space.L -- the row plus the menu button
 local TOUCH_SCALE = 1.25 -- relative to the rest of the HUD
@@ -2344,6 +2343,19 @@ function ShopController.start()
 			renderShelf()
 		end
 	end)
+	-- show the daily sheet once per session when there's something to claim or pick (never
+	-- auto-claims). Brand-new players see it only after their first finished match, when they're
+	-- back in the hub, so it doesn't greet them before they've played.
+	local function autoShowDaily()
+		local d = profile.daily
+		if dailyAutoShown or not d or (d.claimed and not picking()) or (tonumber(profile.matches) or 0) < 1 then
+			return
+		end
+		if inHub() and not anySheetOpen() then
+			dailyAutoShown = true
+			ShopController.openDaily(true)
+		end
+	end
 	Net.on("Profile", function(d)
 		profile = d
 		refreshTabTags()
@@ -2351,14 +2363,7 @@ function ShopController.start()
 			renderShelf()
 		end
 		renderDaily()
-		-- show the daily sheet once per session when there's something to claim or pick (never
-		-- auto-claims)
-		if not dailyAutoShown and d.daily and (not d.daily.claimed or picking()) and inHub() then
-			dailyAutoShown = true
-			if not shop.frame.Visible then
-				ShopController.openDaily(true)
-			end
-		end
+		autoShowDaily()
 	end)
 	-- the server's answer to Claim: the granted reward ({ ok, day, kind, ... }) or why not
 	Net.on("DailyResult", function(d)
@@ -2416,18 +2421,19 @@ function ShopController.start()
 			ShopController.openDaily(true)
 		end
 	end)
-	-- any open sheet (shop, daily, spin, settings) shares the backdrop: while it's up the server
-	-- won't pull you into a match, so you're never teleported mid-purchase or mid-spin (the quest
-	-- chest opening screen holds it too, through ShopController.holdBusy)
-	local sentBusy = false
+	-- back in the hub after a match: the daily sheet gets its chance (a beat later, once the hub is up)
+	local function onHubChange()
+		if inHub() then
+			task.delay(1, autoShowDaily)
+		end
+	end
+	player:GetAttributeChangedSignal("Status"):Connect(onHubChange)
+	player:GetAttributeChangedSignal("Team"):Connect(onHubChange)
+	-- any open sheet (shop, daily, spin, settings) shares the backdrop; none of them keeps you out
+	-- of a match: leaving the hub closes them all
 	RunService.RenderStepped:Connect(function()
 		local hub = inHub()
-		gui.Enabled = hub and not HUDController.cinematic
-		local busy = hub and (backdrop.Visible or ShopController.holdBusy)
-		if busy ~= sentBusy then
-			sentBusy = busy
-			Net.request(Net.Actions.SetBusy, { value = busy })
-		end
+		gui.Enabled = hub and not HUDController.cinematic and not ShopController.hubHidden
 		-- the row steps aside while a sheet is up
 		actionRow.Visible = not backdrop.Visible
 		if hub then

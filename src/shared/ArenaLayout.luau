@@ -18,6 +18,16 @@ function ArenaLayout.teamSign(team: string): number
 	return if team == "Red" then -1 else 1
 end
 
+-- A CFrame at `pos` looking level at `target` (no tilt); straight down +Z if `target` is overhead.
+-- Every teleport and spawn faces through this so nothing is left with a stale yaw.
+function ArenaLayout.faceFlat(pos: Vector3, target: Vector3): CFrame
+	local flat = Vector3.new(target.X, pos.Y, target.Z)
+	if (flat - pos).Magnitude < 0.1 then
+		flat = pos + Vector3.zAxis
+	end
+	return CFrame.lookAt(pos, flat)
+end
+
 function ArenaLayout.enemyOf(team: string): string
 	return if team == "Red" then "Blue" else "Red"
 end

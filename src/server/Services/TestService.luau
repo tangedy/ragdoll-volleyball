@@ -99,7 +99,7 @@ local function ready(c: any, pos: Vector3)
 	S.PlayerStateService.setStatus(c, "Active")
 	S.PlayerStateService.setAction(c, "Idle")
 	c.immuneUntil = 0
-	c.hitsTaken = 0
+	S.PlayerStateService.setDamage(c, 0)
 	c.catchUntil = 0
 	c.chargeStart = nil
 	c.dodgeReadyAt = 0

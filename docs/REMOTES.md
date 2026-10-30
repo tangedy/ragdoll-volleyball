@@ -17,8 +17,8 @@ Every request is rate-limited to `Config.Net.MaxActionsPerSecond` per player and
 | `CancelAim` | `{}` | Only acts while `Charging`. The player keeps the ball. |
 | `Dodge` | `{ dir: Vector3 }` | Flattened to the horizontal plane. Off cooldown, not ragdolled, catching or in throw recovery, and not frozen in the countdown. |
 | `Catch` | `{}` | Empty hands, off cooldown, `Active` or `Lobby` status (jailed players can't catch). Opens a `CatchWindow` on the server. |
-| `SetAutoQueue` | `{ value: boolean }` | The lobby "Play again" toggle. |
-| `SetBusy` | `{ value: boolean }` | A hub menu (shop, daily, spin, quest chest, settings) is open. Busy players aren't pulled into a match. |
+| `SetAutoQueue` | `{ value: boolean }` | The "Play again" setting (in ⚙). Turning it off also clears `Ready`. |
+| `SetReady` | `{ value: boolean }` | The lobby Ready button. Accepted (as `true`) only during `Intermission` for a hub player whose profile is loaded; anything else stores `false`. Ready also turns `AutoQueue` on. The match starts early once every queued player is ready, or after `Config.Match.LobbyMaxWait` regardless. Ready flags clear at the start and end of every intermission. Open hub menus never keep a player out of a match: the client closes them when the match pulls the player in. |
 | `SetSetting` | `{ key: "ReducedMotion" \| "CameraShake", value: boolean }` | Stored per session. |
 | `ReportDevice` | `{ kind: "Touch" \| "Mouse" \| "Gamepad" }` | Analytics only, logged once per kind per session. |
 | `BuyItem` | `{ id: string }` | Hub only. The item must exist, cost more than 0, be unowned, be on sale (event items only during their event; bundle items never) and be affordable. It's equipped on purchase. |
@@ -37,7 +37,7 @@ Signature: `FireClient(kind: string, data: table)`.
 | Kind | Data | Use |
 | --- | --- | --- |
 | `Banner` | `{ text, color?, duration? }` | Big centre text: "KNOCKED OUT!", "REVENGE!", "COURT SHRINKING!". |
-| `Hint` | `{ text, duration? }` | Small centre text. |
+| `Hint` | `{ text, duration?, fade? }` | Small centre text (`fade`: fades out instead of vanishing). |
 | `Feed` | `{ text }` | Event feed line. |
 | `Impact` | `{ kind: "Hit" \| "Catch", position, ballType?, target? }` | VFX, sound and camera shake. |
 | `DodgeAccepted` | `{ dir }` | The client applies the dodge motion to its own character. |
@@ -64,6 +64,6 @@ Signature: `FireClient(kind: string, data: table)`.
 
 ## Replicated state (attributes)
 
-- `ReplicatedStorage.MatchState` holds the match attributes: `State`, `PhaseEndsAt` (server time), `Round`, `RedWins`, `BlueWins`, `RedActive`, `BlueActive`, `RedJail`, `BlueJail`, `Overtime`, `OvertimeSteps`, `MatchId` and `TeamSize`.
-- Character models and `Player` objects carry `Team`, `Status`, `Action`, `IsBot`, `HeldBall`, `DodgeReadyAt`, `CatchReadyAt`, `Level` and `Streak`.
+- `ReplicatedStorage.MatchState` holds the match attributes: `State`, `PhaseEndsAt` (server time), `Round`, `RedWins`, `BlueWins`, `RedActive`, `BlueActive`, `RedJail`, `BlueJail`, `Overtime`, `OvertimeSteps`, `MatchId`, `TeamSize`, and during the intermission `ReadyCount` / `QueuedCount` (the "2/4 ready" count).
+- Character models and `Player` objects carry `Team`, `Status`, `Action`, `IsBot`, `HeldBall`, `DodgeReadyAt`, `CatchReadyAt`, `Level` and `Streak`. `Player` objects also carry `AutoQueue` and `Ready` (server-set).
 - Ball parts in `Workspace.Balls` carry `BallId`, `BallType`, `BallState`, `ThrowerTeam` and `Context`.

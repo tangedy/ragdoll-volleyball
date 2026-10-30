@@ -41,7 +41,7 @@ local RARITIES = { "Common", "Rare", "Epic", "Legendary" }
 local CHEST_TONE: { [string]: Color3 } = { Title = T.sky, Gesture = T.candy, Finisher = T.sun }
 local CHEST_GLYPH: { [string]: string } = { Title = "tag", Gesture = "hand", Finisher = "burst" }
 local PANEL_W = 270
-local ROW_H = 38
+local ROW_H = 44
 local DISC = 32
 local TEXT_X = 40 -- right of a row's disc
 local RIGHT_W = 64 -- the count, the Claim button or the cooldown, at a row's right
@@ -238,17 +238,17 @@ local function buildRow(q: any, order: number): Row
 	-- the quest: its icon (tap it for the drops and odds), the goal, its count and progress, Claim
 	local live = layer("Live")
 	local icon = disc(live, CHEST_TONE[q.Chest] or T.sun, CHEST_GLYPH[q.Chest] or "gift", T.onFill, true)
-	local name = Theme.text(live, SIZE.Label, {
+	local name = Theme.text(live, SIZE.Body, {
 		Name = "Name",
-		Position = UDim2.fromOffset(TEXT_X, 2),
-		Size = UDim2.new(1, textW, 0, 18),
+		Position = UDim2.fromOffset(TEXT_X, 4),
+		Size = UDim2.new(1, textW, 0, 20),
 		Text = q.Name,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
 	})
 	local track = new("Frame", {
 		Name = "Progress",
-		Position = UDim2.fromOffset(TEXT_X, 24),
+		Position = UDim2.fromOffset(TEXT_X, 30),
 		Size = UDim2.new(1, textW, 0, 6),
 		BackgroundColor3 = T.line,
 		ZIndex = 4,
@@ -257,7 +257,7 @@ local function buildRow(q: any, order: number): Row
 	local fill =
 		new("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.sky, ZIndex = 5 }, track)
 	Theme.round(fill)
-	local count = Theme.text(live, SIZE.Label, {
+	local count = Theme.text(live, SIZE.Body, {
 		Name = "Count",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.fromScale(1, 0.5),
@@ -285,17 +285,17 @@ local function buildRow(q: any, order: number): Row
 	local done = layer("Done")
 	done.Visible = false
 	disc(done, T.leaf, "check", T.onFill, false)
-	local doneName = Theme.text(done, SIZE.Label, {
+	local doneName = Theme.text(done, SIZE.Body, {
 		Name = "Name",
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, TEXT_X, 0.5, 0),
-		Size = UDim2.new(1, textW, 0, 18),
+		Size = UDim2.new(1, textW, 0, 20),
 		Text = q.Name,
 		TextColor3 = T.inkMuted,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
 	})
-	local doneTime = Theme.text(done, SIZE.Label, {
+	local doneTime = Theme.text(done, SIZE.Body, {
 		Name = "Time",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.fromScale(1, 0.5),
@@ -328,17 +328,18 @@ local function buildPanel()
 		ZIndex = 2,
 	}, Theme.Radius.M)
 	Theme.padding(panel, SPACE.S + 2)
-	Theme.autoScale(panel, 0.8)
+	-- never below 0.85: on phones the screen scale alone would shrink quest text to ~8px
+	Theme.autoScale(panel, 0.8, 0.85)
 	new("UIListLayout", { Padding = UDim.new(0, SPACE.XS), SortOrder = Enum.SortOrder.LayoutOrder }, panel)
 	-- header: the title and, on the right, the time until the daily reset
 	local header = new("Frame", {
 		Name = "Header",
 		LayoutOrder = 0,
-		Size = UDim2.new(1, 0, 0, 20),
+		Size = UDim2.new(1, 0, 0, 24),
 		BackgroundTransparency = 1,
 		ZIndex = 3,
 	}, panel)
-	Theme.text(header, SIZE.Label, {
+	Theme.text(header, SIZE.Heading, {
 		Name = "Title",
 		Size = UDim2.fromScale(0.6, 1),
 		FontFace = Theme.DisplayFace,
@@ -346,7 +347,7 @@ local function buildPanel()
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
 	})
-	resetLabel = Theme.text(header, SIZE.Caption, {
+	resetLabel = Theme.text(header, SIZE.Label, {
 		Name = "Reset",
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.fromScale(1, 0),
@@ -695,7 +696,6 @@ local function closeOpening(fade: boolean)
 	local o = opening
 	opening = nil
 	claiming = false
-	ShopController.holdBusy = false
 	if o then
 		o.conn:Disconnect()
 		o.model:Destroy()
@@ -860,7 +860,6 @@ function QuestController.claim(id: string)
 	claiming = true
 	claimToken += 1
 	local token = claimToken
-	ShopController.holdBusy = true
 	renderPanel()
 	SoundController.play("UIOpen")
 	startOpening(q)

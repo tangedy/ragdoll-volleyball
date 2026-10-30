@@ -300,7 +300,7 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 	local thrower = ball.lastThrower
 	local t = now()
 	-- every hit launches harder than the last; a throw from jail lands at the current level
-	local scale = ProjectileMath.escalation(target.hitsTaken)
+	local scale = ProjectileMath.escalation(target.damage)
 	local kb = ProjectileMath.knockback(ball.vel, ball.charge, ball.type, scale)
 	local ragdollTime = ProjectileMath.ragdollDuration(scale)
 	local ballType = ball.type
@@ -309,7 +309,7 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 		return -- repeated hits during immunity add no force and do not extend the ragdoll
 	end
 	if not (thrower and thrower.status == "Jailed") then
-		target.hitsTaken += 1
+		S.PlayerStateService.setDamage(target, target.damage + ProjectileMath.damageFor(ball.charge))
 	end
 	-- cancel current action; getting hit while charging drops the ball
 	target.chargeStart = nil

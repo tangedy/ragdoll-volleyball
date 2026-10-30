@@ -263,6 +263,7 @@ local function pushProfile(c: any)
 		seen = p.ShopSeen,
 		boost = S.BoostService.status(c),
 		powerKOs = p.PowerKOs,
+		matches = p.Matches,
 	})
 	S.PlayerStateService.setAttr(c, "Level", p.Level)
 	S.PlayerStateService.setAttr(c, "Streak", p.CurrentWinStreak)

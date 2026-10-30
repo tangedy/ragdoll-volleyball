@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local ArenaLayout = require(Shared.ArenaLayout)
 local TitleStyle = require(Shared.TitleStyle)
 
 local CharacterService = {}
@@ -248,22 +249,20 @@ function CharacterService.teleport(c: any, pos: Vector3, lookAt: Vector3?)
 	if not character then
 		return
 	end
-	local target = lookAt or (pos + Vector3.zAxis)
-	local flat = Vector3.new(target.X, pos.Y, target.Z)
-	if (flat - pos).Magnitude < 0.1 then
-		flat = pos + Vector3.zAxis
-	end
 	if S.RagdollService.isRagdolled(character) then
 		S.RagdollService.recover(character, pos)
 	end
 	local root = c.root
 	if root then
+		-- a leftover spin (ragdoll tumble) would turn the body off the new facing on the next frame
 		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
 	end
-	character:PivotTo(CFrame.lookAt(pos, flat))
+	-- last, so it wins over the ragdoll recover above (which re-pivots with the old yaw)
+	character:PivotTo(ArenaLayout.faceFlat(pos, lookAt or (pos + Vector3.zAxis)))
 end
 
--- Put someone in the hub (or jail) facing the court, and swing their camera round to look at it
+-- Put someone in the hub (or jail) facing `focus`, and swing their camera round to look at it
 -- too, so they see the action straight away instead of whatever way they were facing.
 function CharacterService.placeFacing(c: any, pos: Vector3, focus: Vector3)
 	CharacterService.teleport(c, pos, focus)

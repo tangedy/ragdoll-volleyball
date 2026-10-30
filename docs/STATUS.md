@@ -134,7 +134,7 @@ None of this has been run in Studio yet. `selene` has 0 errors, and strict `luau
 ## Oct 27 stability and performance pass
 
 - **Matchmaking can't get stuck:** if a match throws a script error, `MatchService.recover()` sends everyone back to the hub, clears bots and balls, and the loop starts the next match. Before, one error stopped matches for the rest of the server's life.
-- **No surprise teleports:** while any hub menu is open (shop, daily, spin, settings), the client reports `SetBusy` and the server won't start or late-join you into a match. This replaces the shop's old trick of switching Play again off and back on, which could leave it stuck off.
+- **Ready check:** the lobby Ready button turns into the match countdown once pressed; the match starts when every queued player is ready, or after `Config.Match.LobbyMaxWait` (25 s). Open menus (shop, spin, daily, quests, settings) no longer hold anyone back: they close and the player is pulled in (`SetBusy` was removed).
 - **Clear hub status:** the phase pill says why you're waiting ("Play again is off…", "Close the menu to join…") instead of a silent "Getting a match ready...".
 - **Network:**
   - In-flight balls write their server position at 10 Hz instead of 60 Hz. Clients already draw the arc from the launch record.

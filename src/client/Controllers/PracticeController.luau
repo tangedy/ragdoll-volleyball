@@ -50,7 +50,7 @@ local dummy: Model? = nil
 local dummyHitbox: BasePart? = nil
 local dummyDown = false
 local dummyHitAt = 0
-local dummyHits = 0 -- knockback escalation; a fresh dummy starts over
+local dummyDamage = 0 -- damage % (knockback escalation); a fresh dummy starts over
 local dummyBackAt = 0
 local collide: { [BasePart]: boolean } = {}
 local rng = Random.new()
@@ -278,7 +278,7 @@ local function spawnDummy()
 	dummy = m
 	dummyHitbox = box
 	dummyDown = false
-	dummyHits = 0
+	dummyDamage = 0
 	dummyBackAt = 0
 end
 
@@ -315,8 +315,8 @@ local function launchDummy(ball: PBall, at: Vector3)
 		return
 	end
 	-- the dummy feels escalation like a real player: every hit launches it harder until it respawns
-	local scale = ProjectileMath.escalation(dummyHits)
-	dummyHits += 1
+	local scale = ProjectileMath.escalation(dummyDamage)
+	dummyDamage += ProjectileMath.damageFor(ball.charge)
 	local kb = ProjectileMath.knockback(ball.vel, ball.charge, "Standard", scale)
 	local cap = ProjectileMath.maxKnockbackSpeed(scale)
 	local K = Config.Knockback

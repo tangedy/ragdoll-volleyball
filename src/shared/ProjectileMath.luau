@@ -73,10 +73,26 @@ function ProjectileMath.randomInCone(dir: Vector3, halfAngleDeg: number, rng: Ra
 	return (cf * offset).LookVector
 end
 
--- Knockback scale after `hitsTaken` earlier hits: tiny at first, growing with every hit.
-function ProjectileMath.escalation(hitsTaken: number): number
+-- Knockback scale at `damage` % (before this hit): tiny at first, growing with every hit.
+function ProjectileMath.escalation(damage: number): number
 	local e = Config.Knockback.Escalation
-	return math.min(e.First + e.PerHit * math.max(hitsTaken, 0), e.Max)
+	return math.min(e.First + e.PerPercent * math.max(damage, 0), e.Max)
+end
+
+-- Damage % a hit adds, by throw charge (0..1).
+function ProjectileMath.damageFor(charge: number): number
+	local d = Config.Damage
+	return math.floor(d.PerHitMin + (d.PerHitMax - d.PerHitMin) * math.clamp(charge, 0, 1) + 0.5)
+end
+
+-- HUD / billboard color for a damage %: white -> yellow -> red (Toybox paper, sun, joyRed).
+function ProjectileMath.damageColor(damage: number): Color3
+	local d = Config.Damage
+	local white, yellow, red = Color3.fromHex("#fffcf2"), Color3.fromHex("#f7cd46"), Color3.fromHex("#ff4b3a")
+	if damage <= d.YellowAt then
+		return white:Lerp(yellow, math.clamp(damage / d.YellowAt, 0, 1))
+	end
+	return yellow:Lerp(red, math.clamp((damage - d.YellowAt) / (d.RedAt - d.YellowAt), 0, 1))
 end
 
 -- Speed cap for a launch at this escalation (big late-game launches go past the base cap).

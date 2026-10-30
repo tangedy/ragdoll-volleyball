@@ -28,6 +28,7 @@ Types.Attr = {
 	Status = "Status",
 	Action = "Action",
 	IsBot = "IsBot",
+	Damage = "Damage", -- Smash-style damage % (Config.Damage)
 	HeldBall = "HeldBall", -- ball type or ""
 	Level = "Level",
 	Streak = "Streak",

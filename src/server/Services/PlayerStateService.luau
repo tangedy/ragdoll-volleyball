@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
 local Types = require(Shared.Types)
 
 export type Stats = {
@@ -47,12 +48,13 @@ export type Combatant = {
 	catchReadyAt: number,
 	catchUntil: number,
 	immuneUntil: number,
-	hitsTaken: number, -- knockback escalation (Config.Knockback.Escalation)
+	damage: number, -- Smash-style damage %: drives knockback (Config.Damage)
 	lastHitBy: Combatant?,
 	lastHitAt: number,
 	eliminatedBy: Combatant?,
 	jailReturns: number,
 	autoQueue: boolean,
+	ready: boolean, -- pressed Ready this intermission (MatchService owns it)
 	inMatch: boolean,
 	stats: Stats,
 	settings: { [string]: boolean },
@@ -118,12 +120,13 @@ function PlayerStateService.create(name: string, player: Player?, isBot: boolean
 		catchReadyAt = 0,
 		catchUntil = 0,
 		immuneUntil = 0,
-		hitsTaken = 0,
+		damage = 0,
 		lastHitBy = nil,
 		lastHitAt = -math.huge,
 		eliminatedBy = nil,
 		jailReturns = 0,
 		autoQueue = true,
+		ready = false,
 		inMatch = false,
 		stats = PlayerStateService.newStats(),
 		settings = { ReducedMotion = false, CameraShake = true },
@@ -198,6 +201,7 @@ local CHARACTER_KEYS: { [string]: boolean } = {
 	[Types.Attr.Team] = true,
 	[Types.Attr.Status] = true,
 	[Types.Attr.IsBot] = true,
+	[Types.Attr.Damage] = true, -- opponents' % billboards
 }
 
 local function setAttr(c: Combatant, key: string, value: any)
@@ -215,6 +219,7 @@ function PlayerStateService.syncAttributes(c: Combatant)
 	setAttr(c, Types.Attr.Status, c.status)
 	setAttr(c, Types.Attr.Action, c.action)
 	setAttr(c, Types.Attr.IsBot, c.isBot)
+	setAttr(c, Types.Attr.Damage, c.damage)
 	setAttr(c, Types.Attr.DodgeReadyAt, c.dodgeReadyAt)
 	setAttr(c, Types.Attr.CatchReadyAt, c.catchReadyAt)
 	setAttr(c, Types.Attr.HeldBall, if c.heldBall then c.heldBall.type else "")
@@ -231,6 +236,11 @@ function PlayerStateService.setStatus(c: Combatant, status: string)
 	end
 	c.status = status
 	setAttr(c, Types.Attr.Status, status)
+end
+
+function PlayerStateService.setDamage(c: Combatant, damage: number)
+	c.damage = math.clamp(damage, 0, Config.Damage.Cap)
+	setAttr(c, Types.Attr.Damage, c.damage)
 end
 
 function PlayerStateService.setTeam(c: Combatant, team: string?)

@@ -113,6 +113,12 @@ function MatchService.init(services: any)
 end
 
 function MatchService.start()
+	S.NetService.on(NetSchema.Actions.SetReady, function(player, p)
+		local c = S.PlayerStateService.get(player)
+		if c then
+			MatchService.setReady(c, p.value)
+		end
+	end)
 	S.NetService.on(NetSchema.Actions.Dev, function(player, p)
 		-- the Halloween switch has its own permission (Studio, or the game's owner on a live server)
 		if p.cmd == "ToggleHalloween" then
@@ -253,14 +259,52 @@ end
 function MatchService.queuedPlayers(): { any }
 	local list = {}
 	for _, c in S.PlayerStateService.realPlayers() do
-		-- a player with a hub menu open (shop, spin, daily, settings) or in the dev room is never
-		-- pulled into a match
-		local away = c.busy or c.player:GetAttribute("InDevRoom") == true
+		-- an open hub menu never holds anyone back (the client closes it when they're pulled in);
+		-- only the dev room does
+		local away = c.player:GetAttribute("InDevRoom") == true
 		if c.autoQueue and not away and not c.inMatch and S.PlayerStateService.isAlive(c) and c.profileLoaded then
 			table.insert(list, c)
 		end
 	end
 	return list
+end
+
+-- Ready check: during the intermission a queued player can press Ready; once every queued player
+-- is ready the match starts early. The server owns the flag (Player attribute `Ready`) and publishes
+-- `ReadyCount` / `QueuedCount` on MatchState.
+function MatchService.setReady(c: any, value: boolean)
+	if value and (state ~= "Intermission" or c.inMatch or not c.profileLoaded) then
+		value = false
+	end
+	if value and not c.autoQueue then
+		-- Ready means "put me in": it turns Play again back on
+		c.autoQueue = true
+		c.player:SetAttribute("AutoQueue", true)
+	end
+	c.ready = value
+	c.player:SetAttribute("Ready", value)
+end
+
+local function clearReady()
+	for _, c in S.PlayerStateService.realPlayers() do
+		if c.ready then
+			MatchService.setReady(c, false)
+		end
+	end
+	MatchService.setAttr("ReadyCount", 0)
+	MatchService.setAttr("QueuedCount", 0)
+end
+
+local function countReady(queued: { any }): number
+	local n = 0
+	for _, c in queued do
+		if c.ready then
+			n += 1
+		end
+	end
+	MatchService.setAttr("ReadyCount", n)
+	MatchService.setAttr("QueuedCount", #queued)
+	return n
 end
 
 -- Called by CombatService for every confirmed enemy hit.
@@ -289,7 +333,7 @@ end
 
 function MatchService.moveToLobby(c: any)
 	c.inMatch = false
-	c.hitsTaken = 0
+	S.PlayerStateService.setDamage(c, 0)
 	S.PlayerStateService.setTeam(c, nil)
 	S.PlayerStateService.setStatus(c, "Lobby")
 	S.PlayerStateService.setAction(c, "Idle")
@@ -301,7 +345,7 @@ function MatchService.moveToLobby(c: any)
 		c.humanoid.WalkSpeed = Config.Player.WalkSpeed
 		c.humanoid.JumpPower = Config.Player.JumpPower
 	end
-	S.CharacterService.placeFacing(c, ArenaLayout.lobbySpawn(rng), ArenaLayout.CourtFocus)
+	S.CharacterService.placeFacing(c, ArenaLayout.lobbySpawn(rng), ArenaLayout.DummyHome)
 end
 
 local function jailSpot(c: any): Vector3
@@ -443,7 +487,7 @@ function MatchService.onJailHit(thrower: any, target: any)
 		S.PlayerStateService.setStatus(thrower, "Active")
 		S.PlayerStateService.setAction(thrower, "Idle")
 		thrower.immuneUntil = now() + J.ReturnImmunity
-		thrower.hitsTaken = 0 -- back on court with a clean slate
+		S.PlayerStateService.setDamage(thrower, 0) -- back on court with a clean slate
 		thrower.stats.jailEscapes += 1
 		feed(("%s escaped jail!"):format(tag(thrower)))
 		S.AnalyticsService.event(thrower, "JailReturn")
@@ -500,7 +544,8 @@ local function courtStep()
 		elseif (c.status == "Jailed" or c.status == "Spectating") and S.PlayerStateService.isAlive(c) then
 			local pos = c.root.Position
 			if pos.Y < ArenaLayout.VoidY then
-				S.CharacterService.teleport(c, jailSpot(c))
+				local spot = jailSpot(c)
+				S.CharacterService.placeFacing(c, spot, faceCenter(spot))
 			end
 		end
 	end
@@ -546,7 +591,7 @@ local function resetCombatant(c: any)
 	c.lastHitBy = nil
 	c.lastHitAt = -math.huge
 	c.immuneUntil = 0
-	c.hitsTaken = 0
+	S.PlayerStateService.setDamage(c, 0)
 	c.chargeStart = nil
 	c.catchUntil = 0
 	c.dodgeReadyAt = 0
@@ -586,7 +631,7 @@ local function resetRound()
 		if not S.PlayerStateService.isAlive(c) then
 			-- built facing the enemy: a build still waiting on the avatar finishes after the teleport
 			-- below, so its own CFrame is where it ends up
-			local cf = CFrame.lookAt(pos, faceCenter(pos))
+			local cf = ArenaLayout.faceFlat(pos, faceCenter(pos))
 			if c.player then
 				S.CharacterService.spawnPlayer(c, cf)
 			else
@@ -1004,6 +1049,12 @@ local function runMatch(queued: { any })
 		end
 		if roundNumber == 1 then
 			announceFeatured()
+			-- new players: how you actually win a fight (damage % only sets how far you fly)
+			for _, c in roster do
+				if c.player and c.profile and (tonumber(c.profile.Matches) or 0) < Config.Damage.HintMatches then
+					S.NetService.send(c.player, "Hint", { text = "Hit them off the court!", duration = 3, fade = true })
+				end
+			end
 		end
 		local result, byElimination = playRound()
 		publishCounts()
@@ -1114,8 +1165,10 @@ function MatchService.run()
 				queued = MatchService.queuedPlayers()
 			until #queued > 0
 		end
-		setState("Intermission", M.Intermission)
-		local endsAt = now() + M.Intermission
+		-- hard cap: the match starts after LobbyMaxWait whether or not everyone pressed Ready
+		clearReady()
+		setState("Intermission", M.LobbyMaxWait)
+		local endsAt = now() + M.LobbyMaxWait
 		local cancelled = false
 		while now() < endsAt do
 			task.wait(0.2)
@@ -1124,11 +1177,13 @@ function MatchService.run()
 				cancelled = true
 				break
 			end
-			if devSkip or (M.IntermissionSkipWhenFull and #queued >= M.MaxPlayers) then
+			local allReady = countReady(queued) >= #queued
+			if devSkip or allReady or (M.IntermissionSkipWhenFull and #queued >= M.MaxPlayers) then
 				devSkip = false
 				break
 			end
 		end
+		clearReady()
 		if not cancelled then
 			local trace = ""
 			local ok = xpcall(runMatch, function(e)

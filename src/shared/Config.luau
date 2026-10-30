@@ -13,7 +13,9 @@ Config.Debug = {
 Config.Match = {
 	MinPlayers = 1, -- Amendment A2: a solo player gets a bot-filled 3v3
 	MaxPlayers = 12,
-	Intermission = 15, -- hub time between matches: talk, practice, shop, change cosmetics
+	-- hub time between matches (talk, practice, shop, spin): the match starts after this many
+	-- seconds, or sooner once every queued player has pressed Ready
+	LobbyMaxWait = 25,
 	IntermissionSkipWhenFull = true,
 	RoundCountdown = 3,
 	RoundTime = 75,
@@ -150,10 +152,24 @@ Config.Knockback = {
 	LimbSpin = 9, -- rad/s random per-limb spin
 	LimbFlail = 10, -- studs/s random per-limb velocity (averages out across the body)
 	-- Each hit you take launches you harder (Smash-style). The knockback above is scaled by
-	-- First + PerHit × (hits already taken), up to Max; the ragdoll lasts a little longer too.
-	-- Hits thrown from jail land at your current level without raising it. The count resets each
-	-- round and when you get back on court from jail.
-	Escalation = { First = 0.3, PerHit = 0.3, Max = 2.4 },
+	-- First + PerPercent × (your damage % before the hit), up to Max; the ragdoll lasts a little
+	-- longer too. An average hit (15%) adds 0.3, so Max is reached around 105%.
+	Escalation = { First = 0.3, PerPercent = 0.02, Max = 2.4 },
+}
+
+-- Damage % (Smash-style, shown on the HUD and over opponents' heads). Each hit adds Min..Max by
+-- throw charge; it only drives knockback (Config.Knockback.Escalation): you're out when you're
+-- knocked off the court. Hits thrown from jail land at your current % without raising it. It resets
+-- each round and when you get back on court from jail.
+Config.Damage = {
+	PerHitMin = 10, -- a quick throw
+	PerHitMax = 18, -- full charge
+	Cap = 999,
+	-- HUD / billboard color: white at 0%, yellow at YellowAt, red from RedAt
+	YellowAt = 50,
+	RedAt = 100,
+	-- "Hit them off the court!" shows at match start for a player's first HintMatches matches
+	HintMatches = 3,
 }
 
 Config.Ball = {

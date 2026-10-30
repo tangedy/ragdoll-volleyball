@@ -17,7 +17,7 @@ NetSchema.Actions = {
 	Dodge = "Dodge",
 	Catch = "Catch",
 	SetAutoQueue = "SetAutoQueue",
-	SetBusy = "SetBusy", -- a hub menu is open: don't pull this player into a match meanwhile
+	SetReady = "SetReady", -- the lobby Ready button: all queued players ready starts the match early
 	SetTouchCamera = "SetTouchCamera", -- Shift lock on touch: the camera only turns when dragged
 	SetSetting = "SetSetting",
 	ReportDevice = "ReportDevice",
@@ -90,7 +90,7 @@ NetSchema.Validators = {
 		end
 		return { value = p.value }
 	end,
-	SetBusy = function(p: any): any
+	SetReady = function(p: any): any
 		if not isTable(p) or type(p.value) ~= "boolean" then
 			return nil
 		end

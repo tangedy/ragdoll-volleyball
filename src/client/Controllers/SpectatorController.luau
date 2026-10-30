@@ -1,24 +1,45 @@
 --!strict
 -- Simple spectating (spec §10 "Elimination"): after the fall, follow a living teammate and allow
 -- switching. Kept separate from active-player controls.
+-- The same view also serves the hub: while a match is running, the Spectate action lets a lobby
+-- player watch everyone on the court. That mode is purely client-side (the server still sees a
+-- "Lobby" player), so it never holds anyone out of the next match: it ends on its own when the match
+-- does, or the moment the player is pulled onto the court.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local Net = require(script.Parent.Net)
+local ShopController = require(script.Parent.ShopController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
 local player = Players.LocalPlayer
 
 local SpectatorController = {}
 
+-- MatchState phases with a match on the court (anything but WaitingForPlayers / Intermission)
+local LIVE = { Intro = true, RoundCountdown = true, RoundActive = true, RoundResolution = true, Finisher = true }
+
 local index = 1
 local active = false
+local hubWatching = false -- watching from the hub (the Spectate action) rather than knocked out
 local gui: ScreenGui
 local nameLabel: TextLabel
+local exitButton: TextButton
+local spectateAction: TextButton
 
-local function teammates(): { Model }
+local function matchLive(): boolean
+	return LIVE[Net.MatchState:GetAttribute("State") :: any] == true
+end
+
+local function inHub(): boolean
+	return player:GetAttribute("Status") == "Lobby" and (player:GetAttribute("Team") or "") == ""
+end
+
+-- Who can be watched: living teammates when knocked out, anyone on the court from the hub.
+local function targets(): { Model }
 	local team = player:GetAttribute("Team")
 	local list = {}
 	local function scan(parent: Instance)
@@ -26,7 +47,7 @@ local function teammates(): { Model }
 			if
 				m:IsA("Model")
 				and m ~= player.Character
-				and m:GetAttribute("Team") == team
+				and (hubWatching or m:GetAttribute("Team") == team)
 				and m:GetAttribute("Status") == "Active"
 			then
 				table.insert(list, m)
@@ -39,6 +60,10 @@ local function teammates(): { Model }
 		scan(bots)
 	end
 	table.sort(list, function(a, b)
+		local ta, tb = tostring(a:GetAttribute("Team")), tostring(b:GetAttribute("Team"))
+		if ta ~= tb then
+			return ta < tb
+		end
 		return a.Name < b.Name
 	end)
 	return list
@@ -54,6 +79,7 @@ local function setActive(on: boolean)
 	end
 	active = on
 	gui.Enabled = on
+	ShopController.hubHidden = on and hubWatching
 	if on then
 		ContextActionService:BindAction("RD_SpecPrev", function(_, s)
 			if s == Enum.UserInputState.Begin then
@@ -113,12 +139,46 @@ function SpectatorController.init()
 		Size = UDim2.new(1, -140, 0, 28),
 		Text = "",
 	}, 0)
+	-- back to the hub (hub watchers only: the knocked-out wait for the next round)
+	exitButton = Theme.iconButton(bar, "close", "secondary", 40, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(1, -6, 0, 2),
+		Visible = false,
+		back = true,
+	})
+	exitButton.Activated:Connect(function()
+		SpectatorController.setHubWatching(false)
+	end)
+end
+
+function SpectatorController.setHubWatching(on: boolean)
+	on = on and matchLive() and inHub()
+	if on == hubWatching then
+		return
+	end
+	if active then
+		setActive(false) -- hands the camera back before the mode changes
+	end
+	hubWatching = on
+	index = 1
+	exitButton.Visible = on
 end
 
 function SpectatorController.start()
+	-- the hub's Spectate action: on the touch row it folds behind the hamburger like the rest
+	spectateAction = ShopController.addAction("Spectate", Theme.Toybox.sky, "eye", -2, function()
+		SpectatorController.setHubWatching(true)
+	end)
+	spectateAction.Visible = false
 	local spectateSince = 0
 	RunService.RenderStepped:Connect(function()
 		local status = player:GetAttribute("Status")
+		local live = matchLive()
+		spectateAction.Visible = live and not active
+		-- the match ending, or the lobby pulling you in, ends hub watching on its own
+		if hubWatching and not (live and inHub()) then
+			SpectatorController.setHubWatching(false)
+		end
 		local spectating = status == "Spectating"
 		if spectating and spectateSince == 0 then
 			spectateSince = os.clock()
@@ -126,8 +186,8 @@ function SpectatorController.start()
 			spectateSince = 0
 		end
 		-- briefly show the launch and fall before switching to a teammate
-		local want = spectating and os.clock() - spectateSince > 1.6
-		local list = if want then teammates() else {}
+		local want = hubWatching or (spectating and os.clock() - spectateSince > 1.6)
+		local list = if want then targets() else {}
 		setActive(want and #list > 0)
 		if active then
 			index = ((index - 1) % #list) + 1

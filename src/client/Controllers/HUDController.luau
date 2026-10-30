@@ -16,6 +16,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local BallDefinitions = require(Shared.BallDefinitions)
+local ProjectileMath = require(Shared.ProjectileMath)
 local Net = require(script.Parent.Net)
 local AimController = require(script.Parent.AimController)
 local LockController = require(script.Parent.LockController)
@@ -39,6 +40,7 @@ local pips: { Red: { Frame }, Blue: { Frame } } = { Red = {}, Blue = {} }
 local stars: { Red: { Frame }, Blue: { Frame } } = { Red = {}, Blue = {} }
 local queueSetters: { (boolean) -> () } = {}
 local touchLayout: boolean? = nil -- whether update last laid the HUD out for touch
+local shownDamage = 0 -- the damage % the HUD last drew
 
 local function tween(
 	inst: Instance,
@@ -510,6 +512,26 @@ local function build()
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
 
+	-- Your damage % (Smash-style), over the held-ball pill: big outlined numerals straight over the
+	-- world, white -> sun -> joy red as it climbs (Config.Damage)
+	local damage = Theme.new("Frame", {
+		Name = "Damage",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L - 46 - Theme.Space.M - 42 - Theme.Space.S),
+		Size = UDim2.fromOffset(140, 64),
+		BackgroundTransparency = 1,
+		Visible = false,
+	}, gui)
+	Theme.autoScale(damage)
+	refs.damageFrame = damage
+	refs.damage = Theme.label(damage, { Size = UDim2.new(1, 0, 0, 46), Text = "0%" }, 4)
+	Theme.label(damage, {
+		Position = UDim2.fromOffset(0, 46),
+		Size = UDim2.new(1, 0, 0, 16),
+		FontFace = Theme.LabelFace,
+		Text = "DAMAGE",
+	}, 2)
+
 	-- Bottom centre: controller legends (with cooldowns)
 	local legends = Theme.new("Frame", {
 		Name = "Legends",
@@ -542,50 +564,39 @@ local function build()
 		:Connect(function()
 			LockController.cycle()
 		end)
-	-- Bottom right, in the hub: the Play again toggle
+	-- Bottom right, in the hub during the intermission: the Ready button with the ready count over
+	-- it. Pressed, it turns into the countdown to the match (press again to cancel). The server owns
+	-- the flag: the button only ever shows the `Ready` attribute.
 	local corner = Theme.new("Frame", {
 		Name = "Corner",
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L),
-		Size = UDim2.fromOffset(200, 48),
+		Size = UDim2.fromOffset(200, 82),
 		BackgroundTransparency = 1,
 	}, gui)
 	refs.corner = corner
 	Theme.autoScale(corner, 0.95)
-	local playAgain = Theme.pill(corner, {
-		Name = "PlayAgain",
-		Size = UDim2.fromOffset(200, 48),
+	local readyCount = Theme.pill(corner, {
+		Name = "ReadyCount",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromScale(0.5, 0),
+		Size = UDim2.fromOffset(110, 24),
 	})
-	Theme.text(playAgain, 17, {
-		Position = UDim2.fromOffset(18, 0),
-		Size = UDim2.new(1, -90, 1, 0),
-		Text = "Play again",
-		TextXAlignment = Enum.TextXAlignment.Left,
-	})
-	local queueOn = true
-	local toggle, setQueue = Theme.toggle(playAgain, true, function(v)
-		queueOn = v
-		HUDController.applySetting("PlayAgain", v)
-	end, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0) })
-	HUDController.followQueue(function(v)
-		queueOn = v
-		setQueue(v)
-	end)
-	-- the whole pill flips it, not just the small switch (a thumb on a phone rarely lands on that)
-	Theme.new("TextButton", {
-		Name = "Hit",
+	refs.readyCountText = Theme.text(readyCount, 15, {
 		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Text = "",
-		ZIndex = toggle.ZIndex + 2,
-	}, playAgain).Activated
-		:Connect(function()
-			queueOn = not queueOn
-			setQueue(queueOn)
-			Theme.sound(if queueOn then "UIToggleOn" else "UIToggleOff")
-			HUDController.applySetting("PlayAgain", queueOn)
-		end)
-	refs.playAgain = playAgain
+		Text = "0/0 ready",
+	})
+	refs.readyCount = readyCount
+	local readyButton = Theme.button(corner, "Ready", "primary", {
+		Name = "Ready",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.fromScale(0, 1),
+		Size = UDim2.fromOffset(200, 56),
+	})
+	readyButton.Activated:Connect(function()
+		Net.request(Net.Actions.SetReady, { value = player:GetAttribute("Ready") ~= true })
+	end)
+	refs.readyButton = readyButton
 
 	-- Results card (non-blocking): title + tier sticker, coins counting up, three stat wells, level
 	local results = Theme.panel(gui, {
@@ -719,20 +730,34 @@ function HUDController.banner(
 end
 
 local hintToken = 0
-function HUDController.hint(text: string, duration: number?)
+-- With `fade`, the bubble fades out at the end instead of just disappearing.
+function HUDController.hint(text: string, duration: number?, fade: boolean?)
 	hintToken += 1
 	local token = hintToken
 	local pill = refs.hintPill :: Frame
-	refs.hint.Text = text
+	local label = refs.hint :: TextLabel
+	pill.BackgroundTransparency = 0
+	label.TextTransparency = 0
+	label.Text = text
 	pill.Visible = text ~= ""
 	if text == "" then
 		return
 	end
 	Theme.pop(pill, 0.6, Theme.Motion.Slow)
 	task.delay(duration or 1.5, function()
-		if token == hintToken then
-			pill.Visible = false
+		if token ~= hintToken then
+			return
 		end
+		if not fade then
+			pill.Visible = false
+			return
+		end
+		tween(pill, Theme.Motion.Slow, { BackgroundTransparency = 1 })
+		tween(label, Theme.Motion.Slow, { TextTransparency = 1 }).Completed:Once(function()
+			if token == hintToken then
+				pill.Visible = false
+			end
+		end)
 	end)
 end
 
@@ -1162,11 +1187,10 @@ local function update()
 	local phase = ""
 	-- in the hub, say plainly why you aren't being put in a match (never a silent wait)
 	local queueOff = player:GetAttribute("AutoQueue") == false
-	local busy = player:GetAttribute("Busy") == true
-	local waitReason = if queueOff
-		then "Play again is off · turn it on in ⚙ to play"
-		elseif busy then "Close the menu to join the next match"
-		else nil
+	local waitReason = if not queueOff
+		then nil
+		elseif state == "Intermission" then "Play again is off · press Ready to play"
+		else "Play again is off · turn it on in ⚙ to play"
 	if not inMatch and waitReason and (state == "WaitingForPlayers" or state == "Intermission" or live) then
 		phase = waitReason
 	elseif state == "WaitingForPlayers" then
@@ -1195,10 +1219,21 @@ local function update()
 	local below = if live then 140 * s else Theme.Space.M
 	refs.phasePill.Position = UDim2.new(0.5, 0, 0, below)
 	refs.results.Position = UDim2.new(0.5, 0, 0, below + (if refs.phasePill.Visible then 40 * s else 0) + 16 * s)
-	local hub = not live or not inMatch
-	refs.playAgain.Visible = hub
+	local lobby = state == "Intermission" and not inMatch
+	refs.corner.Visible = lobby
+	if lobby then
+		local ready = player:GetAttribute("Ready") == true
+		local face = refs.readyButton:FindFirstChild("Face") :: Frame
+		local label = face:FindFirstChild("Label") :: TextLabel
+		face.BackgroundColor3 = if ready then T.sun else T.leaf
+		label.TextColor3 = if ready then Theme.textOn(T.sun) else T.onFill
+		label.Text = if ready then ("✓ %s · Cancel"):format(fmtTime(left)) else "Ready"
+		local queuedN = num("QueuedCount", 0)
+		refs.readyCount.Visible = queuedN > 0
+		refs.readyCountText.Text = ("%d/%d ready"):format(num("ReadyCount", 0), queuedN)
+	end
 	-- on touch screens the controls own the bottom-right corner and the hub icons the bottom row:
-	-- Play again moves to the top right, a size up so it's an easy thumb target, and the kill feed
+	-- Ready moves to the top right, a size up so it's an easy thumb target, and the kill feed
 	-- (a little smaller) steps down under it instead of piling on top
 	local touch = AimController.lastInput == "Touch"
 	if touch ~= touchLayout then
@@ -1211,7 +1246,7 @@ local function update()
 		then UDim2.new(1, -Theme.Space.M, 0, Theme.Space.M)
 		else UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L)
 	local feedTop = Theme.Space.S
-	if touch and hub then
+	if touch and lobby then
 		local corner = refs.corner :: Frame
 		feedTop = corner.AbsolutePosition.Y + corner.AbsoluteSize.Y - gui.AbsolutePosition.Y + Theme.Space.S
 	end
@@ -1259,6 +1294,18 @@ local function update()
 		refs.held.Visible = false
 	end
 
+	-- damage %
+	refs.damageFrame.Visible = live and inMatch and status == "Active"
+	local dmg = tonumber(player:GetAttribute("Damage")) or 0
+	if dmg ~= shownDamage then
+		refs.damage.Text = ("%d%%"):format(dmg)
+		refs.damage.TextColor3 = ProjectileMath.damageColor(dmg)
+		if dmg > shownDamage and refs.damageFrame.Visible and not HUDController.settings.ReducedMotion then
+			Theme.pop(refs.damage, 1.5, Theme.Motion.Base)
+		end
+		shownDamage = dmg
+	end
+
 	-- legends + cooldowns (touch screens have their own buttons)
 	refs.chips.Visible = AimController.lastInput ~= "Touch"
 	local t = Workspace:GetServerTimeNow()
@@ -1293,7 +1340,7 @@ function HUDController.start()
 		end
 	end)
 	Net.on("Hint", function(d)
-		HUDController.hint(d.text, d.duration)
+		HUDController.hint(d.text, d.duration, d.fade == true)
 	end)
 	Net.on("Feed", function(d)
 		HUDController.feed(d.text)
