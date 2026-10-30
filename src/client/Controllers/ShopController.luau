@@ -1459,21 +1459,39 @@ function ShopController.sheet(
 end
 
 -- On touch screens the right edge belongs to the controls, so the action column becomes a row along
--- the bottom, a little larger, centred in the free space between the coins chip and the controls
--- (and shrunk only if that space is too narrow).
+-- the bottom, a little larger, in the free space between the coins chip and the controls (and shrunk
+-- only if that space is too narrow). The row folds away behind a hamburger button at its left end,
+-- which carries a (!) while any of the folded buttons has one.
 local ACTION_W, ACTION_H = 84, 56 + Theme.Ledge + 26 -- one Theme.roundAction button
 local ACTIONS = 6 -- Bundles, Coins, Shop, Spin, Daily, Settings
 local ROW_W = ACTIONS * ACTION_W + (ACTIONS - 1) * Theme.Space.L
+local TOUCH_W = ROW_W + ACTION_W + Theme.Space.L -- the row plus the menu button
 local TOUCH_SCALE = 1.25 -- relative to the rest of the HUD
 local actionLayout: UIListLayout
 local actionScale: UIScale
+local actionDots: { { button: TextButton, dot: Frame } } = {}
+local menuButton: TextButton
+local menuScale: UIScale
+local menuDot: Frame
+local menuGlyph: GuiObject
+local menuClose: GuiObject
+local menuOpen = false -- the touch row is unfolded
 local rowMode: boolean? = nil
+local function setMenuOpen(on: boolean)
+	menuOpen = on
+	menuGlyph.Visible = not on
+	menuClose.Visible = on
+end
 local function layoutActions(gui: ScreenGui)
 	local touch = AimController.lastInput == "Touch"
 	if touch ~= rowMode then
 		rowMode = touch
+		setMenuOpen(false)
 		actionLayout.FillDirection = if touch then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical
-		actionRow.AnchorPoint = if touch then Vector2.new(0.5, 1) else Vector2.new(1, 0.5)
+		actionLayout.HorizontalAlignment = if touch
+			then Enum.HorizontalAlignment.Left
+			else Enum.HorizontalAlignment.Center
+		actionRow.AnchorPoint = if touch then Vector2.new(0, 1) else Vector2.new(1, 0.5)
 		actionRow.Size = if touch
 			then UDim2.fromOffset(ROW_W, ACTION_H)
 			else UDim2.fromOffset(ACTION_W, ACTIONS * ACTION_H + (ACTIONS - 1) * Theme.Space.L)
@@ -1484,9 +1502,20 @@ local function layoutActions(gui: ScreenGui)
 			actionScale.Scale = s
 		end
 	end
+	menuButton.Visible = touch and actionRow.Visible
 	if not touch then
 		return
 	end
+	-- the hamburger's (!) mirrors the folded buttons' dots
+	local any = false
+	for _, e in actionDots do
+		if e.button.Visible and e.dot.Visible then
+			any = true
+			break
+		end
+	end
+	menuDot.Visible = any
+	actionRow.Visible = actionRow.Visible and menuOpen
 	local pg = player:FindFirstChildOfClass("PlayerGui")
 	local profile = pg and pg:FindFirstChild("Profile")
 	local chip = profile and profile:FindFirstChild("Chip") :: GuiObject?
@@ -1494,12 +1523,15 @@ local function layoutActions(gui: ScreenGui)
 	local catch = controls and controls.Enabled and controls:FindFirstChild("Catch", true) :: GuiObject?
 	local left = if chip then chip.AbsolutePosition.X + chip.AbsoluteSize.X else gui.AbsolutePosition.X
 	local right = if catch then catch.AbsolutePosition.X else gui.AbsolutePosition.X + gui.AbsoluteSize.X
-	local s = math.clamp((right - left - 2 * Theme.Space.M) / ROW_W, 0.3, Theme.uiScale() * TOUCH_SCALE)
+	local s = math.clamp((right - left - 2 * Theme.Space.M) / TOUCH_W, 0.3, Theme.uiScale() * TOUCH_SCALE)
 	if actionScale.Scale ~= s then
 		actionScale:SetAttribute("Base", s)
 		actionScale.Scale = s
 	end
-	actionRow.Position = UDim2.new(0, (left + right) / 2 - gui.AbsolutePosition.X, 1, -Theme.Space.S)
+	menuScale.Scale = s
+	local x = left + Theme.Space.M - gui.AbsolutePosition.X
+	menuButton.Position = UDim2.new(0, x, 1, -Theme.Space.S)
+	actionRow.Position = UDim2.new(0, x + (ACTION_W + Theme.Space.L) * s, 1, -Theme.Space.S)
 end
 
 -- Is any hub sheet (shop, daily, settings, spin...) open? Theme.show/hide keep ThemeOpen current.
@@ -1521,7 +1553,10 @@ function ShopController.addAction(
 	onClick: () -> ()
 ): (TextButton, Frame)
 	local b, dot = Theme.roundAction(actionRow, label, tone, glyph, { LayoutOrder = order })
+	table.insert(actionDots, { button = b, dot = dot })
 	b.Activated:Connect(function()
+		-- picking a destination folds the touch row back behind the hamburger
+		setMenuOpen(false)
 		-- opening plays the sheet's UIOpen; tapping the icon of the open sheet closes it: UIBack
 		local wasOpen = anySheetOpen()
 		onClick()
@@ -2174,6 +2209,30 @@ function ShopController.init()
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, actionRow)
 	actionScale = Theme.autoScale(actionRow, 0.95)
+	-- the touch row's hamburger (hidden on desktop; see layoutActions): a menu glyph that turns into a
+	-- close cross while the row is unfolded
+	menuButton, menuDot = Theme.roundAction(gui, "Menu", T.surface, "menu", {
+		AnchorPoint = Vector2.new(0, 1),
+		Visible = false,
+	})
+	local face = menuButton:FindFirstChild("Face") :: Frame
+	for _, child in face:GetChildren() do
+		if child:FindFirstChildOfClass("UIAspectRatioConstraint") then
+			menuGlyph = child :: GuiObject
+		end
+	end
+	menuClose = Theme.glyph(face, "close", T.onFill, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.4, 0.4),
+		ZIndex = menuGlyph.ZIndex,
+		Visible = false,
+	})
+	menuScale = new("UIScale", nil, menuButton)
+	menuButton.Activated:Connect(function()
+		setMenuOpen(not menuOpen)
+		SoundController.play(if menuOpen then "UIOpen" else "UIBack")
+	end)
 	ShopController.addAction("Shop", T.sun, "bag", 1, function()
 		ShopController.openShop(not ShopController.isOpen(shop.frame))
 	end)
@@ -2293,6 +2352,8 @@ function ShopController.start()
 		actionRow.Visible = not backdrop.Visible
 		if hub then
 			layoutActions(gui)
+		elseif menuOpen then
+			setMenuOpen(false)
 		end
 		if not hub and backdrop.Visible then
 			ShopController.closeAll()

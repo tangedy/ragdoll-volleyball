@@ -364,6 +364,9 @@ function DataService.load(c: any)
 		return
 	end
 	pushProfile(c)
+	-- set before ProfileReady so the Robux buttons (Bundles, Coins) are there when the loading
+	-- screen lifts, with the rest of the row; PurchaseService's clock keeps it current after that
+	player:SetAttribute("RobuxOk", S.PurchaseService.robuxUnlocked(c))
 	player:SetAttribute("ProfileReady", true) -- the loading screen waits for this
 end
 

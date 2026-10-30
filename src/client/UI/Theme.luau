@@ -875,6 +875,18 @@ function Theme.glyph(parent: Instance, name: string, color: Color3, props: { [st
 			}, holder)
 			Theme.round(bar)
 		end
+	elseif name == "menu" then
+		-- three round-capped bars stacked (the hamburger)
+		for _, y in { 0.2, 0.5, 0.8 } do
+			local bar = new("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, y),
+				Size = UDim2.fromScale(0.95, 0.18),
+				BackgroundColor3 = color,
+				ZIndex = z,
+			}, holder)
+			Theme.round(bar)
+		end
 	elseif name == "bag" then
 		-- shopping bag: a wide body with only the top of its handle loop showing
 		local handle = new("Frame", {
