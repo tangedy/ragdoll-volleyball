@@ -33,7 +33,7 @@ AimController.preferNearest = false
 AimController.localHeld = function(): boolean
 	return false
 end
-AimController.localThrow = function(_dir: Vector3, _origin: Vector3, _speed: number, _charge: number) end
+AimController.localThrow = function(_dir: Vector3, _origin: Vector3, _speed: number) end
 AimController.extraTargets = function(): { Model }
 	return {}
 end
@@ -215,7 +215,7 @@ function AimController.computeDirection(): (Vector3?, Vector3?, number)
 	local sp = AimController.screenPoint()
 	local ray = camera:ViewportPointToRay(sp.X, sp.Y)
 	local ballType = attr("HeldBall") or "Standard"
-	local speed = ProjectileMath.throwSpeed(1, ballType)
+	local speed = ProjectileMath.throwSpeed(ballType)
 	local g = ProjectileMath.gravity(ballType)
 	local target = pickTarget(ray)
 	local point: Vector3
@@ -275,7 +275,7 @@ local function throwNow()
 	end
 	hideDots()
 	if AimController.localHeld() then
-		AimController.localThrow(dir, origin, speed, 1)
+		AimController.localThrow(dir, origin, speed)
 		return
 	end
 	local ballType = attr("HeldBall") or "Standard"

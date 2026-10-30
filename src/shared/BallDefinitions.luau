@@ -13,6 +13,7 @@ export type BallDef = {
 	GravityScale: number,
 	HorizontalKnockbackScale: number,
 	UpwardKnockbackScale: number,
+	DamageScale: number, -- × Config.Damage.PerHit: power balls build damage % faster
 	Trail: boolean,
 }
 
@@ -27,6 +28,7 @@ local Defs: { [string]: BallDef } = {
 		GravityScale = 1,
 		HorizontalKnockbackScale = 1,
 		UpwardKnockbackScale = 1,
+		DamageScale = 1,
 		Trail = false,
 	},
 	Heavy = {
@@ -39,6 +41,7 @@ local Defs: { [string]: BallDef } = {
 		GravityScale = 1.3,
 		HorizontalKnockbackScale = 1.25,
 		UpwardKnockbackScale = 1,
+		DamageScale = 1.75,
 		Trail = false,
 	},
 	Rocket = {
@@ -51,6 +54,7 @@ local Defs: { [string]: BallDef } = {
 		GravityScale = 0.5,
 		HorizontalKnockbackScale = 0.85,
 		UpwardKnockbackScale = 1,
+		DamageScale = 1.5,
 		Trail = true,
 	},
 	Pop = {
@@ -63,6 +67,7 @@ local Defs: { [string]: BallDef } = {
 		GravityScale = 1,
 		HorizontalKnockbackScale = 0.55,
 		UpwardKnockbackScale = 2.2,
+		DamageScale = 1.5,
 		Trail = false,
 	},
 }

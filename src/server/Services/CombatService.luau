@@ -301,7 +301,7 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 	local t = now()
 	-- every hit launches harder than the last; a throw from jail lands at the current level
 	local scale = ProjectileMath.escalation(target.damage)
-	local kb = ProjectileMath.knockback(ball.vel, ball.charge, ball.type, scale)
+	local kb = ProjectileMath.knockback(ball.vel, ball.type, scale)
 	local ragdollTime = ProjectileMath.ragdollDuration(scale)
 	local ballType = ball.type
 	S.BallService.spend(ball, pos, -ball.vel * 0.12 + Vector3.new(0, 14, 0))
@@ -309,7 +309,8 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 		return -- repeated hits during immunity add no force and do not extend the ragdoll
 	end
 	if not (thrower and thrower.status == "Jailed") then
-		S.PlayerStateService.setDamage(target, target.damage + ProjectileMath.damageFor(ball.charge))
+		local dist = if ball.throwOrigin then ProjectileMath.flatDistance(ball.throwOrigin, pos) else nil
+		S.PlayerStateService.setDamage(target, target.damage + ProjectileMath.damageFor(ball.type, dist))
 	end
 	-- cancel current action; getting hit while charging drops the ball
 	target.chargeStart = nil
@@ -336,7 +337,6 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 		target = target.player,
 		targetModel = target.character, -- clients flash this character white
 		thrower = thrower and thrower.player,
-		charge = ball.charge,
 		escalation = scale,
 	})
 	if thrower then
@@ -368,12 +368,12 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 end
 
 -- Studio dev key (F10): fling a combatant exactly like a real hit coming from behind them.
-function CombatService.debugLaunch(c: any, charge: number)
+function CombatService.debugLaunch(c: any)
 	if not c.character or not c.root or ragdolled(c) then
 		return
 	end
 	local look = c.root.CFrame.LookVector
-	local kb = ProjectileMath.knockback(look * 100, charge, "Standard")
+	local kb = ProjectileMath.knockback(look * 100, "Standard")
 	if c.heldBall then
 		S.BallService.drop(c)
 	end
@@ -415,10 +415,8 @@ function CombatService.doThrow(c: any, dir: Vector3, throwId: number): boolean
 		send(c, "ThrowResult", { throwId = throwId, ok = false })
 		return false
 	end
-	local charge = 1 -- every throw is full power: tap to fire, no charging
 	c.chargeStart = nil
-	local speed = ProjectileMath.throwSpeed(charge, ball.type)
-	S.BallService.launch(c, dir * speed, charge, throwId)
+	S.BallService.launch(c, dir * ProjectileMath.throwSpeed(ball.type), throwId) -- instant, full power
 	S.PlayerStateService.setAction(c, "Recovering", P.ThrowRecovery)
 	c.stats.throws += 1
 	send(c, "ThrowResult", { throwId = throwId, ok = true })

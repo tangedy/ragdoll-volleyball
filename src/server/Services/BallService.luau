@@ -24,13 +24,13 @@ export type Ball = {
 	holder: any?,
 	weld: WeldConstraint?,
 	lastThrower: any?,
+	throwOrigin: Vector3?,
 	lastTeam: string?,
 	stateAt: number,
 	lockoutUntil: number,
 	throwerLockoutUntil: number,
 	pos: Vector3,
 	vel: Vector3,
-	charge: number,
 	throwId: number,
 	flightT: number,
 	hasHit: boolean,
@@ -308,7 +308,6 @@ function BallService.spawn(ballType: string, pos: Vector3, context: string, isPo
 		throwerLockoutUntil = 0,
 		pos = pos,
 		vel = Vector3.zero,
-		charge = 0,
 		throwId = 0,
 		flightT = 0,
 		hasHit = false,
@@ -388,7 +387,7 @@ function BallService.drop(c: any)
 end
 
 -- Launch a held ball. `velocity` is fully server-computed.
-function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: number): Ball?
+function BallService.launch(c: any, velocity: Vector3, throwId: number): Ball?
 	local ball = c.heldBall :: Ball?
 	local root = c.root :: BasePart?
 	if not ball or not root then
@@ -411,7 +410,6 @@ function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: 
 	part.CFrame = CFrame.new(origin)
 	ball.pos = origin
 	ball.vel = velocity
-	ball.charge = charge
 	ball.throwId = throwId
 	ball.flightT = 0
 	ball.syncedAt = 0
@@ -419,6 +417,7 @@ function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: 
 	launchSeq += 1
 	ball.launchSeq = launchSeq
 	ball.lastThrower = c
+	ball.throwOrigin = origin -- closer hits deal more damage (ProjectileMath.damageFor)
 	ball.lastTeam = c.team
 	ball.lockoutUntil = now() + Config.Ball.PickupLockout
 	ball.throwerLockoutUntil = now() + Config.Ball.ThrowerLockout

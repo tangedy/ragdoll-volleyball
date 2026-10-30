@@ -36,7 +36,7 @@ type PBall = {
 	weld: WeldConstraint?,
 	pos: Vector3,
 	vel: Vector3,
-	charge: number,
+	throwOrigin: Vector3?, -- where it left the hand (closer hits deal more damage)
 	flightT: number,
 	lockUntil: number,
 	backAt: number,
@@ -141,7 +141,6 @@ local function makeBall(home: Vector3): PBall
 		weld = nil,
 		pos = home,
 		vel = Vector3.zero,
-		charge = 0,
 		flightT = 0,
 		lockUntil = 0,
 		backAt = 0,
@@ -189,7 +188,7 @@ local function pickUp(b: PBall, character: Model)
 	Net.request(Net.Actions.Practice, { event = "Pickup" })
 end
 
-function PracticeController.throw(dir: Vector3, origin: Vector3, speed: number, charge: number)
+function PracticeController.throw(dir: Vector3, origin: Vector3, speed: number)
 	local b = held
 	if not b then
 		return
@@ -206,7 +205,7 @@ function PracticeController.throw(dir: Vector3, origin: Vector3, speed: number, 
 	p.CFrame = CFrame.new(origin)
 	b.pos = origin
 	b.vel = dir * speed
-	b.charge = charge
+	b.throwOrigin = origin
 	b.flightT = 0
 	b.lockUntil = os.clock() + PR.ThrowerLockout
 	setState(b, "InFlight")
@@ -316,8 +315,9 @@ local function launchDummy(ball: PBall, at: Vector3)
 	end
 	-- the dummy feels escalation like a real player: every hit launches it harder until it respawns
 	local scale = ProjectileMath.escalation(dummyDamage)
-	dummyDamage += ProjectileMath.damageFor(ball.charge)
-	local kb = ProjectileMath.knockback(ball.vel, ball.charge, "Standard", scale)
+	local dist = if ball.throwOrigin then ProjectileMath.flatDistance(ball.throwOrigin, at) else nil
+	dummyDamage += ProjectileMath.damageFor("Standard", dist)
+	local kb = ProjectileMath.knockback(ball.vel, "Standard", scale)
 	local cap = ProjectileMath.maxKnockbackSpeed(scale)
 	local K = Config.Knockback
 	setLimp(m, true)
@@ -345,7 +345,6 @@ local function launchDummy(ball: PBall, at: Vector3)
 		direction = ball.vel,
 		targetModel = m,
 		thrower = player,
-		charge = ball.charge,
 		escalation = scale,
 	})
 	HUDController.hitmarker()

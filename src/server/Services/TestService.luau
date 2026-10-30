@@ -118,11 +118,11 @@ local function giveBall(c: any): any
 end
 
 -- Aim straight at a target's root with the same gravity compensation bots use.
-local function aimAt(thrower: any, target: any, charge: number): Vector3
+local function aimAt(thrower: any, target: any): Vector3
 	local tp = target.root.Position
 	local flat = Vector3.new(tp.X - thrower.root.Position.X, 0, tp.Z - thrower.root.Position.Z)
 	local origin = thrower.root.Position + Vector3.new(0, Config.Ball.SpawnUp, 0) + flat.Unit * Config.Ball.SpawnForward
-	local speed = ProjectileMath.throwSpeed(charge, "Standard")
+	local speed = ProjectileMath.throwSpeed("Standard")
 	local g = ProjectileMath.gravity("Standard")
 	local dir = (tp - origin).Unit
 	for _ = 1, 3 do
@@ -175,7 +175,7 @@ test("hit while charging cancels the throw and drops the ball", function()
 	S.CombatService.doChargeStart(target)
 	assertTrue(target.action == "Charging", "target not charging")
 	giveBall(thrower)
-	S.CombatService.doThrow(thrower, aimAt(thrower, target, 0), 0)
+	S.CombatService.doThrow(thrower, aimAt(thrower, target), 0)
 	assertTrue(
 		waitUntil(function()
 			return target.action == "Ragdolled"
@@ -209,7 +209,7 @@ test("catch window catches an incoming throw (catch before hit)", function()
 	end
 	giveBall(thrower)
 	local before = catcher.stats.catches + catcher.stats.botCatches
-	S.CombatService.doThrow(thrower, aimAt(thrower, catcher, 0), 0)
+	S.CombatService.doThrow(thrower, aimAt(thrower, catcher), 0)
 	-- open the catch just before arrival
 	S.PlayerStateService.setAction(catcher, "Catching")
 	catcher.catchUntil = now() + 1.0
@@ -235,8 +235,8 @@ test("catch and a second hit in the same step keep ball ownership consistent", f
 	giveBall(blue[2])
 	S.PlayerStateService.setAction(catcher, "Catching")
 	catcher.catchUntil = now() + 1.0
-	S.CombatService.doThrow(blue[1], aimAt(blue[1], catcher, 0), 0)
-	S.CombatService.doThrow(blue[2], aimAt(blue[2], catcher, 0), 0)
+	S.CombatService.doThrow(blue[1], aimAt(blue[1], catcher), 0)
+	S.CombatService.doThrow(blue[2], aimAt(blue[2], catcher), 0)
 	task.wait(1.2)
 	local holdersByBall: { [any]: number } = {}
 	for _, c in S.MatchService.roster() do
@@ -354,7 +354,7 @@ test("void fall -> jail; jail hit -> return; revenge on own eliminator; cap -> s
 	task.wait(0.3)
 	local revengesBefore = jailee.stats.revenges
 	giveBall(jailee)
-	S.CombatService.doThrow(jailee, aimAt(jailee, enemy, 0.5), 0)
+	S.CombatService.doThrow(jailee, aimAt(jailee, enemy), 0)
 	assertTrue(
 		waitUntil(function()
 			return jailee.status == "Returning" or jailee.status == "Active"
@@ -1523,8 +1523,8 @@ test("finisher plays on the match-ending knockout, then the match ends", functio
 	)
 end)
 
--- Knockback probe (tuning): real throws at a bot standing at several spots on its half, at min and
--- full charge. Reports how many hits end in the void per spot and how far the body travelled.
+-- Knockback probe (tuning): real throws at a bot standing at several spots on its half. Reports how
+-- many hits end in the void per spot and how far the body travelled.
 -- Run: workspace:SetAttribute("RD_KnockbackProbe", true); results in "RD_KnockbackResults".
 function TestService.knockbackProbe()
 	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
@@ -1545,70 +1545,64 @@ function TestService.knockbackProbe()
 	}
 	local lines = {}
 	for _, spot in spots do
-		for _, charge in { 0, 1 } do
-			local ko, trials, travel, hits = 0, 3, 0, 0
-			for _ = 1, trials do
-				-- knockouts can end the round; wait for the next one instead of throwing at nothing
-				waitUntil(function()
-					return ms:GetAttribute("State") == "RoundActive"
-				end, 15)
-				if ms:GetAttribute("State") ~= "RoundActive" then
-					break
-				end
-				S.BotService.setPaused(true) -- a new round un-pauses bots
-				local target = bots("Blue")[1]
-				local thrower = bots("Red")[1]
-				if not (target and thrower) then
-					break
-				end
-				local tp = point("Blue", spot.x, spot.depth)
-				ready(target, tp)
-				ready(thrower, point("Red", spot.x * 0.5, 4))
-				target.jailReturns = 0
-				task.wait(0.35)
-				local start = target.root.Position
-				giveBall(thrower)
-				thrower.chargeStart = now() - charge * Config.Player.FullChargeTime
-				S.PlayerStateService.setAction(thrower, "Charging")
-				S.CombatService.doThrow(thrower, aimAt(thrower, target, charge), 0)
-				local hit = waitUntil(function()
-					return target.action == "Ragdolled"
-				end, 1.5)
-				if hit then
-					hits += 1
-					local maxD = 0
-					local t0 = os.clock()
-					while os.clock() - t0 < 4 do
-						if target.root and target.root.Parent then
-							local p = target.root.Position
-							maxD =
-								math.max(maxD, (Vector3.new(p.X, 0, p.Z) - Vector3.new(start.X, 0, start.Z)).Magnitude)
-						end
-						if target.status ~= "Active" then
-							break
-						end
-						task.wait()
+		local ko, trials, travel, hits = 0, 3, 0, 0
+		for _ = 1, trials do
+			-- knockouts can end the round; wait for the next one instead of throwing at nothing
+			waitUntil(function()
+				return ms:GetAttribute("State") == "RoundActive"
+			end, 15)
+			if ms:GetAttribute("State") ~= "RoundActive" then
+				break
+			end
+			S.BotService.setPaused(true) -- a new round un-pauses bots
+			local target = bots("Blue")[1]
+			local thrower = bots("Red")[1]
+			if not (target and thrower) then
+				break
+			end
+			local tp = point("Blue", spot.x, spot.depth)
+			ready(target, tp)
+			ready(thrower, point("Red", spot.x * 0.5, 4))
+			target.jailReturns = 0
+			task.wait(0.35)
+			local start = target.root.Position
+			giveBall(thrower)
+			S.CombatService.doThrow(thrower, aimAt(thrower, target), 0)
+			local hit = waitUntil(function()
+				return target.action == "Ragdolled"
+			end, 1.5)
+			if hit then
+				hits += 1
+				local maxD = 0
+				local t0 = os.clock()
+				while os.clock() - t0 < 4 do
+					if target.root and target.root.Parent then
+						local p = target.root.Position
+						maxD = math.max(maxD, (Vector3.new(p.X, 0, p.Z) - Vector3.new(start.X, 0, start.Z)).Magnitude)
 					end
 					if target.status ~= "Active" then
-						ko += 1
+						break
 					end
-					travel += maxD
+					task.wait()
 				end
-				-- put the team back so the round keeps running
-				S.PlayerStateService.setStatus(target, "Active")
-				task.wait(0.2)
+				if target.status ~= "Active" then
+					ko += 1
+				end
+				travel += maxD
 			end
-			table.insert(
-				lines,
-				("%-38s charge %3.0f%%: hits %d/3, void %d, avg travel %.1f studs"):format(
-					spot.name,
-					charge * 100,
-					hits,
-					ko,
-					if hits > 0 then travel / hits else 0
-				)
-			)
+			-- put the team back so the round keeps running
+			S.PlayerStateService.setStatus(target, "Active")
+			task.wait(0.2)
 		end
+		table.insert(
+			lines,
+			("%-38s hits %d/3, void %d, avg travel %.1f studs"):format(
+				spot.name,
+				hits,
+				ko,
+				if hits > 0 then travel / hits else 0
+			)
+		)
 	end
 	S.BotService.setPaused(false)
 	local out = table.concat(lines, "\n")

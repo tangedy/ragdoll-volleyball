@@ -141,7 +141,7 @@ function MatchService.start()
 		elseif p.cmd == "LaunchMe" then
 			local c = S.PlayerStateService.get(player)
 			if c then
-				S.CombatService.debugLaunch(c, 1)
+				S.CombatService.debugLaunch(c)
 			end
 		elseif p.cmd == "GiveCoins" then
 			local c = S.PlayerStateService.get(player)
@@ -487,7 +487,7 @@ function MatchService.onJailHit(thrower: any, target: any)
 		S.PlayerStateService.setStatus(thrower, "Active")
 		S.PlayerStateService.setAction(thrower, "Idle")
 		thrower.immuneUntil = now() + J.ReturnImmunity
-		S.PlayerStateService.setDamage(thrower, 0) -- back on court with a clean slate
+		-- damage % carries over: escaping jail doesn't wipe the knockback you've built up
 		thrower.stats.jailEscapes += 1
 		feed(("%s escaped jail!"):format(tag(thrower)))
 		S.AnalyticsService.event(thrower, "JailReturn")
