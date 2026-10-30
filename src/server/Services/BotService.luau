@@ -443,13 +443,16 @@ function BotService.targetScore(c: any, o: any, smart: boolean): number
 	return score
 end
 
--- Best enemy to throw at: active, hittable (not immune), and in sight unless `anySight`.
-function BotService.pickTarget(c: any, smart: boolean, anySight: boolean?): any?
+-- Best enemy to throw at: active, hittable (not immune), and in sight unless `anySight`. Bots go
+-- for other bots first; real players are only in the running when `allowPlayers` (rolled once per
+-- held ball against PlayerTargetChance) or when no bot is hittable.
+local function bestTarget(c: any, smart: boolean, anySight: boolean?, botsOnly: boolean): any?
 	local best, bestScore = nil, math.huge
 	local t = now()
 	for _, o in S.MatchService.roster() do
 		if
 			o.team ~= c.team
+			and (o.isBot or not botsOnly)
 			and o.status == "Active"
 			and o.root
 			and o.root.Parent
@@ -463,6 +466,16 @@ function BotService.pickTarget(c: any, smart: boolean, anySight: boolean?): any?
 		end
 	end
 	return best
+end
+
+function BotService.pickTarget(c: any, smart: boolean, anySight: boolean?, allowPlayers: boolean?): any?
+	if not allowPlayers then
+		local bot = bestTarget(c, smart, anySight, true)
+		if bot then
+			return bot
+		end
+	end
+	return bestTarget(c, smart, anySight, false)
 end
 
 -- Inside the bot's safe zone: away from void edges (never deliberately within VoidAvoid).
@@ -538,15 +551,16 @@ local function thinkHolding(c: any, t: number)
 			strafeDir = if rng:NextNumber() < 0.5 then 1 else -1,
 			target = nil,
 			retargetAt = 0,
+			allowPlayers = rng:NextNumber() < B.PlayerTargetChance,
 		}
 	end
 	local plan = brain.plan
 	if t >= plan.retargetAt or not (plan.target and plan.target.status == "Active") then
 		plan.retargetAt = t + 0.4
-		plan.target = BotService.pickTarget(c, rng:NextNumber() < prof.TargetSmarts, false)
+		plan.target = BotService.pickTarget(c, rng:NextNumber() < prof.TargetSmarts, false, plan.allowPlayers)
 	end
 	local stalled = t - plan.heldAt > B.StallThrow
-	local target = plan.target or (if stalled then BotService.pickTarget(c, false, true) else nil)
+	local target = plan.target or (if stalled then BotService.pickTarget(c, false, true, plan.allowPlayers) else nil)
 	if not target then
 		setStrafePace(c, nil)
 		-- nobody in sight: drift toward the middle of our half for a better angle

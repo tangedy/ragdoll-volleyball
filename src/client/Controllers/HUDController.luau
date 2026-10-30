@@ -1234,23 +1234,17 @@ local function update()
 	end
 	-- on touch screens the controls own the bottom-right corner and the hub icons the bottom row:
 	-- Ready moves to the top right, a size up so it's an easy thumb target, and the kill feed
-	-- (a little smaller) steps down under it instead of piling on top
+	-- isn't shown at all: phone screens are too small for it
 	local touch = AimController.lastInput == "Touch"
 	if touch ~= touchLayout then
 		touchLayout = touch
 		Theme.autoScale(refs.corner, if touch then 1.2 else 0.95)
-		Theme.autoScale(feedFrame, if touch then 0.8 else 0.95)
 	end
 	refs.corner.AnchorPoint = if touch then Vector2.new(1, 0) else Vector2.new(1, 1)
 	refs.corner.Position = if touch
 		then UDim2.new(1, -Theme.Space.M, 0, Theme.Space.M)
 		else UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L)
-	local feedTop = Theme.Space.S
-	if touch and lobby then
-		local corner = refs.corner :: Frame
-		feedTop = corner.AbsolutePosition.Y + corner.AbsoluteSize.Y - gui.AbsolutePosition.Y + Theme.Space.S
-	end
-	feedFrame.Position = UDim2.new(1, -Theme.Space.M, 0, feedTop)
+	feedFrame.Visible = not touch
 
 	-- reticle: while you hold a ball (or in Aim lock) the crosshair sits on the enemy the auto-aim
 	-- is locked on to, the same player a tap throws at. With no target it follows the mouse.

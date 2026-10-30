@@ -80,7 +80,7 @@ function ArenaLayout.spawnPoints(team: string, count: number): { Vector3 }
 	return points
 end
 
--- Opening ball spots: symmetric, near the center line, three per side.
+-- Opening ball spots: symmetric, near the center line, half per side.
 function ArenaLayout.openingBallSpots(): { Vector3 }
 	local spots = {}
 	local perSide = A.OpeningBallSpots // 2

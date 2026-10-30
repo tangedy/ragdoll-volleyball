@@ -657,12 +657,15 @@ local function shouldAbort(): boolean
 	return realInRoster() == 0 or teamEmpty("Red") or teamEmpty("Blue")
 end
 
-local function spawnPowerUps()
-	if not Config.PowerUps.Enabled then
-		return
-	end
-	-- Both teams always receive the same type, so luck is never one-sided.
-	-- Today's featured ball drops more often.
+-- Two dispensers a side, the second half an interval behind the first. Each slot rolls its next
+-- type ahead of time so the pads can show it with a countdown; both teams' pads for a slot drop
+-- the same type at once, so luck is never one-sided.
+local DISPENSER_SLOTS = 2
+local DISPENSER_IDLE_COLOR = Color3.fromRGB(255, 230, 90)
+local powerSlots: { { type: string, at: number } } = {}
+
+-- Today's featured ball drops more often.
+local function rollPowerType(): string
 	local types = BallDefinitions.PowerTypes
 	local featured = S.ShopService.featuredBall()
 	local function weight(t: string): number
@@ -682,21 +685,50 @@ local function spawnPowerUps()
 			break
 		end
 	end
-	local spawned = false
-	if
-		S.BallService.countPower("Red") < Config.PowerUps.MaxPowerBallsPerSide
-		and S.BallService.countPower("Blue") < Config.PowerUps.MaxPowerBallsPerSide
-	then
-		for _, team in { "Red", "Blue" } do
-			S.BallService.spawn(chosen, S.ArenaService.dispenserPosition(team), "Match", true)
+	return chosen
+end
+
+local function resetPowerSlots(start: number)
+	for slot = 1, DISPENSER_SLOTS do
+		local offset = Config.PowerUps.DispenserInterval * (slot - 1) / DISPENSER_SLOTS
+		powerSlots[slot] = { type = rollPowerType(), at = start + Config.PowerUps.DispenserInterval + offset }
+	end
+end
+
+-- Each pad shows its next ball and the seconds until it drops; `t` nil (between rounds) shows "?".
+local function labelDispensers(t: number?)
+	for slot = 1, DISPENSER_SLOTS do
+		local s = powerSlots[slot]
+		local text, color = "?", DISPENSER_IDLE_COLOR
+		if t and s and Config.PowerUps.Enabled then
+			local def = BallDefinitions.get(s.type)
+			text = ("%s\n%ds"):format(def.DisplayName, math.max(0, math.ceil(s.at - t)))
+			color = def.Color
 		end
-		spawned = true
+		for _, team in { "Red", "Blue" } do
+			S.ArenaService.setDispenserLabel(team, slot, text, color)
+		end
 	end
-	if spawned then
-		feed(("%s balls dropped!"):format(BallDefinitions.get(chosen).DisplayName))
-		S.NetService.broadcast("Sound", { cue = "PowerUp", position = S.ArenaService.dispenserPosition("Red") })
-		S.NetService.broadcast("Sound", { cue = "PowerUp", position = S.ArenaService.dispenserPosition("Blue") })
+end
+
+-- A slot that's due drops its ball on both sides, unless a side is already at the cap (then it
+-- keeps the same type and tries again next interval).
+local function spawnPowerUp(slot: number)
+	local s = powerSlots[slot]
+	if
+		S.BallService.countPower("Red") >= Config.PowerUps.MaxPowerBallsPerSide
+		or S.BallService.countPower("Blue") >= Config.PowerUps.MaxPowerBallsPerSide
+	then
+		return
 	end
+	for _, team in { "Red", "Blue" } do
+		S.BallService.spawn(s.type, S.ArenaService.dispenserPosition(team, slot), "Match", true)
+	end
+	feed(("%s balls dropped!"):format(BallDefinitions.get(s.type).DisplayName))
+	for _, team in { "Red", "Blue" } do
+		S.NetService.broadcast("Sound", { cue = "PowerUp", position = S.ArenaService.dispenserPosition(team, slot) })
+	end
+	s.type = rollPowerType()
 end
 
 -- Feed line naming today's featured ball (Config.PowerUps.Featured), once a match.
@@ -771,7 +803,7 @@ local function playRound(): (string, boolean)
 	local stepsDone = 0
 	local warned = 0
 	local fallbackAt = math.huge
-	local nextPower = now() + Config.PowerUps.DispenserInterval
+	resetPowerSlots(now())
 	local nextPublish = 0
 	S.AnalyticsService.roundStarted(roster)
 	while true do
@@ -819,10 +851,15 @@ local function playRound(): (string, boolean)
 		elseif blue == 0 then
 			return "Red", true
 		end
-		if t >= nextPower then
-			nextPower = t + Config.PowerUps.DispenserInterval
-			spawnPowerUps()
+		if Config.PowerUps.Enabled then
+			for slot, s in powerSlots do
+				if t >= s.at then
+					s.at = t + Config.PowerUps.DispenserInterval
+					spawnPowerUp(slot)
+				end
+			end
 		end
+		labelDispensers(t)
 		if clockHeld and not overtime then
 			endsAt = math.max(endsAt, t + 1)
 		end
@@ -1057,6 +1094,7 @@ local function runMatch(queued: { any })
 			end
 		end
 		local result, byElimination = playRound()
+		labelDispensers(nil)
 		publishCounts()
 		if result == "Abort" then
 			aborted = true

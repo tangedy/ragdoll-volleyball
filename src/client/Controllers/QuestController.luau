@@ -4,7 +4,9 @@
 --  * Panel (left edge of the hub, small): one line per quest with an icon for what its chest gives
 --    (titles, gestures, finishers), the goal, its count and a thin progress bar. Claim appears once
 --    the goal is reached; a claimed quest shows the time until it comes back (15 minutes after a
---    player's first claim of it, otherwise the UTC reset).
+--    player's first claim of it, otherwise the UTC reset) on a slimmer line. The panel's surface is
+--    see-through so the hub shows behind it, and the button in its header folds it into a round
+--    chest disc (wearing the notification dot while a chest is ready); tap the disc to unfold it.
 --  * Tap a quest's icon: the chest sheet shows every item it can drop, the chance of each rarity
 --    and the coins a rarity pays once you own all of it.
 --  * Claim: a full-screen opening plays the treasure chest rattling while the server rolls the
@@ -43,11 +45,17 @@ local CHEST_GLYPH: { [string]: string } = { Title = "tag", Gesture = "hand", Fin
 local PANEL_W = 270
 local ROW_H = 44
 local DISC = 32
+local DONE_H = 26 -- a claimed quest's row, folded down to one slim line
+local DONE_DISC = 20
+local PANEL_FADE = 0.2 -- the panel's surface transparency: the hub shows through it
+local FOLDED_DISC = 48 -- the round chest the panel folds into
 local TEXT_X = 40 -- right of a row's disc
 local RIGHT_W = 64 -- the count, the Claim button or the cooldown, at a row's right
 local TIMEOUT = 7 -- seconds without an answer before a claim gives up
 
 type Row = {
+	frame: Frame,
+	folded: boolean?, -- showing the slim claimed line (nil until first drawn)
 	live: Frame, -- the quest itself, until it's claimed
 	name: TextLabel,
 	count: TextLabel,
@@ -65,6 +73,9 @@ local owned: { [string]: boolean } = {}
 local panel: Frame
 local list: Frame
 local resetLabel: TextLabel
+local foldedButton: TextButton -- the round chest the panel folds into
+local foldedDot: Frame
+local collapsed = false
 local rows: { [string]: Row } = {}
 
 -- chest sheet (drops and odds)
@@ -150,6 +161,7 @@ local function renderPanel()
 	if not status then
 		return
 	end
+	local anyReady = false
 	for _, raw in status.quests do
 		local q = current(raw)
 		local row = rows[q.id]
@@ -160,6 +172,18 @@ local function renderPanel()
 		local progress = math.min(goal, tonumber(q.progress) or 0)
 		row.live.Visible = not q.claimed
 		row.done.Visible = q.claimed == true
+		-- a claimed quest folds down to a slim line (and back up when it comes back)
+		local fold = q.claimed == true
+		if row.folded ~= fold then
+			local size = UDim2.new(1, 0, 0, if fold then DONE_H else ROW_H)
+			-- folding eases down; unfolding snaps back so the live line never spills onto the next row
+			if not fold or row.folded == nil or Theme.settings.reducedMotion then
+				row.frame.Size = size
+			else
+				Theme.tween(row.frame, Theme.Motion.Base, { Size = size }, Enum.EasingStyle.Quint)
+			end
+			row.folded = fold
+		end
 		row.name.Text = q.name
 		row.doneName.Text = q.name
 		row.count.Text = ("%d/%d"):format(progress, goal)
@@ -171,7 +195,11 @@ local function renderPanel()
 			Theme.setText(row.claim, if claiming and currentQuest == q.id then "..." else "Claim")
 			Theme.setEnabled(row.claim, not claiming)
 		end
+		if q.ready and not q.claimed then
+			anyReady = true
+		end
 	end
+	foldedDot.Visible = anyReady
 end
 
 local function renderTimers()
@@ -194,12 +222,19 @@ local function renderTimers()
 end
 
 -- A round disc in the toy outline holding `glyph`.
-local function disc(parent: Instance, tone: Color3, glyph: string, glyphColor: Color3, button: boolean): any
+local function disc(
+	parent: Instance,
+	tone: Color3,
+	glyph: string,
+	glyphColor: Color3,
+	button: boolean,
+	size: number?
+): any
 	local d = new(if button then "TextButton" else "Frame", {
 		Name = "Disc",
 		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.fromScale(0, 0.5),
-		Size = UDim2.fromOffset(DISC, DISC),
+		Position = UDim2.new(0, (DISC - (size or DISC)) / 2, 0.5, 0),
+		Size = UDim2.fromOffset(size or DISC, size or DISC),
 		BackgroundColor3 = tone,
 		ZIndex = 4,
 	}, parent)
@@ -281,11 +316,11 @@ local function buildRow(q: any, order: number): Row
 		QuestController.claim(q.Id)
 	end)
 
-	-- claimed: a check, the goal greyed out and the time until it comes back
+	-- claimed: a small check, the goal greyed out and the time until it comes back, on a slim line
 	local done = layer("Done")
 	done.Visible = false
-	disc(done, T.leaf, "check", T.onFill, false)
-	local doneName = Theme.text(done, SIZE.Body, {
+	disc(done, T.leaf, "check", T.onFill, false, DONE_DISC)
+	local doneName = Theme.text(done, SIZE.Label, {
 		Name = "Name",
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, TEXT_X, 0.5, 0),
@@ -295,7 +330,7 @@ local function buildRow(q: any, order: number): Row
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
 	})
-	local doneTime = Theme.text(done, SIZE.Body, {
+	local doneTime = Theme.text(done, SIZE.Label, {
 		Name = "Time",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.fromScale(1, 0.5),
@@ -306,6 +341,7 @@ local function buildRow(q: any, order: number): Row
 		ZIndex = 4,
 	})
 	return {
+		frame = frame,
 		live = live,
 		name = name,
 		count = count,
@@ -317,25 +353,44 @@ local function buildRow(q: any, order: number): Row
 	}
 end
 
+-- Fold the panel into its round chest disc, or unfold it; the one that appears pops in.
+function QuestController.setCollapsed(on: boolean)
+	if collapsed == on then
+		return
+	end
+	collapsed = on
+	SoundController.play(if on then "UIBack" else "UIOpen")
+	local shown: GuiObject = if on then foldedButton else panel
+	if panel.Parent and (panel.Visible or foldedButton.Visible) then
+		panel.Visible = not on
+		foldedButton.Visible = on
+		Theme.pop(shown, 0.6)
+	end
+end
+
 local function buildPanel()
-	panel = Theme.panel(ShopController.gui, {
+	-- parented after it's built: no drop shadow, which would darken the see-through surface
+	panel = Theme.panel(nil, {
 		Name = "Quests",
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, SPACE.M, 0.4, 0),
 		Size = UDim2.fromOffset(PANEL_W, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = PANEL_FADE,
 		Visible = false,
 		ZIndex = 2,
 	}, Theme.Radius.M)
+	panel.Parent = ShopController.gui
+	Theme.stroke(panel, T.line, 2)
 	Theme.padding(panel, SPACE.S + 2)
 	-- never below 0.85: on phones the screen scale alone would shrink quest text to ~8px
 	Theme.autoScale(panel, 0.8, 0.85)
 	new("UIListLayout", { Padding = UDim.new(0, SPACE.XS), SortOrder = Enum.SortOrder.LayoutOrder }, panel)
-	-- header: the title and, on the right, the time until the daily reset
+	-- header: the title, the time until the daily reset and, at the right, the fold button
 	local header = new("Frame", {
 		Name = "Header",
 		LayoutOrder = 0,
-		Size = UDim2.new(1, 0, 0, 24),
+		Size = UDim2.new(1, 0, 0, 28),
 		BackgroundTransparency = 1,
 		ZIndex = 3,
 	}, panel)
@@ -347,11 +402,20 @@ local function buildPanel()
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
 	})
+	local collapseButton = Theme.iconButton(header, "back", "secondary", 24, {
+		Name = "Collapse",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.fromScale(1, 0.5),
+		ZIndex = 4,
+	})
+	collapseButton.Activated:Connect(function()
+		QuestController.setCollapsed(true)
+	end)
 	resetLabel = Theme.text(header, SIZE.Label, {
 		Name = "Reset",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromScale(1, 0),
-		Size = UDim2.fromScale(0.4, 1),
+		Position = UDim2.new(1, -(24 + SPACE.S), 0, 0),
+		Size = UDim2.new(0.4, -(24 + SPACE.S), 1, 0),
 		Text = untilReset(),
 		TextColor3 = T.inkMuted,
 		TextXAlignment = Enum.TextXAlignment.Right,
@@ -369,6 +433,21 @@ local function buildPanel()
 	for i, q in Q.List do
 		rows[q.Id] = buildRow(q, i)
 	end
+
+	-- folded: a round chest disc in the panel's place; the dot says a chest is ready to claim
+	foldedButton = Theme.iconButton(ShopController.gui, "gift", T.sun, FOLDED_DISC, {
+		Name = "QuestsFolded",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, SPACE.M, 0.4, 0),
+		Visible = false,
+		ZIndex = 2,
+	})
+	Theme.autoScale(foldedButton, 0.8, 0.85)
+	foldedDot = Theme.dot(foldedButton:FindFirstChild("Face") :: Frame)
+	foldedDot.Position = UDim2.new(1, -4, 0, 4)
+	foldedButton.Activated:Connect(function()
+		QuestController.setCollapsed(false)
+	end)
 end
 
 -- Chest sheet -----------------------------------------------------------------------------------------
@@ -936,7 +1015,9 @@ function QuestController.start()
 			QuestController.open(nil, false)
 		end
 		-- the panel steps aside while any sheet or the opening is up
-		panel.Visible = status ~= nil and not ShopController.getBackdrop().Visible and not openGui.Enabled
+		local show = status ~= nil and not ShopController.getBackdrop().Visible and not openGui.Enabled
+		panel.Visible = show and not collapsed
+		foldedButton.Visible = show and collapsed
 		if os.clock() < nextTick then
 			return
 		end

@@ -152,9 +152,24 @@ function ArenaService.setAttr()
 	end
 end
 
-function ArenaService.dispenserPosition(team: string): Vector3
-	local pad = (arena:FindFirstChild("Decor") :: Folder):FindFirstChild("Dispenser_" .. team) :: BasePart
-	return pad.Position + Vector3.new(0, 2, 0)
+function ArenaService.dispenserPad(team: string, slot: number): BasePart
+	return (arena:FindFirstChild("Decor") :: Folder):FindFirstChild(("Dispenser_%s_%d"):format(team, slot)) :: BasePart
+end
+
+function ArenaService.dispenserPosition(team: string, slot: number): Vector3
+	return ArenaService.dispenserPad(team, slot).Position + Vector3.new(0, 2, 0)
+end
+
+-- The text over a dispenser pad (the "?" BillboardGui ArenaBuilder puts on it).
+function ArenaService.setDispenserLabel(team: string, slot: number, text: string, color: Color3?)
+	local bb = ArenaService.dispenserPad(team, slot):FindFirstChildOfClass("BillboardGui")
+	local t = bb and bb:FindFirstChildOfClass("TextLabel")
+	if t and t.Text ~= text then
+		t.Text = text
+	end
+	if t and color then
+		t.TextColor3 = color
+	end
 end
 
 return ArenaService

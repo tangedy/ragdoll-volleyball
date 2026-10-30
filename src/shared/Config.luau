@@ -45,7 +45,7 @@ Config.Arena = {
 	VoidDepth = 25, -- elimination plane below the court surface
 	SpawnSetback = 36, -- spawn distance from the center line (36 from the back edge too)
 	SpawnEdgeMargin = 21,
-	OpeningBallSpots = 6,
+	OpeningBallSpots = 8,
 	OpeningBallOffset = 9, -- studs from the center line
 	BarrierHeight = 40,
 	-- Overtime: outer strips retract symmetrically.
@@ -185,7 +185,7 @@ Config.Ball = {
 	SettleTimeout = 2.5,
 	OutOfBoundsReturnDelay = 2,
 	ConservationInterval = 3,
-	BallsPerCourt = 6,
+	BallsPerCourt = 8,
 	SpawnForward = 2.5,
 	SpawnUp = 1.5,
 }
@@ -224,8 +224,8 @@ Config.Practice = {
 
 Config.PowerUps = {
 	Enabled = true,
-	DispenserInterval = 12,
-	MaxPowerBallsPerSide = 1,
+	DispenserInterval = 12, -- per dispenser; each side's second dispenser runs half an interval behind
+	MaxPowerBallsPerSide = 2,
 	Weights = { Heavy = 1, Rocket = 1, Pop = 1 },
 	-- Featured ball of the day: one power type a UTC day, in BallDefinitions.PowerTypes order. It
 	-- drops WeightBoost times as often, and its knockouts count MasteryBonus times toward Power Ball
@@ -293,6 +293,7 @@ Config.Bots = {
 	EdgeBonusRange = 14,
 	TargetGotUpBonus = 14, -- just recovered from a hit (wobbly, can't dodge yet)
 	TargetCatchPenalty = 10, -- empty-handed and facing us: could catch the throw
+	PlayerTargetChance = 0.3, -- per target pick: chance real players are considered; otherwise bots go for other bots first (players only if no bot is hittable)
 	StallThrow = 4, -- holding a ball this long with no clear shot: throw at the nearest enemy anyway
 	SuddenDeathHaste = 0.4, -- aim times shrink by this fraction in sudden death (rounds must end)
 	ReactRange = 34,
