@@ -1461,12 +1461,40 @@ end
 -- On touch screens the right edge belongs to the controls, so the action column becomes a row along
 -- the bottom, a little larger, in the free space between the coins chip and the controls (and shrunk
 -- only if that space is too narrow). The row folds away behind a hamburger button at its left end,
--- which carries a (!) while any of the folded buttons has one.
+-- which carries a (!) while it's folded and any of the folded buttons has one. Unfolding slides the
+-- row out from behind the hamburger's disc like a drawer (ease-pop, so it overshoots a touch and
+-- settles); folding tucks it back. A button shows only once its centre has passed the disc's centre:
+-- the discs are the same size, so the part still short of it is always behind the hamburger, and the
+-- buttons seem to come out of the icon itself. Captions fade in as they come out, clear of "Menu".
+-- While it moves the row also clips at the disc's centre, a line the hamburger's own disc covers, so
+-- nothing can ever show on the hamburger's left.
 local ACTION_W, ACTION_H = 84, 56 + Theme.Ledge + 26 -- one Theme.roundAction button
 local ACTIONS = 6 -- Bundles, Coins, Shop, Spin, Daily, Settings
 local ROW_W = ACTIONS * ACTION_W + (ACTIONS - 1) * Theme.Space.L
 local TOUCH_W = ROW_W + ACTION_W + Theme.Space.L -- the row plus the menu button
 local TOUCH_SCALE = 1.25 -- relative to the rest of the HUD
+local SLOT = ACTION_W + Theme.Space.L -- from one button's centre to the next
+local CLIP_PAD = 12 -- headroom in the touch row for the dots, which sit over a disc's top edge
+local TOUCH_ROW = Vector2.new(ROW_W + SLOT, ACTION_H + CLIP_PAD) -- starts at the hamburger's centre
+-- How far a touch-row button has come out from behind the hamburger (its centre past the disc's
+-- centre, in row offsets): hidden until it's out, its caption fading in over the first slot.
+local function emerge(b: GuiObject, out: number)
+	local shown = out > 0
+	for _, part in b:GetChildren() do
+		if part:IsA("GuiObject") then
+			part.Visible = shown
+		end
+	end
+	local caption = b:FindFirstChild("Caption") :: TextLabel?
+	if caption then
+		local t = 1 - math.clamp(out / SLOT, 0, 1)
+		caption.TextTransparency = t
+		local stroke = caption:FindFirstChildOfClass("UIStroke")
+		if stroke then
+			stroke.Transparency = t
+		end
+	end
+end
 local actionLayout: UIListLayout
 local actionScale: UIScale
 local actionDots: { { button: TextButton, dot: Frame } } = {}
@@ -1476,27 +1504,57 @@ local menuDot: Frame
 local menuGlyph: GuiObject
 local menuClose: GuiObject
 local menuOpen = false -- the touch row is unfolded
+local menuReveal: NumberValue -- 0 folded, 1 unfolded (overshoots past 1 on the way out)
+local menuTween: Tween? = nil
 local rowMode: boolean? = nil
-local function setMenuOpen(on: boolean)
+-- `instant` snaps (a destination was picked, the hub was left): the row is going away anyway
+local function setMenuOpen(on: boolean, instant: boolean?)
+	local changed = on ~= menuOpen
 	menuOpen = on
 	menuGlyph.Visible = not on
 	menuClose.Visible = on
+	if menuTween then
+		menuTween:Cancel()
+		menuTween = nil
+	end
+	if instant or Theme.settings.reducedMotion then
+		menuReveal.Value = if on then 1 else 0
+		return
+	end
+	if changed then
+		Theme.pop(if on then menuClose else menuGlyph, 0.6, Theme.Motion.Base)
+	end
+	menuTween = if on
+		then Theme.tween(menuReveal, Theme.Motion.Slow, { Value = 1 }, Enum.EasingStyle.Back)
+		else Theme.tween(
+			menuReveal,
+			Theme.Motion.Fast,
+			{ Value = 0 },
+			Enum.EasingStyle.Quint,
+			Enum.EasingDirection.In
+		)
 end
 local function layoutActions(gui: ScreenGui)
 	local touch = AimController.lastInput == "Touch"
 	if touch ~= rowMode then
 		rowMode = touch
-		setMenuOpen(false)
+		setMenuOpen(false, true)
+		-- on touch the buttons are placed by hand (they fly out from the hamburger); see below
+		actionLayout.Parent = if touch then nil else actionRow
 		actionLayout.FillDirection = if touch then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical
 		actionLayout.HorizontalAlignment = if touch
 			then Enum.HorizontalAlignment.Left
 			else Enum.HorizontalAlignment.Center
 		actionRow.AnchorPoint = if touch then Vector2.new(0, 1) else Vector2.new(1, 0.5)
 		actionRow.Size = if touch
-			then UDim2.fromOffset(ROW_W, ACTION_H)
+			then UDim2.fromOffset(TOUCH_ROW.X, TOUCH_ROW.Y)
 			else UDim2.fromOffset(ACTION_W, ACTIONS * ACTION_H + (ACTIONS - 1) * Theme.Space.L)
 		if not touch then
 			actionRow.Position = UDim2.new(1, -Theme.Space.L, 0.5, 0)
+			actionRow.ClipsDescendants = false
+			for _, e in actionDots do
+				emerge(e.button, SLOT)
+			end
 			local s = Theme.uiScale() * 0.95
 			actionScale:SetAttribute("Base", s)
 			actionScale.Scale = s
@@ -1514,8 +1572,9 @@ local function layoutActions(gui: ScreenGui)
 			break
 		end
 	end
-	menuDot.Visible = any
-	actionRow.Visible = actionRow.Visible and menuOpen
+	menuDot.Visible = any and not menuOpen
+	local reveal = menuReveal.Value
+	actionRow.Visible = actionRow.Visible and (menuOpen or reveal > 0.001)
 	local pg = player:FindFirstChildOfClass("PlayerGui")
 	local profile = pg and pg:FindFirstChild("Profile")
 	local chip = profile and profile:FindFirstChild("Chip") :: GuiObject?
@@ -1531,7 +1590,26 @@ local function layoutActions(gui: ScreenGui)
 	menuScale.Scale = s
 	local x = left + Theme.Space.M - gui.AbsolutePosition.X
 	menuButton.Position = UDim2.new(0, x, 1, -Theme.Space.S)
-	actionRow.Position = UDim2.new(0, x + (ACTION_W + Theme.Space.L) * s, 1, -Theme.Space.S)
+	-- the row's left edge is the hamburger disc's centre line
+	actionRow.Position = UDim2.new(0, x + ACTION_W / 2 * s, 1, -Theme.Space.S)
+	actionRow.ClipsDescendants = reveal < 1
+	-- the drawer: the shown buttons, in row order, slide right together from where the last of them
+	-- sits on the hamburger's centre (one slot to the row's left of the first slot) into place
+	local shown = {}
+	for _, e in actionDots do
+		if e.button.Visible then
+			table.insert(shown, e.button)
+		end
+	end
+	table.sort(shown, function(a, b)
+		return a.LayoutOrder < b.LayoutOrder
+	end)
+	local shift = #shown * SLOT * (1 - reveal)
+	for i, b in shown do
+		local bx = (i - 1) * SLOT - shift
+		b.Position = UDim2.fromOffset(bx + SLOT - ACTION_W / 2, CLIP_PAD)
+		emerge(b, bx + SLOT) -- the hamburger's centre is one slot left of the first slot's
+	end
 end
 
 -- Is any hub sheet (shop, daily, settings, spin...) open? Theme.show/hide keep ThemeOpen current.
@@ -1555,8 +1633,8 @@ function ShopController.addAction(
 	local b, dot = Theme.roundAction(actionRow, label, tone, glyph, { LayoutOrder = order })
 	table.insert(actionDots, { button = b, dot = dot })
 	b.Activated:Connect(function()
-		-- picking a destination folds the touch row back behind the hamburger
-		setMenuOpen(false)
+		-- picking a destination folds the touch row back behind the hamburger (its sheet covers it)
+		setMenuOpen(false, true)
 		-- opening plays the sheet's UIOpen; tapping the icon of the open sheet closes it: UIBack
 		local wasOpen = anySheetOpen()
 		onClick()
@@ -2214,7 +2292,9 @@ function ShopController.init()
 	menuButton, menuDot = Theme.roundAction(gui, "Menu", T.surface, "menu", {
 		AnchorPoint = Vector2.new(0, 1),
 		Visible = false,
+		ZIndex = 2, -- above the row, which slides out from behind it
 	})
+	menuReveal = new("NumberValue", { Value = 0 }, menuButton)
 	local face = menuButton:FindFirstChild("Face") :: Frame
 	for _, child in face:GetChildren() do
 		if child:FindFirstChildOfClass("UIAspectRatioConstraint") then
@@ -2352,8 +2432,8 @@ function ShopController.start()
 		actionRow.Visible = not backdrop.Visible
 		if hub then
 			layoutActions(gui)
-		elseif menuOpen then
-			setMenuOpen(false)
+		elseif menuOpen or menuReveal.Value > 0 then
+			setMenuOpen(false, true)
 		end
 		if not hub and backdrop.Visible then
 			ShopController.closeAll()
