@@ -10,7 +10,8 @@
 --
 -- The rest of the time the same spot (Config.Lobby.Featured, on the spawn → court sightline) holds
 -- the featured ball of the day (ShopService.featuredBall, sent with the quests in the Profile push):
--- the ball turning over a plinth rimmed in its colour, and a sign with today's bonuses.
+-- the ball turning over a plinth rimmed in its colour, a sign with today's bonuses, and a prompt
+-- that opens the Shop on its matching skin (Config.PowerUps.Featured.Skins).
 
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -45,6 +46,7 @@ type Stand = {
 	model: Model,
 	key: any, -- the offer it shows, or the featured ball type
 	offer: any?,
+	skin: string?, -- the featured ball's matching skin (Catalog id)
 	prompt: ProximityPrompt?,
 	status: TextLabel?,
 	ball: Model,
@@ -435,8 +437,36 @@ local function buildFeatured(ballType: string, lobby: Instance): Stand
 	light.Shadows = false
 	light.Parent = sphere
 	ball.Parent = model
+	-- the prompt, at the plinth's front edge: opens the Shop on the matching skin
+	local skinId = bonus.Skins[ballType]
+	local skin = skinId and Catalog.get(skinId)
+	local prompt: ProximityPrompt? = nil
+	if skin then
+		local anchor = part({
+			Name = "PromptAnchor",
+			Size = Vector3.one * 0.5,
+			CFrame = base * CFrame.new(0, 2.6, -4.4),
+			Transparency = 1,
+		}, model)
+		local p = Instance.new("ProximityPrompt")
+		p.Name = "FeaturedPrompt"
+		p.ObjectText = string.upper(skin.Name) .. " SKIN"
+		p.HoldDuration = 0
+		p.Style = Enum.ProximityPromptStyle.Custom -- drawn by PromptController
+		p.MaxActivationDistance = Config.Lobby.StationPromptDistance
+		p.RequiresLineOfSight = false
+		p.Parent = anchor
+		prompt = p
+	end
 	model.Parent = lobby
-	return { model = model, key = ballType, ball = ball, ballAt = ballAt }
+	return {
+		model = model,
+		key = ballType,
+		skin = if skin then skin.Id else nil,
+		prompt = prompt,
+		ball = ball,
+		ballAt = ballAt,
+	}
 end
 
 local function clear()
@@ -466,7 +496,11 @@ local function render()
 		clear() -- another offer or ball, or the hub was rebuilt
 	end
 	if not offer then
-		stand = stand or buildFeatured(key, lobby)
+		local s = stand or buildFeatured(key, lobby)
+		stand = s
+		if s.prompt and s.skin then
+			s.prompt.ActionText = if owned[s.skin] then "Equip in Shop" else "Buy in Shop"
+		end
 		return
 	end
 	local s = stand or build(offer, lobby)
@@ -500,6 +534,8 @@ function BundleDisplayController.start()
 	ProximityPromptService.PromptTriggered:Connect(function(prompt: ProximityPrompt)
 		if stand and stand.offer and prompt == stand.prompt then
 			CoinShopController.buyOffer(stand.offer)
+		elseif stand and stand.skin and prompt == stand.prompt then
+			ShopController.openToItem(stand.skin)
 		end
 	end)
 	-- the ball turns and the ghost bobs (only while you can see them)

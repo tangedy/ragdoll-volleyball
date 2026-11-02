@@ -55,6 +55,7 @@ local settings: any -- Theme.Sheet
 local shelf: ScrollingFrame
 local walletLabel: TextLabel
 local setTab: (string) -> ()
+local setOwnedFilter: (boolean) -> () -- the "Owned only" switch
 local tiles: { { item: any, card: any, row: number, col: number } } = {}
 local selectedId: string? = nil
 local dailyTiles: { any } = {}
@@ -1412,6 +1413,30 @@ function ShopController.openShop(on: boolean)
 	end
 end
 
+-- Open the shop on `id`'s tab with that item selected and scrolled into view (the featured ball's
+-- stand links its skin here). Turns "Owned only" off if it would hide the item.
+function ShopController.openToItem(id: string)
+	local item = Catalog.get(id)
+	if not item or not inHub() then
+		return
+	end
+	if ShopController.ownedOnly and not owns(item) then
+		ShopController.ownedOnly = false
+		setOwnedFilter(false)
+	end
+	currentTab = item.Category
+	setTab(item.Category)
+	selectedId = id -- renderShelf keeps a selection that's on the shelf
+	ShopController.openShop(true)
+	task.defer(function() -- once the shelf has laid out
+		for _, e in tiles do
+			if e.item.Id == id then
+				scrollIntoView(e.card.button)
+			end
+		end
+	end)
+end
+
 function ShopController.openDaily(on: boolean)
 	if on and not inHub() then
 		return
@@ -1777,6 +1802,7 @@ local function buildShop()
 		TextXAlignment = Enum.TextXAlignment.Right,
 		ZIndex = 5,
 	}, filterRow)
+	setOwnedFilter = setFilter
 	filterLabel.Activated:Connect(function()
 		local on = not ShopController.ownedOnly
 		setFilter(on)

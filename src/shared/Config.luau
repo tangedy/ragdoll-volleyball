@@ -79,19 +79,22 @@ Config.Lobby = {
 	Spawn = { X = 0, F = 4, Spread = 7 }, -- the helipad in the middle of the deck
 	-- practice zone at the deck's left end: open drop past the dummy, a walker-only wall before it
 	Practice = { F = 0, DummyX = -49, BallX = -30, WallX = -43 },
-	-- kiosk stations along the back of the deck, facing the court
+	-- kiosk stations along the back of the deck, facing the court (the group reward kiosk,
+	-- Config.GroupReward.Kiosk, sits on the shop's left; the access shed starts at X 26)
 	Stations = {
-		{ Id = "Shop", Title = "SHOP & LOCKER", Icon = "🛒", X = -17, F = -33, Color = Color3.fromRGB(255, 140, 40) },
-		{ Id = "Spin", Title = "DAILY SPIN", Icon = "🎡", X = 0, F = -33, Color = Color3.fromRGB(255, 80, 190) },
-		{ Id = "Daily", Title = "DAILY REWARD", Icon = "🎁", X = 17, F = -33, Color = Color3.fromRGB(70, 150, 255) },
+		{ Id = "Shop", Title = "SHOP & LOCKER", Icon = "🛒", X = -10, F = -33, Color = Color3.fromRGB(255, 140, 40) },
+		{ Id = "Spin", Title = "DAILY SPIN", Icon = "🎡", X = 4.5, F = -33, Color = Color3.fromRGB(255, 80, 190) },
+		{ Id = "Daily", Title = "DAILY REWARD", Icon = "🎁", X = 19, F = -33, Color = Color3.fromRGB(70, 150, 255) },
 	},
 	StationPromptDistance = 12,
 	-- the featured display (BundleDisplayController): a live offer's stand, else the featured ball of
 	-- the day. Left of the spawn → court sightline, mirroring the signpost (X 11, F 13), so it's in
 	-- the spawn camera's view but off the court's middle. Checked in Studio: clear of the jack
-	-- sign-post lantern (X -24, F 10), the black cat, the helipad, the string lights (its sign stays
-	-- under F 19) and the practice zone (X < -29)
+	-- sign-post lantern (X -24, F 10), the black cat, the helipad and the practice zone (X < -29)
 	Featured = { X = -15, F = 13 },
+	-- party lights strung between masts at the building's corners (Inset studs in from the edge),
+	-- high over everything on the deck: a bulb every Spacing studs, sagging Sag x the span
+	StringLights = { Height = 34, Inset = 1.2, Spacing = 4, Sag = 0.06, BulbSize = 0.9 },
 	-- first-visit guidance (HubGuideController): once per account, after the tutorial
 	Guide = {
 		Settle = 0.75, -- seconds the hub must be clear (no Done card, no sheet) before it starts
@@ -245,8 +248,14 @@ Config.PowerUps = {
 	Weights = { Heavy = 1, Rocket = 1, Pop = 1 },
 	-- Featured ball of the day: one power type a UTC day, in BallDefinitions.PowerTypes order. It
 	-- drops WeightBoost times as often, and its knockouts count MasteryBonus times toward Power Ball
-	-- Mastery (the Catalog Unlock cosmetics).
-	Featured = { Enabled = true, WeightBoost = 3, MasteryBonus = 2 },
+	-- Mastery (the Catalog Unlock cosmetics). Its hub stand (BundleDisplayController) links to the
+	-- ball skin in Skins, sold for coins in the Shop.
+	Featured = {
+		Enabled = true,
+		WeightBoost = 3,
+		MasteryBonus = 2,
+		Skins = { Heavy = "Skin_Meteor", Rocket = "Skin_Planet", Pop = "Skin_Bomb" } :: { [string]: string },
+	},
 }
 
 Config.Bots = {
@@ -697,10 +706,10 @@ Config.Tutorial = {
 Config.GroupReward = {
 	GroupId = 432934144, -- FAIRE GAME, the group that owns the game
 	Reward = { Kind = "Spin", Wheel = "RarePlus" } :: Reward,
-	-- deck frame (X right, F toward the court), behind the helipad's left side (the featured display,
-	-- Config.Lobby.Featured, is in front of it), clear of the practice zone (X < -29) and the Halloween
-	-- props; Yaw turns it toward the spawn
-	Kiosk = { X = -14, F = -14, Yaw = -30 },
+	-- deck frame (X right, F toward the court): in the row of stations along the back, next to the
+	-- shop (Config.Lobby.Stations), clear of the practice zone (X < -29) and the AC units behind it;
+	-- Yaw 0 faces the court like the stations
+	Kiosk = { X = -23, F = -33, Yaw = 0 },
 	PromptDistance = 10,
 	Cooldown = 2, -- seconds between checks for one player (each press asks Roblox again)
 }

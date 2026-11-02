@@ -1648,6 +1648,17 @@ return function(H)
 		end
 	end
 
+	test("featured ball: every power ball links to a ball skin sold for coins", function()
+		local BallDefinitions = H.require("shared/BallDefinitions")
+		for _, t in BallDefinitions.PowerTypes do
+			local id = Config.PowerUps.Featured.Skins[t]
+			local item = id and Catalog.get(id)
+			check(item ~= nil, "no skin for " .. t)
+			eq(item.Category, "BallSkin", t .. " skin category")
+			check(Catalog.isOffered(item, {}) and item.Price > 0, t .. " skin isn't sold for coins")
+		end
+	end)
+
 	test("group reward: the reward is valid and the kiosk stays off at group id 0", function()
 		check(S.RewardService.valid(Config.GroupReward.Reward), "Config.GroupReward.Reward isn't valid")
 		check(type(Config.GroupReward.GroupId) == "number" and Config.GroupReward.GroupId >= 0, "GroupId")

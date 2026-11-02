@@ -621,44 +621,57 @@ local function lampPost(x: number, f: number, color: Color3, decorF: Folder, col
 	return at(x, h, f).Position
 end
 
--- Sagging strand of party bulbs between two points.
-local function stringLights(a: Vector3, b: Vector3, bulbs: number, decorF: Folder)
+-- A tall light mast at a corner of the building, topped with a lit cap: the string lights hang
+-- from these, high over the deck. Returns where the strands tie on.
+local function lightMast(x: number, f: number, decorF: Folder, collidable: Folder): Vector3
+	local h = L.StringLights.Height
+	column(
+		{ Name = "LightMast", Color = PAL.Metal, Material = Enum.Material.Metal },
+		x,
+		h / 2,
+		f,
+		h,
+		0.9,
+		collidable,
+		true
+	)
+	neon("MastCap", at(x, h + 0.3, f), Vector3.new(1.6, 0.6, 1.6), PAL.Warm, decorF, 26)
+	return at(x, h - 0.4, f).Position
+end
+
+-- Sagging strand of party bulbs between two points, a bulb every L.StringLights.Spacing studs.
+local function stringLights(a: Vector3, b: Vector3, decorF: Folder)
+	local cfg = L.StringLights
 	local colors = { PAL.Warm, PAL.Pink, PAL.Cyan, PAL.Warm }
-	local sag = (b - a).Magnitude * 0.08
+	local length = (b - a).Magnitude
+	local bulbs = math.max(1, math.floor(length / cfg.Spacing))
+	local sag = length * cfg.Sag
 	local function point(t: number): Vector3
 		return a:Lerp(b, t) - Vector3.new(0, sag * 4 * t * (1 - t), 0)
 	end
 	local prev = point(0)
-	for i = 1, bulbs do
-		local t = i / (bulbs + 1)
-		local p = point(t)
-		local mid = (prev + p) / 2
+	for i = 1, bulbs + 1 do
+		local p = point(i / (bulbs + 1))
 		decor({
 			Name = "Wire",
-			Size = Vector3.new(0.06, 0.06, (p - prev).Magnitude),
-			CFrame = CFrame.lookAt(mid, p),
+			Size = Vector3.new(0.12, 0.12, (p - prev).Magnitude),
+			CFrame = CFrame.lookAt((prev + p) / 2, p),
 			Color = Color3.fromRGB(30, 30, 30),
 		}, decorF).CastShadow =
 			false
-		local bulb = decor({
-			Name = "Bulb",
-			Shape = Enum.PartType.Ball,
-			Size = Vector3.one * 0.45,
-			CFrame = CFrame.new(p - Vector3.new(0, 0.3, 0)),
-			Color = colors[i % #colors + 1],
-			Material = Enum.Material.Neon,
-		}, decorF)
-		bulb.CastShadow = false
+		if i <= bulbs then
+			decor({
+				Name = "Bulb",
+				Shape = Enum.PartType.Ball,
+				Size = Vector3.one * cfg.BulbSize,
+				CFrame = CFrame.new(p - Vector3.new(0, cfg.BulbSize * 0.7, 0)),
+				Color = colors[i % #colors + 1],
+				Material = Enum.Material.Neon,
+			}, decorF).CastShadow =
+				false
+		end
 		prev = p
 	end
-	local last = point(1)
-	decor({
-		Name = "Wire",
-		Size = Vector3.new(0.06, 0.06, (last - prev).Magnitude),
-		CFrame = CFrame.lookAt((prev + last) / 2, last),
-		Color = Color3.fromRGB(30, 30, 30),
-	}, decorF).CastShadow =
-		false
 end
 
 -- Zones: stations, leaderboard, watch zone, helipad and signs -----------------------------------
@@ -1344,17 +1357,24 @@ function LobbyBuilder.build(): Folder
 	vending(W - 3, 4, 90, PAL.Cyan, "FIZZ", collidable, decorF)
 	vending(W - 3, 34, 90, PAL.Pink, "BONK\nCOLA", collidable, decorF)
 
-	-- lamp posts at the plaza corners, with party lights strung between them
-	local lamps = {
-		lampPost(-24, -20, PAL.Warm, decorF, collidable),
-		lampPost(24, -20, PAL.Warm, decorF, collidable),
-		lampPost(24, 20, PAL.Warm, decorF, collidable),
-		lampPost(-24, 20, PAL.Warm, decorF, collidable),
-	}
-	for i = 1, #lamps do
-		stringLights(lamps[i], lamps[i % #lamps + 1], 10, decorF)
+	-- lamp posts at the plaza corners
+	for _, p in { { -24, -20 }, { 24, -20 }, { 24, 20 }, { -24, 20 } } do
+		lampPost(p[1], p[2], PAL.Warm, decorF, collidable)
 	end
-	stringLights(lamps[1], lamps[3], 14, decorF)
+	-- party lights strung high between masts at the building's corners, around the edge and across
+	-- both diagonals
+	local inset = L.StringLights.Inset
+	local masts = {
+		lightMast(-W + inset, -D + inset, decorF, collidable),
+		lightMast(W - inset, -D + inset, decorF, collidable),
+		lightMast(W - inset, D - inset, decorF, collidable),
+		lightMast(-W + inset, D - inset, decorF, collidable),
+	}
+	for i = 1, #masts do
+		stringLights(masts[i], masts[i % #masts + 1], decorF)
+	end
+	stringLights(masts[1], masts[3], decorF)
+	stringLights(masts[2], masts[4], decorF)
 
 	-- zones: stations along the back, leaderboard on the right end, bleachers at the railing
 	for _, def in L.Stations do
