@@ -894,6 +894,11 @@ function PracticeController.ballParts(): { { part: BasePart, ballType: string, s
 	return list
 end
 
+-- The tutorial step from the server's last Tutorial message (0 until it arrives).
+function PracticeController.tutorialStep(): number
+	return tutorialStep
+end
+
 -- Are you practising on the tutorial court (rather than the hub deck)?
 function PracticeController.onCourt(): boolean
 	return place ~= nil and place.spawn ~= nil

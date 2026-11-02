@@ -27,6 +27,7 @@ local ORDER = {
 	"BallGuideController",
 	"PracticeController",
 	"TutorialController",
+	"TutorialDrillController",
 	"FinisherController",
 	"IntroController",
 	"HubController",

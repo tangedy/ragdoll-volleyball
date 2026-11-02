@@ -589,6 +589,18 @@ Config.Tutorial = {
 		AwayReturn = 1, -- a ball resting where you can't reach it (the far half) comes back after this
 	},
 	CardSeconds = 2.6, -- step 3's "their % went up" callout shows this long before the next card
+	-- Dodge step (TutorialDrillController): the dummy winds up and throws a client-side ball at you,
+	-- much slower than a match throw (Config.Player.ThrowSpeed 195), slower again after SlowAfter misses
+	Drill = {
+		Speed = 70, -- studs/s across the ground: about 1.3 s from the dummy to you
+		SlowSpeed = 50,
+		SlowAfter = 3,
+		FirstDelay = 1.2, -- after the Dodge card shows
+		Windup = 0.8, -- the "!" and glowing ball before each throw
+		Again = 1.5, -- the next throw after a hit or a pass you didn't dodge
+		DodgeRadius = 4, -- passing this close (to you, or to where you dodged from) counts as dodged...
+		DodgeGrace = 0.4, -- ...if you dodged no more than this long before it went by
+	},
 }
 
 Config.Progression = {
