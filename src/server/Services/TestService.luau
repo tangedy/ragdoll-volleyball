@@ -78,6 +78,17 @@ local function waitUntil(fn: () -> boolean, timeout: number): boolean
 	return fn()
 end
 
+-- The suite, soak and probe need a live match, and an unfinished tutorial keeps a player out of the
+-- queue (Studio saves start fresh every playtest), so finish it for everyone here first (no reward).
+local function finishTutorials()
+	for _, c in S.PlayerStateService.realPlayers() do
+		if c.profileLoaded and not S.TutorialService.isDone(c) then
+			S.TutorialService.devSkip(c)
+			print(("[Tests] skipped %s's tutorial so a match can start"):format(c.name))
+		end
+	end
+end
+
 local function bots(team: string): { any }
 	local list = {}
 	for _, c in S.MatchService.roster() do
@@ -799,6 +810,7 @@ test("paid random items: restricted players can't buy spins but still open quest
 		local player = c.player
 		c.player = nil -- (a claim pushes the profile, which needs a real Player)
 		S.QuestService.daily(c).progress.Won = 1
+		S.QuestService.daily(c).picks = { "Won" } -- (today's random picks may not include it)
 		assertTrue(S.QuestService.claim(c, "Won") ~= nil, "quest chest refused in a restricted region")
 		c.player = player
 		-- (granting a prize pushes the profile, which needs a real Player, so the successful paths
@@ -962,8 +974,127 @@ test("Robux buttons stay hidden until the first finished match", function()
 	assertTrue(S.PurchaseService.robuxUnlocked(c), "still locked after a finished match")
 	Workspace:SetAttribute("RD_RobuxUnlocked", studioUnlock)
 	local migrated = S.DataService.migrate({ SchemaVersion = 8, Matches = 5 })
-	assertTrue(S.PurchaseService.robuxUnlocked({ profileLoaded = true, profile = migrated }), "a returning player is locked again")
+	assertTrue(
+		S.PurchaseService.robuxUnlocked({ profileLoaded = true, profile = migrated }),
+		"a returning player is locked again"
+	)
 	assertTrue(migrated.CoinBoostForever == false and migrated.CoinBoostUntil == 0, "v9 boost fields missing")
+end)
+
+-- A loaded, in-hub combatant with no Player, at a tutorial step.
+local function tutorialTester(step: number): any
+	return {
+		name = "tutorialTester",
+		profileLoaded = true,
+		inMatch = false,
+		status = "Lobby",
+		profile = { TutorialStep = step, TutorialRewarded = false, Coins = 0, OwnedCosmetics = {}, Equipped = {} },
+	}
+end
+
+test("tutorial: steps advance only in order, on their own event, one per cooldown", function()
+	local T = S.TutorialService
+	local c = tutorialTester(1)
+	local function step(): number
+		return c.profile.TutorialStep
+	end
+	T.onEvent(c, "DummyOut")
+	T.onEvent(c, "Throw")
+	T.onEvent(c, "GotHit")
+	assertTrue(step() == 1, "moved on from Grab without a pickup")
+	T.onEvent(c, "Pickup")
+	assertTrue(step() == 2, "Pickup didn't finish Grab")
+	-- a spammed remote: every event at once moves one step, once the cooldown is over
+	for _ = 1, 3 do
+		for _, e in { "Pickup", "HitDummy", "DummyOut", "HeavyOut", "Dodged" } do
+			T.onEvent(c, e)
+		end
+	end
+	assertTrue(step() == 2, "a burst of events skipped steps")
+	task.wait(Config.Tutorial.StepCooldown + 0.15)
+	assertTrue(step() == 3, "HitDummy just after the last step wasn't applied after the cooldown")
+	-- matches never move it (the tutorial is hub only)
+	c.tutorialChangedAt = nil
+	c.inMatch = true
+	T.onEvent(c, "DummyOut")
+	c.inMatch = false
+	assertTrue(step() == 3, "a match event moved the tutorial")
+	T.onEvent(c, "DummyOut")
+	assertTrue(step() == 4, "DummyOut didn't finish KnockOff")
+	c.tutorialChangedAt = nil
+	T.onEvent(c, "Dodged")
+	T.onEvent(c, "HeavyOut")
+	assertTrue(step() == 5, "HeavyOut didn't finish Heavy")
+	c.tutorialChangedAt = nil
+	T.onEvent(c, "Dodged")
+	assertTrue(step() == 5, "Discover took an event")
+	assertTrue(
+		waitUntil(function()
+			return step() == 6
+		end, Config.Tutorial.DiscoverSeconds + 1),
+		"Discover didn't move on by itself"
+	)
+end)
+
+test("tutorial: the completion reward is paid once and saved", function()
+	local T = S.TutorialService
+	local c = tutorialTester(6)
+	local amount = Config.Tutorial.Reward.Amount
+	T.onEvent(c, "Dodged")
+	local p = c.profile
+	assertTrue(p.TutorialStep == T.Done and T.isDone(c), "Dodged didn't finish the tutorial")
+	assertTrue(p.Coins == amount and p.TutorialRewarded == true, ("paid %d, want %d"):format(p.Coins, amount))
+	c.tutorialChangedAt = nil
+	T.onEvent(c, "Dodged")
+	assertTrue(p.Coins == amount, "paid again after Done")
+	-- a reset and replay (Studio shortcut) finishes again without paying
+	T.devReset(c)
+	assertTrue(p.TutorialStep == 1 and not T.isDone(c), "reset didn't go back to step 1")
+	p.TutorialStep = 6
+	T.onEvent(c, "Dodged")
+	assertTrue(p.TutorialStep == T.Done and p.Coins == amount, "a replay paid the reward twice")
+	-- the flag survives a save round trip
+	local reloaded = S.DataService.migrate(table.clone(p))
+	assertTrue(reloaded.TutorialRewarded == true and reloaded.TutorialStep == T.Done, "reward flag not saved")
+end)
+
+test("tutorial: old saves migrate (finished or played -> Done, the rest restart)", function()
+	local D, done = S.DataService, S.TutorialService.Done
+	local function stepOf(old: any): number
+		return D.migrate(old).TutorialStep
+	end
+	assertTrue(stepOf({ SchemaVersion = 12, TutorialStep = 6 }) == done, "old done (6) not Done")
+	assertTrue(stepOf({ SchemaVersion = 12, TutorialStep = 9 }) == done, "old step past 6 not Done")
+	assertTrue(stepOf({ SchemaVersion = 12, TutorialStep = 2, Matches = 1 }) == done, "a player with a match")
+	assertTrue(stepOf({ SchemaVersion = 12, TutorialStep = 5, Matches = 0 }) == 1, "old step 5 didn't restart")
+	assertTrue(stepOf({ SchemaVersion = 12, TutorialStep = 3 }) == 1, "old step 3 didn't restart")
+	assertTrue(stepOf({ SchemaVersion = 4 }) == 1, "an old save with no step")
+	local fresh = D.migrate(nil)
+	assertTrue(fresh.TutorialStep == 1 and fresh.TutorialRewarded == false, "a new save")
+	assertTrue(stepOf({ SchemaVersion = 13, TutorialStep = 4, Matches = 2 }) == 4, "a v13 step changed")
+end)
+
+test("tutorial: a player who hasn't finished it is never queued", function()
+	local me
+	for _, c in S.PlayerStateService.realPlayers() do
+		if c.profileLoaded and c.player and S.PlayerStateService.isAlive(c) then
+			me = c
+		end
+	end
+	assertTrue(me ~= nil, "no real player with a character")
+	-- no yields in between: nothing else sees this player out of the match or the flag flipped
+	local saved = { inMatch = me.inMatch, autoQueue = me.autoQueue, done = me.player:GetAttribute("TutorialDone") }
+	me.inMatch, me.autoQueue = false, true
+	me.player:SetAttribute("TutorialDone", true)
+	local whenDone = table.find(S.MatchService.queuedPlayers(), me) ~= nil
+	me.player:SetAttribute("TutorialDone", false)
+	local whenNot = table.find(S.MatchService.queuedPlayers(), me) ~= nil
+	me.player:SetAttribute("TutorialDone", nil)
+	local whenUnset = table.find(S.MatchService.queuedPlayers(), me) ~= nil
+	me.inMatch, me.autoQueue = saved.inMatch, saved.autoQueue
+	me.player:SetAttribute("TutorialDone", saved.done)
+	assertTrue(whenDone, "a finished player with Play again on wasn't queued")
+	assertTrue(not whenNot and not whenUnset, "a player mid-tutorial was queued")
 end)
 
 test("simultaneous final eliminations -> draw (ends the round)", function()
@@ -1155,13 +1286,22 @@ end)
 
 -- A loaded, in-hub combatant with no Player (claims push the profile only for real players).
 local function questTester(id: number): any
-	return {
+	local c = {
 		id = id,
 		profileLoaded = true,
 		inMatch = false,
 		status = "Lobby",
 		profile = { Coins = 0, OwnedCosmetics = {}, Equipped = {} },
 	}
+	-- these tests check every daily quest, so show them all
+	local d = S.QuestService.daily(c)
+	d.picks = {}
+	for _, q in Config.Quests.List do
+		if not q.Repeats then
+			table.insert(d.picks, q.Id)
+		end
+	end
+	return c
 end
 
 local function questStatus(c: any, id: string): any
@@ -1183,13 +1323,13 @@ test("quests: progress counts up to each goal; only real players track it", func
 	S.QuestService.record(c, "Knockout", 4)
 	local q = questStatus(c, "Knockouts")
 	assertTrue(q.progress == 3 and q.ready, "knockouts not capped at the goal")
-	assertTrue(questStatus(c, "Played").progress == 0, "a knockout counted as a game")
-	S.QuestService.record(c, "Played")
+	assertTrue(questStatus(c, "Hits").progress == 0, "a knockout counted as a hit")
+	S.QuestService.record(c, "Hit")
 	S.QuestService.record(c, "Won")
-	assertTrue(questStatus(c, "Played").progress == 1 and questStatus(c, "Won").ready, "played/won not counted")
+	assertTrue(questStatus(c, "Hits").progress == 1 and questStatus(c, "Won").ready, "hit/won not counted")
 	local bot = questTester(900031)
 	S.QuestService.record(bot, "Knockout")
-	assertTrue(bot.profile.DailyQuests == nil, "a bot's quests were tracked")
+	assertTrue(questStatus(bot, "Knockouts").progress == 0, "a bot's quests were tracked")
 end)
 
 test("mastery: power-ball knockouts count by type; mastery cosmetics stay out of shop and pools", function()
@@ -1223,6 +1363,9 @@ test("mastery: power-ball knockouts count by type; mastery cosmetics stay out of
 		end
 	end
 	for _, q in Config.Quests.List do
+		if not q.Chest then
+			continue
+		end
 		local pool = S.RewardService.chestPool(q.Chest)
 		for _, r in { "Common", "Rare", "Epic", "Legendary" } do
 			assertTrue(#pool[r] > 0, q.Chest .. " chest has no " .. r .. " items")
@@ -1292,24 +1435,27 @@ end)
 
 test("quests: a chest is claimed once, only when done and only in the hub", function()
 	local c = questTester(900033)
-	assertTrue(S.QuestService.claim(c, "Played") == nil, "claimed an unfinished quest")
-	S.QuestService.daily(c).progress.Played = 2
+	assertTrue(S.QuestService.claim(c, "Hits") == nil, "claimed an unfinished quest")
+	S.QuestService.daily(c).progress.Hits = 10
 	c.status, c.inMatch = "Active", true
-	assertTrue(S.QuestService.claim(c, "Played") == nil, "claimed during a match")
+	assertTrue(S.QuestService.claim(c, "Hits") == nil, "claimed during a match")
 	c.status, c.inMatch = "Lobby", false
-	local r = S.QuestService.claim(c, "Played")
+	local r = S.QuestService.claim(c, "Hits")
 	assertTrue(r and r.ok and r.kind == "Chest" and r.chest == "Gesture", "claim refused")
 	assertTrue((Catalog.get(r.id) :: any).Category == "Pose", "the Gesture Chest dropped a non-gesture")
 	assertTrue(c.profile.OwnedCosmetics[r.id] == true, "prize not owned")
 	assertTrue(r.slots[r.index] == r.id, "reveal wheel doesn't land on the prize")
 	local coins = c.profile.Coins
-	assertTrue(S.QuestService.claim(c, "Played") == nil, "claimed twice")
+	assertTrue(S.QuestService.claim(c, "Hits") == nil, "claimed twice")
 	assertTrue(c.profile.Coins == coins, "a refused claim paid coins")
-	assertTrue(questStatus(c, "Played").claimed, "not shown as claimed")
+	assertTrue(questStatus(c, "Hits").claimed, "not shown as claimed")
 end)
 
 test("quests: chest drops follow the rarity odds and stay in the chest's category", function()
 	for _, def in Config.Quests.List do
+		if not def.Chest then
+			continue -- (a Repeats quest pays coins)
+		end
 		local odds = S.RewardService.chestOdds(def.Chest)
 		local category = (Config.Quests.Chests :: any)[def.Chest].Category
 		local counts: { [string]: number } = {}
@@ -1528,6 +1674,7 @@ end)
 -- Run: workspace:SetAttribute("RD_KnockbackProbe", true); results in "RD_KnockbackResults".
 function TestService.knockbackProbe()
 	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
+	finishTutorials()
 	if not waitUntil(function()
 		return ms:GetAttribute("State") == "RoundActive"
 	end, 30) then
@@ -1623,6 +1770,7 @@ function TestService.soak(rounds: number)
 	end
 	running = true
 	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
+	finishTutorials()
 	local Stats = game:GetService("Stats")
 	local ScriptContext = game:GetService("ScriptContext")
 	local errors: { string } = {}
@@ -1775,6 +1923,7 @@ function TestService.runAll()
 	running = true
 	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
 	local results = {}
+	finishTutorials()
 	-- start in a normal live round (not sudden death), then keep its timer from running out
 	if
 		not waitUntil(function()

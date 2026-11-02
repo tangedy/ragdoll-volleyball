@@ -121,6 +121,10 @@ return function(H)
 
 	test("config: every quest names a chest that can drop something, with odds adding up to 1", function()
 		for _, q in Config.Quests.List do
+			if q.Repeats then
+				check(S.RewardService.valid(q.Reward), q.Id .. "'s reward isn't valid")
+				continue
+			end
 			local def = Config.Quests.Chests[q.Chest]
 			check(def ~= nil, q.Id .. " names unknown chest " .. tostring(q.Chest))
 			check(q.Goal >= 1, q.Id .. " has no goal")
@@ -140,6 +144,9 @@ return function(H)
 
 	test("catalog: every quest chest has a spread of items in every rarity", function()
 		for _, q in Config.Quests.List do
+			if not q.Chest then
+				continue
+			end
 			local pool = S.RewardService.chestPool(q.Chest)
 			for _, r in { "Common", "Rare", "Epic", "Legendary" } do
 				check(#pool[r] >= 1, ("%s has no %s items"):format(q.Chest, r))
@@ -200,7 +207,10 @@ return function(H)
 		local v8 = D.migrate({ SchemaVersion = 8, Coins = 9, Matches = 5, Receipts = { "a" } })
 		eq(v8.Coins, 9, "v8 coins")
 		eq(v8.Receipts[1], "a", "v8 receipts")
-		check(S.PurchaseService.robuxUnlocked({ profileLoaded = true, profile = v8 }), "returning player is locked out of Robux again")
+		check(
+			S.PurchaseService.robuxUnlocked({ profileLoaded = true, profile = v8 }),
+			"returning player is locked out of Robux again"
+		)
 		eq(v8.CoinBoostForever, false, "v8 boost flag")
 		local v9 = D.migrate({ SchemaVersion = 9, CoinBoostForever = true, CoinBoostUntil = 77, PlaySeconds = 30 })
 		eq(v9.CoinBoostForever, true, "v9 lifetime boost kept")
@@ -363,7 +373,6 @@ return function(H)
 		S.RewardService.awardMatch({ c }, m)
 		eq(c.profile.Coins, Config.Coins.WinAlive, "same match paid twice")
 		local d = S.QuestService.daily(c)
-		eq(d.progress.Played, 1, "played quest")
 		eq(d.progress.Won, 1, "won quest")
 		-- with a boost, the next match pays double
 		c.profile.CoinBoostForever = true
@@ -378,6 +387,7 @@ return function(H)
 	test("quests: a first claim comes back after the short cooldown, later ones wait for the reset", function()
 		local c = H.combatant()
 		local d = S.QuestService.daily(c)
+		d.picks = { "Won" } -- (today's random picks may not include it)
 		d.progress.Won = 1
 		check(S.QuestService.claim(c, "Won") ~= nil, "first claim refused")
 		local function won(): any
@@ -397,18 +407,16 @@ return function(H)
 		eq(won().nextAt, S.QuestService.status(c).resetsAt, "second claim waits for the reset")
 	end)
 
-	test("rewards: aborted or idle matches don't count toward the quests; a loss is played, not won", function()
+	test("rewards: aborted, idle or lost matches don't count toward the win quest", function()
 		local c = H.combatant()
 		c.team = "Red"
 		S.RewardService.awardMatch({ c }, ctx("Red")) -- idle: no actions
 		c.stats.throws = 3
 		S.RewardService.awardMatch({ c }, ctx(nil, { aborted = true }))
-		eq(S.QuestService.daily(c).progress.Played, nil, "matches counted")
 		c.stats = H.stats()
 		c.stats.throws = 1
 		S.RewardService.awardMatch({ c }, ctx("Blue"))
-		eq(S.QuestService.daily(c).progress.Played, 1, "a loss isn't played")
-		eq(S.QuestService.daily(c).progress.Won, nil, "a loss counted as won")
+		eq(S.QuestService.daily(c).progress.Won, nil, "an idle, aborted or lost match counted as won")
 	end)
 
 	test("rewards: bot-heavy (casual) matches leave win streaks alone; real ones move them", function()
@@ -431,6 +439,43 @@ return function(H)
 
 	-- Daily quests ----------------------------------------------------------------------------------
 
+	local realPickDaily = S.QuestService.pickDaily
+	test("quests: the panel shows two daily picks a day and the playtime quest", function()
+		local pinned = S.QuestService.pickDaily
+		S.QuestService.pickDaily = realPickDaily -- (the tests below pin it)
+		local c = H.combatant()
+		local st = S.QuestService.status(c)
+		S.QuestService.pickDaily = pinned
+		eq(#st.quests, Config.Quests.Shown, "quests shown")
+		local seen = {}
+		for i, q in st.quests do
+			check(not seen[q.id], q.id .. " shown twice")
+			seen[q.id] = true
+			check((q.repeats == true) == (i == #st.quests), q.id .. " out of place")
+		end
+		eq(st.quests[#st.quests].id, "Playtime", "playtime isn't last")
+		local again = S.QuestService.status(c)
+		for i, q in st.quests do
+			eq(again.quests[i].id, q.id, "picks changed within the day")
+		end
+		for _, id in S.QuestService.daily(c).picks do
+			if not seen[id] then
+				check(false, id .. " picked but not shown")
+			end
+		end
+	end)
+
+	-- the rest of the tests see every daily quest at once
+	S.QuestService.pickDaily = function()
+		local ids = {}
+		for _, q in Config.Quests.List do
+			if not q.Repeats then
+				table.insert(ids, q.Id)
+			end
+		end
+		return ids
+	end
+
 	local function quest(c, id)
 		for _, q in S.QuestService.status(c).quests do
 			if q.id == id then
@@ -446,7 +491,7 @@ return function(H)
 		end
 	end
 
-	test("quests: knockouts, games and wins add up to each goal and stop there; bots don't track", function()
+	test("quests: knockouts, hits, dodges and wins add up to each goal and stop there; bots don't track", function()
 		local c = H.combatant()
 		S.QuestService.record(c, "Knockout")
 		S.QuestService.record(c, "Knockout")
@@ -455,14 +500,55 @@ return function(H)
 		S.QuestService.record(c, "Knockout", 5)
 		q = quest(c, "Knockouts")
 		check(q.progress == 3 and q.ready and not q.claimed, "knockouts past the goal")
-		eq(quest(c, "Played").progress, 0, "a knockout counted as a game")
-		S.QuestService.record(c, "Played")
-		eq(quest(c, "Played").progress, 1, "played")
+		eq(quest(c, "Hits").progress, 0, "a knockout counted as a hit")
+		S.QuestService.record(c, "Hit")
+		S.QuestService.record(c, "Dodge", 2)
+		eq(quest(c, "Hits").progress, 1, "hits")
+		eq(quest(c, "Dodges").progress, 2, "dodges")
 		S.QuestService.record(c, "Won")
 		check(quest(c, "Won").ready, "win quest not ready")
 		local bot = H.combatant(false)
 		S.QuestService.record(bot, "Knockout")
 		eq(bot.profile.DailyQuests.date, "", "a bot's quests were touched")
+	end)
+
+	test("quests: a dodge counts when the ball passes your dodge spot or you, early or late", function()
+		local CombatService = H.require("server/Services/CombatService")
+		CombatService.init(S)
+		local V = H.Vector3
+		local rule = Config.Quests.Dodge
+		local c = H.combatant()
+		c.inMatch, c.status, c.team = true, "Active", "Red"
+		local function dodge(at: number, from: any, to: any)
+			c.dodgedAt, c.dodgeFrom = at, from -- as CombatService.doDodge sets them
+			c.root = { Position = to } -- where the dash has taken you by now
+		end
+		local function pass(offset: number, team: string?)
+			local ball = { context = "Match", lastTeam = team or "Blue" }
+			CombatService.creditDodges(ball, V.new(-10, 3, offset), V.new(10, 3, offset))
+			return ball
+		end
+		H.now = 1000
+		-- pressed 0.4 s early: the dash has carried you ~12 studs, but the ball crosses your spot
+		dodge(H.now - 0.4, V.new(0, 3, 0), V.new(0, 3, 12))
+		local ball = pass(rule.Radius - 2)
+		eq(quest(c, "Dodges").progress, 1, "an early dodge didn't count")
+		CombatService.creditDodges(ball, V.new(10, 3, 5), V.new(30, 3, 5))
+		eq(quest(c, "Dodges").progress, 1, "one ball counted twice")
+		pass(-(rule.Radius + 2))
+		eq(quest(c, "Dodges").progress, 1, "a ball wide of you and your dodge spot counted")
+		pass(0, "Red")
+		eq(quest(c, "Dodges").progress, 1, "a teammate's ball counted")
+		-- pressed late (or the ball bent after you): it goes by where you are now, not your spot
+		dodge(H.now - 0.1, V.new(0, 3, -12), V.new(0, 3, 0))
+		pass(3)
+		eq(quest(c, "Dodges").progress, 2, "a late dodge didn't count")
+		dodge(H.now - rule.Window - 0.1, V.new(0, 3, 0), V.new(0, 3, 0))
+		pass(0)
+		eq(quest(c, "Dodges").progress, 2, "a ball after the window counted")
+		c.dodgedAt, c.dodgeFrom = nil, nil
+		pass(0)
+		eq(quest(c, "Dodges").progress, 2, "a ball counted without a dodge")
 	end)
 
 	test("quests: progress and claims reset at UTC midnight", function()
@@ -507,19 +593,47 @@ return function(H)
 		check(#H.eventsNamed("Profile") > 0, "claim didn't push the profile")
 		-- an unloaded profile can't claim
 		local early = H.combatant()
-		finish(early, "Played")
+		finish(early, "Hits")
 		early.profileLoaded = false
-		check(not S.QuestService.claim(early, "Played"), "claimed before the profile loaded")
+		check(not S.QuestService.claim(early, "Hits"), "claimed before the profile loaded")
+	end)
+
+	test("quests: playtime pays coins every time it fills, starts again and survives midnight", function()
+		local day = 20000 * 86400
+		H.now = day + 86400 - 2
+		local c = H.combatant()
+		local goal = quest(c, "Playtime").goal
+		S.QuestService.record(c, "Playtime", goal - 1)
+		check(not S.QuestService.claim(c, "Playtime"), "claimed before the goal")
+		H.now = day + 86400 -- midnight: playtime keeps its progress
+		eq(quest(c, "Playtime").progress, goal - 1, "playtime reset at midnight")
+		S.QuestService.record(c, "Playtime", 5)
+		check(quest(c, "Playtime").ready, "playtime not ready at the goal")
+		local coins = c.profile.Coins
+		local reward = 0
+		for _, q in Config.Quests.List do
+			if q.Id == "Playtime" then
+				reward = q.Reward.Amount
+			end
+		end
+		for round = 1, 3 do
+			local r = S.QuestService.claim(c, "Playtime")
+			check(r and r.ok and r.kind == "Coins", "playtime claim refused on round " .. round)
+			eq(c.profile.Coins, coins + reward * round, "playtime coins")
+			local q = quest(c, "Playtime")
+			check(q.progress == 0 and not q.claimed and not q.ready, "playtime didn't start again")
+			S.QuestService.record(c, "Playtime", goal)
+		end
 	end)
 
 	test("quests: a claim survives a save and reload, and stays claimed", function()
 		local c = H.combatant()
-		finish(c, "Played")
-		check(S.QuestService.claim(c, "Played"), "claim refused")
+		finish(c, "Hits")
+		check(S.QuestService.claim(c, "Hits"), "claim refused")
 		local reloaded = { profile = S.DataService.migrate(H.deepCopy(c.profile)), profileLoaded = true }
 		local q
 		for _, it in S.QuestService.status(reloaded).quests do
-			if it.id == "Played" then
+			if it.id == "Hits" then
 				q = it
 			end
 		end
@@ -528,6 +642,9 @@ return function(H)
 
 	test("quests: drops follow each chest's rarity odds and stay in its category", function()
 		for _, def in Config.Quests.List do
+			if not def.Chest then
+				continue
+			end
 			local odds = S.RewardService.chestOdds(def.Chest)
 			local category = Config.Quests.Chests[def.Chest].Category
 			local counts, n = {}, 2000
@@ -583,6 +700,10 @@ return function(H)
 		local st = S.QuestService.status(c)
 		eq(#st.quests, #Config.Quests.List, "quest count")
 		for _, q in st.quests do
+			if q.repeats then
+				check(q.drops == nil and (q.coins or 0) > 0, q.id .. " should pay coins, not a chest")
+				continue
+			end
 			local n = 0
 			for r, ids in q.drops do
 				for _, id in ids do
@@ -1141,5 +1262,92 @@ return function(H)
 		H.now = DateTime.fromIsoDate("2026-10-31T20:00:00Z").UnixTimestamp
 		check(S.HalloweenService.scheduled(), "off on Halloween night")
 		HC.Enabled = saved[1]
+	end)
+
+	-- Tutorial ---------------------------------------------------------------------------------------
+	-- (the harness's task.delay runs at once, so a deferred step is dropped and Discover moves on at
+	-- once; the Studio suite checks both with real time)
+
+	test("tutorial: steps advance only in order, on their own event, never in a burst", function()
+		local T = S.TutorialService
+		local c = H.combatant()
+		local function step()
+			return c.profile.TutorialStep
+		end
+		eq(step(), 1, "a new save starts at Grab")
+		T.onEvent(c, "DummyOut")
+		T.onEvent(c, "Throw")
+		eq(step(), 1, "moved on from Grab without a pickup")
+		T.onEvent(c, "Pickup")
+		eq(step(), 2, "Pickup")
+		for _, e in { "HitDummy", "DummyOut", "HeavyOut", "Dodged" } do
+			T.onEvent(c, e)
+		end
+		eq(step(), 2, "a burst of events moved a step inside the cooldown")
+		c.tutorialChangedAt = nil
+		c.inMatch = true
+		T.onEvent(c, "HitDummy")
+		c.inMatch = false
+		eq(step(), 2, "a match event moved the tutorial")
+		for _, e in { "HitDummy", "DummyOut", "HeavyOut" } do
+			c.tutorialChangedAt = nil
+			T.onEvent(c, e)
+		end
+		eq(step(), 6, "HitDummy, DummyOut, HeavyOut, then Discover by itself")
+		local steps = {}
+		for _, e in H.eventsNamed("Tutorial") do
+			table.insert(steps, e.payload.step)
+		end
+		eq(table.concat(steps, ","), "2,3,4,5,6", "Tutorial messages")
+		check(c.player:GetAttribute("TutorialDone") ~= true, "done before the last step")
+	end)
+
+	test("tutorial: Done pays the reward once, saves it and opens the queue", function()
+		local T = S.TutorialService
+		local c = H.combatant()
+		c.profile.TutorialStep = 6
+		T.onEvent(c, "Dodged")
+		local amount = Config.Tutorial.Reward.Amount
+		eq(c.profile.TutorialStep, T.Done, "Dodged finishes")
+		eq(c.profile.Coins, amount, "reward coins")
+		eq(c.profile.TutorialRewarded, true, "reward flag")
+		eq(c.player:GetAttribute("TutorialDone"), true, "TutorialDone attribute")
+		local msgs = H.eventsNamed("Tutorial")
+		local last = msgs[#msgs].payload
+		check(last.step == T.Done and last.reward and last.reward.kind == "Coins", "no reward in the Done message")
+		eq(last.reward.coins, amount, "reward message coins")
+		-- a reset and replay never pays again, even after a reload
+		T.devReset(c)
+		eq(c.player:GetAttribute("TutorialDone"), false, "reset clears TutorialDone")
+		c.profile = S.DataService.migrate(H.deepCopy(c.profile))
+		c.profile.TutorialStep = 6
+		T.onEvent(c, "Dodged")
+		eq(c.profile.Coins, amount, "paid twice")
+		msgs = H.eventsNamed("Tutorial")
+		check(msgs[#msgs].payload.reward == nil, "a second reward message")
+		-- on join: finished players get TutorialDone straight away
+		local back = H.combatant()
+		back.profile = S.DataService.migrate({ SchemaVersion = 12, TutorialStep = 6 })
+		T.sync(back)
+		eq(back.player:GetAttribute("TutorialDone"), true, "TutorialDone on join")
+		local fresh = H.combatant()
+		T.sync(fresh)
+		check(fresh.player:GetAttribute("TutorialDone") ~= true, "a new player marked done on join")
+		-- skipping (Studio) doesn't pay
+		T.devSkip(fresh)
+		check(T.isDone(fresh) and fresh.profile.Coins == 0, "skip paid or didn't finish")
+	end)
+
+	test("save migration v13: finished or played -> Done, the rest restart at Grab", function()
+		local D = S.DataService
+		local done = Config.Tutorial.Done
+		eq(D.migrate({ SchemaVersion = 12, TutorialStep = 6 }).TutorialStep, done, "old done")
+		eq(D.migrate({ SchemaVersion = 12, TutorialStep = 2, Matches = 1 }).TutorialStep, done, "has a match")
+		eq(D.migrate({ SchemaVersion = 12, TutorialStep = 5, Matches = 0 }).TutorialStep, 1, "old step 5")
+		eq(D.migrate({ SchemaVersion = 3 }).TutorialStep, 1, "no step at all")
+		local v13 = D.migrate({ SchemaVersion = 13, TutorialStep = 4, Matches = 3 })
+		eq(v13.TutorialStep, 4, "a v13 step is kept")
+		eq(v13.TutorialRewarded, false, "reward flag default")
+		eq(D.migrate({ SchemaVersion = 13, TutorialStep = 99 }).TutorialStep, done, "out of range")
 	end)
 end

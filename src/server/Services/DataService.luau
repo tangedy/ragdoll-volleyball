@@ -23,7 +23,9 @@ export type Profile = {
 	Coins: number, -- the single currency (schema v4; v3 stored it as "Pts")
 	OwnedCosmetics: { [string]: boolean },
 	Equipped: { [string]: string },
+	-- schema v13: the guided hub tutorial, 1..Config.Tutorial.Done (TutorialService)
 	TutorialStep: number,
+	TutorialRewarded: boolean, -- the completion reward was paid (it never pays twice)
 	Wins: number,
 	Knockouts: number,
 	Matches: number,
@@ -70,6 +72,7 @@ local function default(): Profile
 		OwnedCosmetics = {},
 		Equipped = {},
 		TutorialStep = 1,
+		TutorialRewarded = false,
 		Wins = 0,
 		Knockouts = 0,
 		Matches = 0,
@@ -197,6 +200,18 @@ function DataService.migrate(old: any): Profile
 	if type(data.QuestFirstClaims) ~= "table" then
 		data.QuestFirstClaims = {}
 	end
+	local done = Config.Tutorial.Done
+	if version < 13 then
+		-- v13: the 6-step tutorial (6 = done) becomes the 7-step guided hub tutorial. Anyone who had
+		-- finished it, or has played a match, is done (returning players never see it); the rest start
+		-- it again from step 1.
+		local oldStep = tonumber(data.TutorialStep) or 1
+		local matches = tonumber(data.Matches) or 0
+		data.TutorialStep = if oldStep >= 6 or matches >= 1 then done else 1
+	end
+	local step = tonumber(data.TutorialStep) or 1
+	data.TutorialStep = math.clamp(math.floor(step), 1, done)
+	data.TutorialRewarded = data.TutorialRewarded == true
 	data.SchemaVersion = D.SchemaVersion
 	return data
 end

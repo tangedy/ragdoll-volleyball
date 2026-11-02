@@ -45,6 +45,10 @@ export type Combatant = {
 	possessionWarned: boolean,
 	chargeStart: number?,
 	dodgeReadyAt: number,
+	dodgedAt: number?, -- when the last dodge started (the daily dodge quest)
+	dodgeFrom: Vector3?, -- and where the player stood then
+	questLastPos: Vector3?, -- daily playtime quest: where the player last moved, and when
+	questActiveAt: number?,
 	catchReadyAt: number,
 	catchUntil: number,
 	immuneUntil: number,

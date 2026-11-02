@@ -39,6 +39,7 @@ export type Ball = {
 	homing: any?, -- the enemy this throw bends toward (Config.AimAssist.Homing)
 	turned: number, -- radians of homing used so far
 	courseDirty: boolean, -- homing bent the arc since clients were last told (BallCourse)
+	dodgedBy: { [any]: boolean }?, -- players already credited with dodging this throw (daily quest)
 }
 
 local BallService = {}
@@ -481,6 +482,7 @@ function BallService.launch(c: any, velocity: Vector3, throwId: number): Ball?
 	ball.homing = nil
 	ball.turned = 0
 	ball.courseDirty = false
+	ball.dodgedBy = nil
 	launchSeq += 1
 	ball.launchSeq = launchSeq
 	ball.lastThrower = c
@@ -594,6 +596,7 @@ local function simulate(ball: Ball, dt: number)
 		return
 	end
 
+	S.CombatService.creditDodges(ball, from, to)
 	ball.pos = to
 	ball.vel = nextVel
 	ball.flightT += dt

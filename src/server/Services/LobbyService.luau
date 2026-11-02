@@ -262,8 +262,8 @@ function LobbyService.start()
 			S.AnalyticsService.event(c, "Device_" .. p.kind)
 		end
 	end)
-	-- Practice (client-side dummy and balls): only advances the tutorial and the onboarding funnel,
-	-- never anything that pays or owns. Hub only.
+	-- Practice (client-side dummy, balls and dodge drill): only advances the tutorial and the
+	-- onboarding funnel. Nothing pays but the tutorial's one-time completion reward. Hub only.
 	S.NetService.on(NetSchema.Actions.Practice, function(player, p)
 		local c = S.PlayerStateService.get(player)
 		if not c or c.inMatch or c.status ~= "Lobby" then

@@ -150,6 +150,15 @@ function MatchService.start()
 				S.DataService.push(c)
 				S.NetService.send(player, "Hint", { text = "+1,000,000 coins (dev)", duration = 1.5 })
 			end
+		elseif p.cmd == "TutorialReset" or p.cmd == "TutorialSkip" then
+			local c = S.PlayerStateService.get(player)
+			if c and not c.inMatch then
+				if p.cmd == "TutorialReset" then
+					S.TutorialService.devReset(c)
+				else
+					S.TutorialService.devSkip(c)
+				end
+			end
 		elseif p.cmd == "SkipToFinisher" then
 			local c = S.PlayerStateService.get(player)
 			if c and c.inMatch and c.team then
@@ -260,8 +269,8 @@ function MatchService.queuedPlayers(): { any }
 	local list = {}
 	for _, c in S.PlayerStateService.realPlayers() do
 		-- an open hub menu never holds anyone back (the client closes it when they're pulled in);
-		-- only the dev room does
-		local away = c.player:GetAttribute("InDevRoom") == true
+		-- only the dev room does, and an unfinished tutorial (whatever Play again says)
+		local away = c.player:GetAttribute("InDevRoom") == true or c.player:GetAttribute("TutorialDone") ~= true
 		if c.autoQueue and not away and not c.inMatch and S.PlayerStateService.isAlive(c) and c.profileLoaded then
 			table.insert(list, c)
 		end

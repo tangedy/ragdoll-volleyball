@@ -15,6 +15,12 @@ local DebugController = {}
 -- From the client command bar: game.Players.LocalPlayer:SetAttribute("RD_Gallery", "<item>")
 local function gallery(item: string)
 	local Controllers = script.Parent
+	if item == "TutorialReset" or item == "TutorialSkip" then
+		-- the real tutorial (server): back to step 1, or straight to done (no reward)
+		local Net = require(Controllers.Net) :: any
+		Net.request(Net.Actions.Dev, { cmd = item })
+		return
+	end
 	local HUD = require(Controllers.HUDController) :: any
 	local Shop = require(Controllers.ShopController) :: any
 	local Tutorial = require(Controllers.TutorialController) :: any

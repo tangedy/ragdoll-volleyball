@@ -351,6 +351,7 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 		else
 			thrower.stats.hits += 1
 		end
+		S.QuestService.record(thrower, "Hit") -- the daily hit quest, bots included
 		S.AnalyticsService.funnel(thrower, "LandedFirstHit")
 		S.TutorialService.onEvent(thrower, "Hit")
 		S.MatchService.recordHit(thrower, target)
@@ -448,12 +449,56 @@ function CombatService.doDodge(c: any, dir: Vector3): boolean
 	end
 	S.PlayerStateService.setAction(c, "Dodging", P.DodgeDuration)
 	c.stats.dodges += 1
+	c.dodgedAt = t
+	c.dodgeFrom = if c.root then c.root.Position else nil
 	if c.player then
 		S.NetService.send(c.player, "DodgeAccepted", { dir = dir })
 	elseif c.character then
 		DodgeMotion.apply(c.character, dir)
 	end
 	return true
+end
+
+-- The daily dodge quest: an in-flight enemy ball stepping `from` → `to` without hitting anyone
+-- counts as dodged by each real player who pressed dodge in the last Config.Quests.Dodge.Window
+-- seconds and whom it passes this step (its closest approach falls inside the step) within Radius
+-- studs of either where they pressed dodge or where they are now: an early dodge leaves the ball
+-- crossing the spot the dash took them from, and a late one (or a homing ball that bent after
+-- them) has it go by where they are. Once per ball per player.
+function CombatService.creditDodges(ball: any, from: Vector3, to: Vector3)
+	local delta = to - from
+	local len2 = delta:Dot(delta)
+	if ball.context == "Lobby" or len2 < 1e-6 then
+		return
+	end
+	local rule = Config.Quests.Dodge
+	local t = now()
+	local function passes(point: Vector3?): boolean
+		if not point then
+			return false
+		end
+		local s = (point - from):Dot(delta) / len2
+		return s > 0 and s <= 1 and (from + delta * s - point).Magnitude <= rule.Radius
+	end
+	for _, c in S.PlayerStateService.realPlayers() do
+		if
+			not c.inMatch
+			or c.status ~= "Active"
+			or c.team == ball.lastTeam
+			or not c.dodgeFrom
+			or t - (c.dodgedAt or -math.huge) > rule.Window
+		then
+			continue
+		end
+		if not passes(c.dodgeFrom) and not passes(c.root and c.root.Position) then
+			continue
+		end
+		ball.dodgedBy = ball.dodgedBy or {}
+		if not ball.dodgedBy[c] then
+			ball.dodgedBy[c] = true
+			S.QuestService.record(c, "Dodge")
+		end
+	end
 end
 
 function CombatService.doCatch(c: any): boolean

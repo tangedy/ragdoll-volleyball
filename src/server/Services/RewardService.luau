@@ -120,13 +120,10 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 			end
 			p.Knockouts += c.stats.knockouts + c.stats.botKnockouts
 			-- daily quests: a finished match you took part in (the coins' anti-AFK rule) counts as
-			-- played, and as won when your team won; bot-filled matches count, as they do for coins
+			-- won when your team won; bot-filled matches count, as they do for coins
 			local s = c.stats
-			if not ctx.aborted and (s.throws + s.catches + s.botCatches + s.dodges) >= P.MinParticipationActions then
-				S.QuestService.record(c, "Played")
-				if won then
-					S.QuestService.record(c, "Won")
-				end
+			if won and (s.throws + s.catches + s.botCatches + s.dodges) >= P.MinParticipationActions then
+				S.QuestService.record(c, "Won")
 			end
 			c.stats.banked = true
 			-- bot-heavy (casual) matches neither advance nor break streaks

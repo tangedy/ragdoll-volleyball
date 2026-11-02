@@ -1,5 +1,15 @@
 # Implementation status (Oct 24, 2026)
 
+## Nov 1 daily quest rework
+
+Not run in Studio yet. `selene` and `stylua` pass; the offline tests were updated but not run here (Lune needs `rokit trust lune-org/lune` first), and `luau-lsp` needs `.luau-lsp/globalTypes.d.luau`.
+
+- **The panel shows 3 quests** (`Config.Quests.Shown`): two daily quests picked at random per player per UTC day (`DailyQuests.picks`, additive, no schema bump), plus the repeating playtime quest, always last.
+- **Daily pool:** Knock out 3 (Title Chest), Hit 10 players (Gesture Chest), Dodge 5 balls (Gesture Chest), Win 1 game (Finisher Chest). "Play 2 games" is gone and catches were left out on purpose (too hard). Every daily quest's progress is tracked; only the picked ones show or can be claimed.
+- **Hits** count in `CombatService` where the thrower's hit stats go up (bots count, the practice dummy doesn't).
+- **Dodges** count only when an enemy ball actually flies past you: within `Config.Quests.Dodge.Radius` (9 studs) of where you pressed dodge or of where you are, up to `Window` (0.6 s) after you pressed it, once per ball (`CombatService.creditDodges`, called from `BallService.simulate` on steps with no hit). Spamming Q doesn't count.
+- **Play 12 minutes** (`Repeats = true`): pays 100 coins and starts again from 0, as often as you like; its progress carries over midnight. `QuestService` ticks it once a second while you've moved in the last `ActiveWindow` (30 s), so standing AFK pauses it. The count is mirrored on the `QuestPlaytime` player attribute and the panel shows it climbing live (m:ss). Claiming pops the coins into the counter (`HUDController.coinPop`); there's no chest.
+
 ## Oct 29 performance mode, last pass
 
 - **Hub props** (`HubController`): in performance mode the wheels and fans move at most 30 times a second (`Config.Graphics.LowPropHz`). A wheel more than 180 studs from the camera (`PropCullDistance`) doesn't turn at all, since each turn moves its whole model. Flickering lights that are switched off are skipped.
@@ -35,7 +45,7 @@ Not run in Studio yet. `selene`, `luau-lsp` and the 55 offline tests pass. Detai
 Not run in Studio yet. `selene`, `luau-lsp` and the 50 offline tests pass.
 
 - **Lobby chests removed:** the chest models (`ChestBuilder`), `ChestService`, `ChestController`, `Config.Chest`, the `OpenChest` remote and the `ChestResult` / `ChestOpened` feedback are gone. The wheel sheet, the spin-and-land code and the prize card (`SpinController.drawReveal`) are reused for the quest chests. The in-world lid burst needed a chest model, so it went with them.
-- **Daily quests** (`Config.Quests`, `QuestService`, save schema v12 `DailyQuests`): knock out 3 opponents for a Title Chest, play 2 games for a Gesture Chest (the Pose category) and win 1 game for a Finisher Chest. They reset at UTC midnight, and each chest can be claimed once a day in the hub. Progress uses the existing events: knockouts where the 25 knockout coins are paid (bots count), and played and won matches where the match is banked (finished, not aborted, at least one action; bot-filled matches count, the same as for coins and wins).
+- **Daily quests** (`Config.Quests`, `QuestService`, save schema v12 `DailyQuests`): see "Nov 1 daily quest rework" above for the current list. They reset at UTC midnight, and each chest can be claimed once a day in the hub. Progress uses the existing events: knockouts where the 25 knockout coins are paid (bots count), and won matches where the match is banked (finished, not aborted, at least one action; bot-filled matches count, the same as for coins and wins).
 - **Chests** open through `RewardService.grant` (`Kind = "Chest"`) using the docs/ECONOMY.md §4 odds and duplicate rule. With today's catalog, the Title and Gesture chests have no Legendary items and the Finisher Chest has no Common ones, so those rarities are skipped and the rest renormalized (Finisher: 75% Rare, 22.5% Epic, 2.5% Legendary).
 - **Migration:** today's free chest opens that were ready but unopened become bonus spins on the wheel with the same odds (Common: Standard, Rare: Rare+). `ChestDaily` and `ChestOpens` are dropped.
 - **Prices:** each item now has an explicit `Rarity` and costs `Config.Economy.PriceByRarity` (500 / 1,750 / 5,000 / 12,000). Pumpkin Reaper is now a Haunted Bundle item, and the bundle-only items keep their value prices.

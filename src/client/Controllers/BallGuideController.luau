@@ -17,6 +17,10 @@ local player = Players.LocalPlayer
 local BallGuideController = {}
 
 BallGuideController.enabled = false -- driven by TutorialController
+-- where your practice balls are when they're not in the hub (PracticeController: the tutorial court)
+BallGuideController.practiceBalls = function(): Instance?
+	return nil
+end
 
 local MAX_CHEVRONS = 14
 local SPACING = 3
@@ -74,6 +78,10 @@ local function nearestBall(from: Vector3): BasePart?
 	local practice = lobby and lobby:FindFirstChild("Practice")
 	if practice then
 		table.insert(containers, practice)
+	end
+	local elsewhere = BallGuideController.practiceBalls()
+	if elsewhere and elsewhere ~= practice then
+		table.insert(containers, elsewhere)
 	end
 	local best, bestD = nil, math.huge
 	for _, container in containers do

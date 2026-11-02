@@ -1,17 +1,20 @@
 --!strict
 -- Daily quests in the hub (presentation only; QuestService decides and saves everything).
 --
---  * Panel (left edge of the hub, small): one line per quest with an icon for what its chest gives
---    (titles, gestures, finishers), the goal, its count and a thin progress bar. Claim appears once
---    the goal is reached; a claimed quest shows the time until it comes back (15 minutes after a
---    player's first claim of it, otherwise the UTC reset) on a slimmer line. The panel's surface is
---    see-through so the hub shows behind it, and the button in its header folds it into a round
---    chest disc (wearing the notification dot while a chest is ready); tap the disc to unfold it.
---  * Tap a quest's icon: the chest sheet shows every item it can drop, the chance of each rarity
---    and the coins a rarity pays once you own all of it.
---  * Claim: a full-screen opening plays the treasure chest rattling while the server rolls the
---    prize, then bursting open in the prize's rarity colour; then the shared prize card
---    (SpinController.drawReveal) shows what you won in the middle of the screen.
+--  * Panel (left edge of the hub, small): one line per quest the server shows today (two daily
+--    picks and the repeating playtime quest) with an icon for what it gives (titles, gestures,
+--    finishers, coins), the goal, its count and a thin progress bar. The playtime row counts up
+--    live (m:ss) from the server's QuestPlaytime attribute. Claim appears once the goal is reached;
+--    a claimed daily quest shows the time until it comes back (15 minutes after a player's first
+--    claim of it, otherwise the UTC reset) on a slimmer line. The panel's surface is see-through so
+--    the hub shows behind it, and the button in its header folds it into a round chest disc
+--    (wearing the notification dot while a reward is ready); tap the disc to unfold it.
+--  * Tap a daily quest's icon: the chest sheet shows every item it can drop, the chance of each
+--    rarity and the coins a rarity pays once you own all of it.
+--  * Claim a daily quest: a full-screen opening plays the treasure chest rattling while the server
+--    rolls the prize, then bursting open in the prize's rarity colour; then the shared prize card
+--    (SpinController.drawReveal) shows what you won in the middle of the screen. Claiming the
+--    playtime quest pops its coins into the counter (HUDController.coinPop) and it starts again.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -117,6 +120,23 @@ local function questOf(id: string?): any?
 	return nil
 end
 
+-- A repeating quest's progress as it stands now: the server ticks playtime into an attribute
+-- between profile pushes.
+local function liveProgress(q: any): number
+	if q.repeats and q.event == "Playtime" then
+		return tonumber(player:GetAttribute("QuestPlaytime")) or tonumber(q.progress) or 0
+	end
+	return tonumber(q.progress) or 0
+end
+
+-- "7/10", or "7:12" for a playtime quest (counted in seconds).
+local function countText(q: any, progress: number, goal: number): string
+	if q.event == "Playtime" then
+		return ("%d:%02d"):format(progress // 60, progress % 60)
+	end
+	return ("%d/%d"):format(progress, goal)
+end
+
 -- "14:05" under an hour, "5:12:33" above.
 local function clock(seconds: number): string
 	local left = math.max(0, seconds)
@@ -169,7 +189,10 @@ local function renderPanel()
 			continue
 		end
 		local goal = math.max(1, tonumber(q.goal) or 1)
-		local progress = math.min(goal, tonumber(q.progress) or 0)
+		local progress = math.min(goal, liveProgress(q))
+		if q.repeats then
+			q.ready = progress >= goal
+		end
 		row.live.Visible = not q.claimed
 		row.done.Visible = q.claimed == true
 		-- a claimed quest folds down to a slim line (and back up when it comes back)
@@ -186,7 +209,7 @@ local function renderPanel()
 		end
 		row.name.Text = q.name
 		row.doneName.Text = q.name
-		row.count.Text = ("%d/%d"):format(progress, goal)
+		row.count.Text = countText(q, progress, goal)
 		row.count.Visible = not q.ready
 		row.fill.Size = UDim2.fromScale(progress / goal, 1)
 		row.fill.BackgroundColor3 = if progress >= goal then T.leaf else T.sky
@@ -255,7 +278,7 @@ end
 
 local function buildRow(q: any, order: number): Row
 	local frame = new("Frame", {
-		Name = q.Id,
+		Name = q.id,
 		LayoutOrder = order,
 		Size = UDim2.new(1, 0, 0, ROW_H),
 		BackgroundTransparency = 1,
@@ -272,12 +295,14 @@ local function buildRow(q: any, order: number): Row
 
 	-- the quest: its icon (tap it for the drops and odds), the goal, its count and progress, Claim
 	local live = layer("Live")
-	local icon = disc(live, CHEST_TONE[q.Chest] or T.sun, CHEST_GLYPH[q.Chest] or "gift", T.onFill, true)
+	local icon = if q.repeats
+		then disc(live, T.sun, "coin", T.onFill, true)
+		else disc(live, CHEST_TONE[q.chest] or T.sun, CHEST_GLYPH[q.chest] or "gift", T.onFill, true)
 	local name = Theme.text(live, SIZE.Body, {
 		Name = "Name",
 		Position = UDim2.fromOffset(TEXT_X, 4),
 		Size = UDim2.new(1, textW, 0, 20),
-		Text = q.Name,
+		Text = q.name,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
 	})
@@ -310,10 +335,15 @@ local function buildRow(q: any, order: number): Row
 		ZIndex = 4,
 	})
 	icon.Activated:Connect(function()
-		QuestController.open(q.Id, true)
+		if q.repeats then
+			local minutes = (tonumber(q.goal) or 0) // 60
+			HUDController.hint(("%d coins for every %d minutes you play"):format(q.coins or 0, minutes), 2)
+		else
+			QuestController.open(q.id, true)
+		end
 	end)
 	claim.Activated:Connect(function()
-		QuestController.claim(q.Id)
+		QuestController.claim(q.id)
 	end)
 
 	-- claimed: a small check, the goal greyed out and the time until it comes back, on a slim line
@@ -325,7 +355,7 @@ local function buildRow(q: any, order: number): Row
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, TEXT_X, 0.5, 0),
 		Size = UDim2.new(1, textW, 0, 20),
-		Text = q.Name,
+		Text = q.name,
 		TextColor3 = T.inkMuted,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
@@ -351,6 +381,26 @@ local function buildRow(q: any, order: number): Row
 		doneName = doneName,
 		doneTime = doneTime,
 	}
+end
+
+-- One row per quest the server shows today, in its order; the daily picks change at the UTC reset.
+local function syncRows()
+	local keep: { [string]: boolean } = {}
+	for i, q in status.quests do
+		keep[q.id] = true
+		local row = rows[q.id]
+		if not row then
+			rows[q.id] = buildRow(q, i)
+		else
+			row.frame.LayoutOrder = i
+		end
+	end
+	for id, row in rows do
+		if not keep[id] then
+			row.frame:Destroy()
+			rows[id] = nil
+		end
+	end
 end
 
 -- Fold the panel into its round chest disc, or unfold it; the one that appears pops in.
@@ -430,9 +480,6 @@ local function buildPanel()
 		ZIndex = 2,
 	}, panel)
 	new("UIListLayout", { Padding = UDim.new(0, SPACE.XS), SortOrder = Enum.SortOrder.LayoutOrder }, list)
-	for i, q in Q.List do
-		rows[q.Id] = buildRow(q, i)
-	end
 
 	-- folded: a round chest disc in the panel's place; the dot says a chest is ready to claim
 	foldedButton = Theme.iconButton(ShopController.gui, "gift", T.sun, FOLDED_DISC, {
@@ -507,7 +554,8 @@ end
 
 -- Show the chest sheet for quest `id`, or close it.
 function QuestController.open(id: string?, on: boolean)
-	if on and (claiming or not inHub() or not questOf(id)) then
+	local q = questOf(id)
+	if on and (claiming or not inHub() or not q or q.repeats) then
 		return
 	end
 	if on then
@@ -934,11 +982,22 @@ function QuestController.claim(id: string)
 		HUDController.hint(if q.claimed then "Already claimed" else q.name .. " first", 1.5)
 		return
 	end
-	ShopController.closeAll()
 	currentQuest = id
 	claiming = true
 	claimToken += 1
 	local token = claimToken
+	if q.repeats then
+		-- coins: no chest to open, they pop into the counter when the server answers
+		renderPanel()
+		Net.request(Net.Actions.ClaimQuest, { id = id })
+		task.delay(TIMEOUT, function()
+			if claiming and token == claimToken then
+				abortClaim("Couldn't claim, try again")
+			end
+		end)
+		return
+	end
+	ShopController.closeAll()
 	renderPanel()
 	SoundController.play("UIOpen")
 	startOpening(q)
@@ -952,6 +1011,21 @@ function QuestController.claim(id: string)
 end
 
 local function onResult(d: any)
+	local q = questOf(d.quest)
+	if q and q.repeats then
+		if not claiming or currentQuest ~= d.quest then
+			return
+		end
+		if d.ok == false then
+			abortClaim(tostring(d.message or "Can't claim right now"))
+			return
+		end
+		claimToken += 1
+		claiming = false
+		HUDController.coinPop(tonumber(d.coins) or 0)
+		renderPanel()
+		return
+	end
 	local o = opening
 	if not claiming or not o or d.quest ~= o.quest then
 		return
@@ -995,6 +1069,7 @@ function QuestController.start()
 	Net.on("Profile", function(d)
 		status = d.quests
 		owned = d.owned or {}
+		syncRows()
 		renderPanel()
 		if sheet.Visible then
 			local q = questOf(currentQuest)
@@ -1005,6 +1080,8 @@ function QuestController.start()
 		end
 	end)
 	Net.on("QuestResult", onResult)
+	-- the playtime bar climbs live as the server ticks it
+	player:GetAttributeChangedSignal("QuestPlaytime"):Connect(renderPanel)
 	local nextTick = 0
 	RunService.RenderStepped:Connect(function()
 		-- leaving the hub (pulled into a match) cuts an opening short; the prize is already saved

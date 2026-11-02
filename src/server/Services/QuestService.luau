@@ -1,20 +1,29 @@
 --!strict
--- Daily quests (Config.Quests, docs/ECONOMY.md §4). Three goals a UTC day, each paying its quest
--- chest once it's reached: knock out 3 opponents (Title Chest), play 2 games (Gesture Chest), win 1
--- game (Finisher Chest). Progress and claims reset at UTC midnight.
+-- Daily quests (Config.Quests, docs/ECONOMY.md §4). The hub shows Config.Quests.Shown of them: the
+-- Repeats quest (play 12 minutes, for coins, again and again) and daily quests picked at random for
+-- each player each UTC day from the rest (knock out 3, hit 10 players, dodge 5 balls, win 1 game),
+-- each paying its quest chest once it's reached. Daily progress and claims reset at UTC midnight;
+-- a Repeats quest's progress carries over.
 --
--- Progress comes from events that already pay rewards, so it follows their rules: MatchService
--- records a credited knockout where it pays the knockout coins (bot knockouts included), and
--- RewardService records a played and a won match where it banks the match (finished, not aborted,
--- with the anti-AFK minimum of actions; bot-filled matches count, as they do for coins and wins).
+-- Progress comes from match events, so it follows their rules: MatchService records a credited
+-- knockout where it pays the knockout coins (bot knockouts included), CombatService a hit on an
+-- enemy (bots included) and a dodge an enemy ball flew past, and RewardService a won match where it
+-- banks the match (finished, not aborted, with the anti-AFK minimum of actions; bot-filled matches
+-- count, as they do for coins and wins). Every daily quest's progress is tracked, picked or not;
+-- only the picked ones show and can be claimed. Playtime ticks here, once a second, while the
+-- player has moved in the last Config.Quests.ActiveWindow seconds; the count is mirrored on the
+-- QuestPlaytime player attribute so the panel's bar climbs live.
 --
--- Claiming is hub-only and once per quest per day, except a player's very first claim of each
--- quest: that quest comes back with fresh progress Config.Quests.FirstCooldown later. The chest opens through RewardService.grant
--- (Kind = "Chest"), which rolls the prize on the server. The claim is marked in the same step as the
+-- Claiming is hub-only. A daily quest is claimed once per day, except a player's very first claim
+-- of each quest: that quest comes back with fresh progress Config.Quests.FirstCooldown later. Its
+-- chest opens through RewardService.grant (Kind = "Chest"), which rolls the prize on the server. A
+-- Repeats quest pays its Reward and starts again from 0. The claim is marked in the same step as the
 -- grant, so a repeated request never pays twice, and the profile saves right after. Quest chests
 -- are free, so they're allowed where paid random items are restricted.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
@@ -30,6 +39,7 @@ export type Daily = {
 	progress: { [string]: number },
 	claimed: { [string]: boolean },
 	backAt: { [string]: number }?, -- quests on their first-claim cooldown: when they come back
+	picks: { string }?, -- today's daily quests, in panel order
 }
 
 function QuestService.init(services: any)
@@ -49,8 +59,28 @@ local function questOf(id: string): any?
 	return nil
 end
 
--- Today's quest state on the profile (rolled over to a fresh day when the UTC date changes). A
--- quest on its first-claim cooldown (d.backAt) comes back with fresh progress once that has passed.
+-- The daily quests to show today: as many as fit beside the Repeats quests, at random. (A module
+-- function so tests can pin the picks.)
+function QuestService.pickDaily(): { string }
+	local pool, repeating = {}, 0
+	for _, q in Q.List do
+		if q.Repeats then
+			repeating += 1
+		else
+			table.insert(pool, q.Id)
+		end
+	end
+	local picks = {}
+	local rng = Random.new()
+	for _ = 1, math.min(#pool, Q.Shown - repeating) do
+		table.insert(picks, table.remove(pool, rng:NextInteger(1, #pool)) :: string)
+	end
+	return picks
+end
+
+-- Today's quest state on the profile (rolled over to a fresh day when the UTC date changes, keeping
+-- the Repeats quests' progress). A quest on its first-claim cooldown (d.backAt) comes back with
+-- fresh progress once that has passed.
 function QuestService.daily(c: any): Daily
 	local p = c.profile
 	local d = p.DailyQuests
@@ -59,10 +89,20 @@ function QuestService.daily(c: any): Daily
 		p.DailyQuests = d
 	end
 	if d.date ~= today() then
+		local progress = {}
+		for _, q in Q.List do
+			if q.Repeats then
+				progress[q.Id] = d.progress[q.Id]
+			end
+		end
 		d.date = today()
-		d.progress = {}
+		d.progress = progress
 		d.claimed = {}
 		d.backAt = nil
+		d.picks = nil
+	end
+	if type(d.picks) ~= "table" then
+		d.picks = QuestService.pickDaily()
 	end
 	if type(d.backAt) == "table" then
 		for id, at in d.backAt do
@@ -76,6 +116,32 @@ function QuestService.daily(c: any): Daily
 	return d
 end
 
+-- The quests on the panel, in order: today's daily picks, then the Repeats quests.
+local function shown(d: Daily): { any }
+	local list = {}
+	for _, id in d.picks or {} do
+		local q = questOf(id)
+		if q and not q.Repeats then
+			table.insert(list, q)
+		end
+	end
+	for _, q in Q.List do
+		if q.Repeats then
+			table.insert(list, q)
+		end
+	end
+	return list
+end
+
+local function isShown(d: Daily, id: string): boolean
+	for _, q in shown(d) do
+		if q.Id == id then
+			return true
+		end
+	end
+	return false
+end
+
 -- Quests this player has claimed at least once ever (unix time of that first claim).
 local function firstClaims(c: any): { [string]: number }
 	local p = c.profile
@@ -85,8 +151,8 @@ local function firstClaims(c: any): { [string]: number }
 	return p.QuestFirstClaims
 end
 
--- Count `amount` (default 1) of `event` ("Knockout" | "Played" | "Won") toward today's quests, up to
--- each goal. Real, loaded players only; the caller pushes the profile.
+-- Count `amount` (default 1) of `event` ("Knockout" | "Hit" | "Dodge" | "Won" | "Playtime") toward
+-- today's quests, up to each goal. Real, loaded players only; the caller pushes the profile.
 function QuestService.record(c: any, event: string, amount: number?)
 	if not c.player or not c.profileLoaded or not c.profile then
 		return
@@ -99,35 +165,43 @@ function QuestService.record(c: any, event: string, amount: number?)
 	end
 end
 
--- What the lobby panel needs: each quest's progress and claim, its chest's drops by rarity and the
--- odds of each rarity, and when today's quests reset (unix seconds).
+-- What the lobby panel needs: each shown quest's progress and claim, its chest's drops by rarity
+-- and the odds of each rarity (or a Repeats quest's reward), and when today's quests reset (unix
+-- seconds).
 function QuestService.status(c: any): any
-	local d: any = if c.profile then QuestService.daily(c) else { progress = {}, claimed = {} }
+	local d: any = if c.profile then QuestService.daily(c) else { progress = {}, claimed = {}, picks = {} }
 	local resetsAt = (os.time() // 86400 + 1) * 86400
 	local quests = {}
-	for _, q in Q.List do
-		local drops: { [string]: { string } } = {}
-		for rarity, items in S.RewardService.chestPool(q.Chest) do
-			drops[rarity] = {}
-			for _, item in items do
-				table.insert(drops[rarity], item.Id)
-			end
-		end
+	for _, q in shown(d) do
 		local progress = tonumber(d.progress[q.Id]) or 0
-		table.insert(quests, {
+		local entry: { [string]: any } = {
 			id = q.Id,
 			name = q.Name,
 			goal = q.Goal,
+			event = q.Event,
 			progress = progress,
 			claimed = d.claimed[q.Id] == true,
 			-- a claimed quest comes back then (unix seconds): its first-claim cooldown, else the reset
 			nextAt = if d.claimed[q.Id] then (d.backAt and d.backAt[q.Id]) or resetsAt else nil,
 			ready = progress >= q.Goal and d.claimed[q.Id] ~= true,
-			chest = q.Chest,
-			chestName = (Q.Chests :: any)[q.Chest].Name,
-			odds = S.RewardService.chestOdds(q.Chest),
-			drops = drops,
-		})
+		}
+		if q.Repeats then
+			entry.repeats = true
+			entry.coins = q.Reward.Amount
+		else
+			local drops: { [string]: { string } } = {}
+			for rarity, items in S.RewardService.chestPool(q.Chest) do
+				drops[rarity] = {}
+				for _, item in items do
+					table.insert(drops[rarity], item.Id)
+				end
+			end
+			entry.chest = q.Chest
+			entry.chestName = (Q.Chests :: any)[q.Chest].Name
+			entry.odds = S.RewardService.chestOdds(q.Chest)
+			entry.drops = drops
+		end
+		table.insert(quests, entry)
 	end
 	return { quests = quests, resetsAt = resetsAt, featured = S.ShopService.featuredBall() }
 end
@@ -136,8 +210,9 @@ local function inHub(c: any): boolean
 	return not c.inMatch and c.status == "Lobby"
 end
 
--- Claim quest `id`'s chest: opens it now. Returns the Chest result (RewardService.grant) with
--- `ok` and `quest`, or nil and a reason (nothing changes then).
+-- Claim quest `id`: opens its chest now, or pays a Repeats quest's reward and starts it again.
+-- Returns the RewardService.grant result with `ok` and `quest`, or nil and a reason (nothing
+-- changes then).
 function QuestService.claim(c: any, id: string): ({ [string]: any }?, string?)
 	if not c.profileLoaded or not c.profile then
 		return nil, "Not ready yet"
@@ -147,26 +222,37 @@ function QuestService.claim(c: any, id: string): ({ [string]: any }?, string?)
 		return nil, "Unknown quest"
 	end
 	if not inHub(c) then
-		return nil, "Claim quest chests in the hub"
+		return nil, "Claim quest rewards in the hub"
 	end
 	local d = QuestService.daily(c)
+	if not isShown(d, q.Id) then
+		return nil, "Not one of today's quests"
+	end
 	if d.claimed[q.Id] then
 		return nil, "Already claimed"
 	end
 	local progress = tonumber(d.progress[q.Id]) or 0
 	if progress < q.Goal then
-		return nil, ("%d of %d done"):format(progress, q.Goal)
+		return nil, "Not done yet"
 	end
-	local result, why = S.RewardService.grant(c, { Kind = "Chest", Chest = q.Chest }, "Quest" .. q.Id)
+	local reward = if q.Repeats then q.Reward else { Kind = "Chest", Chest = q.Chest }
+	local result, why = S.RewardService.grant(c, reward, "Quest" .. q.Id)
 	if not result then
 		return nil, why
 	end
-	d.claimed[q.Id] = true
-	local first = firstClaims(c)
-	if not first[q.Id] then
-		first[q.Id] = os.time()
-		d.backAt = d.backAt or {}
-		d.backAt[q.Id] = os.time() + Q.FirstCooldown
+	if q.Repeats then
+		d.progress[q.Id] = 0
+		if c.player then
+			c.player:SetAttribute("QuestPlaytime", 0)
+		end
+	else
+		d.claimed[q.Id] = true
+		local first = firstClaims(c)
+		if not first[q.Id] then
+			first[q.Id] = os.time()
+			d.backAt = d.backAt or {}
+			d.backAt[q.Id] = os.time() + Q.FirstCooldown
+		end
 	end
 	result.ok = true
 	result.quest = q.Id
@@ -178,6 +264,72 @@ function QuestService.claim(c: any, id: string): ({ [string]: any }?, string?)
 	return result, nil
 end
 
+-- Playtime: once a second, a second for every player who has moved in the last ActiveWindow
+-- seconds (ragdoll flights count; standing still in the hub doesn't). Reaching the goal pushes the
+-- profile so Claim shows.
+local function playClock()
+	while true do
+		task.wait(1)
+		local t = os.clock()
+		for _, c in S.PlayerStateService.realPlayers() do
+			if not c.profileLoaded or not c.profile or not c.root then
+				continue
+			end
+			local pos = c.root.Position
+			local last = c.questLastPos :: Vector3?
+			if not last or (Vector3.new(pos.X - last.X, 0, pos.Z - last.Z)).Magnitude >= 1 then
+				c.questLastPos = pos
+				c.questActiveAt = t
+			end
+			for _, q in Q.List do
+				if q.Event ~= "Playtime" then
+					continue
+				end
+				local d = QuestService.daily(c)
+				local before = tonumber(d.progress[q.Id]) or 0
+				if before < q.Goal and t - (c.questActiveAt or -math.huge) <= Q.ActiveWindow then
+					QuestService.record(c, "Playtime")
+					if (tonumber(d.progress[q.Id]) or 0) >= q.Goal then
+						S.DataService.push(c)
+					end
+				end
+				c.player:SetAttribute("QuestPlaytime", tonumber(d.progress[q.Id]) or 0)
+			end
+		end
+	end
+end
+
+-- Studio testing (modules required from the command bar are separate copies, so this is the way
+-- in): workspace:SetAttribute("RD_Quest", "Playtime=715") sets a quest's progress for every
+-- player, "Picks=Hits,Dodges" sets today's picks, and "" only reads. Each player's picks and
+-- progress land in their RD_QuestState attribute.
+local function devHook()
+	Workspace:GetAttributeChangedSignal("RD_Quest"):Connect(function()
+		local cmd = tostring(Workspace:GetAttribute("RD_Quest") or "")
+		local key, value = cmd:match("^(%w+)=(.*)$")
+		for _, c in S.PlayerStateService.realPlayers() do
+			if not c.profileLoaded or not c.profile then
+				continue
+			end
+			local d = QuestService.daily(c)
+			if key == "Picks" then
+				d.picks = value:split(",")
+			elseif key and questOf(key) then
+				d.progress[key] = tonumber(value) or 0
+			end
+			if key then
+				S.DataService.push(c)
+			end
+			local parts = { "picks=" .. table.concat(d.picks or {}, ",") }
+			for _, q in Q.List do
+				table.insert(parts, ("%s=%d"):format(q.Id, tonumber(d.progress[q.Id]) or 0))
+			end
+			c.player:SetAttribute("RD_QuestState", table.concat(parts, " "))
+		end
+		Workspace:SetAttribute("RD_Quest", nil)
+	end)
+end
+
 function QuestService.start()
 	S.NetService.on(NetSchema.Actions.ClaimQuest, function(player, p)
 		local c = S.PlayerStateService.get(player)
@@ -187,6 +339,10 @@ function QuestService.start()
 		local result, why = QuestService.claim(c, p.id)
 		S.NetService.send(player, "QuestResult", result or { ok = false, quest = p.id, message = why })
 	end)
+	task.spawn(playClock)
+	if RunService:IsStudio() then
+		devHook()
+	end
 end
 
 return QuestService

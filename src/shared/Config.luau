@@ -504,20 +504,38 @@ Config.Economy = {
 	},
 }
 
--- Daily quests (docs/ECONOMY.md §4). Progress resets at UTC midnight; each quest's chest can be
--- claimed once that UTC day, after its goal is reached. Progress comes from the match events that
--- already pay rewards: a credited knockout (bots included, the same as the 25-coin knockout
--- payout), and a finished match you took part in (the anti-AFK rule the match coins use).
---   Event: "Knockout" | "Played" | "Won"
+-- Daily quests (docs/ECONOMY.md §4). The hub shows Shown quests: every Repeats quest, plus daily
+-- quests picked at random for each player each UTC day. Progress resets at UTC midnight; each daily
+-- quest's chest can be claimed once that UTC day, after its goal is reached. Progress comes from
+-- match events: a credited knockout (bots included, the same as the 25-coin knockout payout), a hit
+-- on an enemy (bots included), a dodge an enemy ball flew past (Dodge below), and a won match (the
+-- anti-AFK rule the match coins use).
+--   Event: "Knockout" | "Hit" | "Dodge" | "Won" | "Playtime"
+-- A Repeats quest never resets or runs out: claiming it pays Reward and starts it again from 0.
+-- Playtime counts a second at a time while you're active (moved in the last ActiveWindow seconds).
 -- Quest chests are free, so they're allowed where paid random items are restricted.
 -- The very first time a player claims a quest, it comes back FirstCooldown seconds later (fresh
 -- progress) instead of waiting for the UTC reset; every later claim waits for the reset.
 Config.Quests = {
 	FirstCooldown = 15 * 60,
+	Shown = 3,
+	ActiveWindow = 30,
+	-- a dodge counts when an enemy ball passes within Radius studs of where you pressed it or of
+	-- where you are, up to Window seconds later (and doesn't hit you), once per ball
+	Dodge = { Window = 0.6, Radius = 9 },
 	List = {
 		{ Id = "Knockouts", Name = "Knock out 3", Event = "Knockout", Goal = 3, Chest = "Title" },
-		{ Id = "Played", Name = "Play 2 games", Event = "Played", Goal = 2, Chest = "Gesture" },
+		{ Id = "Hits", Name = "Hit 10 players", Event = "Hit", Goal = 10, Chest = "Gesture" },
+		{ Id = "Dodges", Name = "Dodge 5 balls", Event = "Dodge", Goal = 5, Chest = "Gesture" },
 		{ Id = "Won", Name = "Win 1 game", Event = "Won", Goal = 1, Chest = "Finisher" },
+		{
+			Id = "Playtime",
+			Name = "Play 12 minutes",
+			Event = "Playtime",
+			Goal = 12 * 60, -- seconds
+			Repeats = true,
+			Reward = { Kind = "Coins", Amount = 100 },
+		},
 	},
 	-- Each chest rolls one item of its Catalog category: a rarity by RarityWeights (rarities the
 	-- category has no prize items in are skipped and the rest renormalized), then an unowned item
@@ -546,6 +564,31 @@ Config.Quests = {
 
 Config.Rewards = {
 	StreakEndMin = 5, -- "STREAK ENDED!" feed message threshold
+}
+
+-- The guided hub tutorial (TutorialService; the step contract is in docs/prompts/build-path.md):
+-- 1 Grab, 2 FirstHit, 3 KnockOff, 4 Heavy, 5 Discover, 6 Dodge, 7 Done. A player who hasn't
+-- finished it is never queued for a match.
+Config.Tutorial = {
+	Done = 7,
+	DiscoverSeconds = 4, -- step 5 moves on by itself after this long
+	StepCooldown = 0.5, -- at most one step change per player this often (a spammed remote can't skip it)
+	Reward = { Kind = "Coins", Amount = 250 } :: Reward, -- paid once, on reaching Done
+	-- Heavy step (PracticeController): the dummy stands up at this %, and one practice ball turns
+	-- Heavy; a thrown Heavy ball goes back to its spot this long after it lands, to try again
+	HeavyDummyDamage = 50,
+	HeavyReturnAfter = 1.2,
+	-- The tutorial runs on your own client-only copy of the court (PracticeController), offset from
+	-- the real one; you're on the Red half. Distances are studs from the centre line (Z).
+	Court = {
+		Offset = Vector3.new(0, 0, -800), -- clear of the real court's VoidGlow and the +800 Z shop preview
+		SpawnZ = 40, -- where you stand (Red half)
+		BallZ = 12, -- your two practice balls, near the centre line
+		BallSpread = 8,
+		DummyZ = 50, -- the dummy on the far half, 22 studs from its back edge
+		AwayReturn = 1, -- a ball resting where you can't reach it (the far half) comes back after this
+	},
+	CardSeconds = 2.6, -- step 3's "their % went up" callout shows this long before the next card
 }
 
 Config.Progression = {
@@ -705,7 +748,7 @@ Config.Camera = {
 
 Config.Data = {
 	StoreName = "PlayerData_v1",
-	SchemaVersion = 12,
+	SchemaVersion = 13,
 	AutosaveInterval = 120,
 	MaxRetries = 4,
 	LockWaitRetries = 10, -- 3 s apart: how long a joiner waits for another server to release their save

@@ -53,6 +53,16 @@ local function isTable(v: any): boolean
 	return type(v) == "table"
 end
 
+local PRACTICE_EVENTS: { [string]: boolean } = {
+	Pickup = true,
+	Throw = true,
+	HitDummy = true,
+	DummyOut = true, -- the dummy fell into the void
+	HeavyOut = true, -- the Heavy practice ball knocked the dummy off
+	Dodged = true, -- a drill ball missed after the player dodged
+	GotHit = true, -- a drill ball hit the player
+}
+
 -- Each validator returns a sanitized payload or nil. Unknown fields are ignored.
 NetSchema.Validators = {
 	ChargeStart = function(_p: any): any
@@ -161,7 +171,8 @@ NetSchema.Validators = {
 		return { id = p.id }
 	end,
 	Practice = function(p: any): any
-		if not isTable(p) or (p.event ~= "Pickup" and p.event ~= "Throw" and p.event ~= "HitDummy") then
+		-- hub practice events (TutorialService): the client simulates the dummy and practice balls
+		if not isTable(p) or type(p.event) ~= "string" or not PRACTICE_EVENTS[p.event] then
 			return nil
 		end
 		return { event = p.event }
