@@ -113,12 +113,6 @@ function MatchService.init(services: any)
 end
 
 function MatchService.start()
-	S.NetService.on(NetSchema.Actions.SetReady, function(player, p)
-		local c = S.PlayerStateService.get(player)
-		if c then
-			MatchService.setReady(c, p.value)
-		end
-	end)
 	S.NetService.on(NetSchema.Actions.Dev, function(player, p)
 		-- the Halloween switch has its own permission (Studio, or the game's owner on a live server)
 		if p.cmd == "ToggleHalloween" then
@@ -276,44 +270,6 @@ function MatchService.queuedPlayers(): { any }
 		end
 	end
 	return list
-end
-
--- Ready check: during the intermission a queued player can press Ready; once every queued player
--- is ready the match starts early. The server owns the flag (Player attribute `Ready`) and publishes
--- `ReadyCount` / `QueuedCount` on MatchState.
-function MatchService.setReady(c: any, value: boolean)
-	if value and (state ~= "Intermission" or c.inMatch or not c.profileLoaded) then
-		value = false
-	end
-	if value and not c.autoQueue then
-		-- Ready means "put me in": it turns Play again back on
-		c.autoQueue = true
-		c.player:SetAttribute("AutoQueue", true)
-	end
-	c.ready = value
-	c.player:SetAttribute("Ready", value)
-end
-
-local function clearReady()
-	for _, c in S.PlayerStateService.realPlayers() do
-		if c.ready then
-			MatchService.setReady(c, false)
-		end
-	end
-	MatchService.setAttr("ReadyCount", 0)
-	MatchService.setAttr("QueuedCount", 0)
-end
-
-local function countReady(queued: { any }): number
-	local n = 0
-	for _, c in queued do
-		if c.ready then
-			n += 1
-		end
-	end
-	MatchService.setAttr("ReadyCount", n)
-	MatchService.setAttr("QueuedCount", #queued)
-	return n
 end
 
 -- Called by CombatService for every confirmed enemy hit.
@@ -1212,8 +1168,8 @@ function MatchService.run()
 				queued = MatchService.queuedPlayers()
 			until #queued > 0
 		end
-		-- hard cap: the match starts after LobbyMaxWait whether or not everyone pressed Ready
-		clearReady()
+		-- the intermission always runs its full LobbyMaxWait (PLAY only queues you; nobody can start
+		-- it early), unless the match is already full
 		setState("Intermission", M.LobbyMaxWait)
 		local endsAt = now() + M.LobbyMaxWait
 		local cancelled = false
@@ -1224,13 +1180,11 @@ function MatchService.run()
 				cancelled = true
 				break
 			end
-			local allReady = countReady(queued) >= #queued
-			if devSkip or allReady or (M.IntermissionSkipWhenFull and #queued >= M.MaxPlayers) then
+			if devSkip or (M.IntermissionSkipWhenFull and #queued >= M.MaxPlayers) then
 				devSkip = false
 				break
 			end
 		end
-		clearReady()
 		if not cancelled then
 			local trace = ""
 			local ok = xpcall(runMatch, function(e)

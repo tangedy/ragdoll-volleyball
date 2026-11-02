@@ -16,8 +16,7 @@ NetSchema.Actions = {
 	CancelAim = "CancelAim",
 	Dodge = "Dodge",
 	Catch = "Catch",
-	SetAutoQueue = "SetAutoQueue",
-	SetReady = "SetReady", -- the lobby Ready button: all queued players ready starts the match early
+	SetAutoQueue = "SetAutoQueue", -- the hub PLAY button (true) and its Cancel (false); also Play again
 	SetTouchCamera = "SetTouchCamera", -- Shift lock on touch: the camera only turns when dragged
 	SetSetting = "SetSetting",
 	ReportDevice = "ReportDevice",
@@ -95,12 +94,6 @@ NetSchema.Validators = {
 		return { dir = if flat.Magnitude > 0.1 then flat.Unit else Vector3.zero }
 	end,
 	SetAutoQueue = function(p: any): any
-		if not isTable(p) or type(p.value) ~= "boolean" then
-			return nil
-		end
-		return { value = p.value }
-	end,
-	SetReady = function(p: any): any
 		if not isTable(p) or type(p.value) ~= "boolean" then
 			return nil
 		end

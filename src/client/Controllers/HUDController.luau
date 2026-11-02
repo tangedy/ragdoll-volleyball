@@ -41,6 +41,9 @@ local stars: { Red: { Frame }, Blue: { Frame } } = { Red = {}, Blue = {} }
 local queueSetters: { (boolean) -> () } = {}
 local touchLayout: boolean? = nil -- whether update last laid the HUD out for touch
 local shownDamage = 0 -- the damage % the HUD last drew
+local queuedAt: number? = nil -- os.clock() of the last PLAY press, until the server's AutoQueue answers
+local PLAY_SIZE = Vector2.new(280, 92) -- the hub PLAY button, ledge included
+local PLAY_LEDGE = 8
 
 local function tween(
 	inst: Instance,
@@ -79,7 +82,7 @@ end
 -- Register a "Play again" toggle setter so every copy follows the server's AutoQueue.
 function HUDController.followQueue(setter: (boolean) -> ())
 	table.insert(queueSetters, setter)
-	setter(player:GetAttribute("AutoQueue") ~= false)
+	setter(player:GetAttribute("AutoQueue") == true)
 end
 
 -- Building ------------------------------------------------------------------------------------------
@@ -564,39 +567,56 @@ local function build()
 		:Connect(function()
 			LockController.cycle()
 		end)
-	-- Bottom right, in the hub during the intermission: the Ready button with the ready count over
-	-- it. Pressed, it turns into the countdown to the match (press again to cancel). The server owns
-	-- the flag: the button only ever shows the `Ready` attribute.
+	-- Bottom right, in the hub once the tutorial is done: the big PLAY button. Pressed, it queues you
+	-- (AutoQueue) and turns into a calmer "Waiting for next match · 25" countdown with a small Cancel
+	-- over it. The server owns the queue: the button only ever shows the `AutoQueue` attribute.
 	local corner = Theme.new("Frame", {
 		Name = "Corner",
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -Theme.Space.L, 1, -Theme.Space.L),
-		Size = UDim2.fromOffset(200, 82),
+		Size = UDim2.fromOffset(PLAY_SIZE.X, PLAY_SIZE.Y + 44),
 		BackgroundTransparency = 1,
+		Visible = false,
 	}, gui)
 	refs.corner = corner
 	Theme.autoScale(corner, 0.95)
-	local readyCount = Theme.pill(corner, {
-		Name = "ReadyCount",
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.fromScale(0.5, 0),
-		Size = UDim2.fromOffset(110, 24),
+	local play = Theme.button(corner, "PLAY", "primary", {
+		Name = "Play",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.fromScale(0.5, 1),
+		Size = UDim2.fromOffset(PLAY_SIZE.X, PLAY_SIZE.Y),
+		SelectionOrder = 0, -- the first thing a gamepad lands on in the hub
 	})
-	refs.readyCountText = Theme.text(readyCount, 15, {
-		Size = UDim2.fromScale(1, 1),
-		Text = "0/0 ready",
-	})
-	refs.readyCount = readyCount
-	local readyButton = Theme.button(corner, "Ready", "primary", {
-		Name = "Ready",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.fromScale(0, 1),
-		Size = UDim2.fromOffset(200, 56),
-	})
-	readyButton.Activated:Connect(function()
-		Net.request(Net.Actions.SetReady, { value = player:GetAttribute("Ready") ~= true })
+	-- a chunkier ledge than a normal button: this is the one thing the hub is for
+	local playLedge = play:FindFirstChild("Ledge") :: Frame
+	local playFace = play:FindFirstChild("Face") :: Frame
+	playLedge.Position = UDim2.fromOffset(0, PLAY_LEDGE)
+	playLedge.Size = UDim2.new(1, 0, 1, -PLAY_LEDGE)
+	playFace.Size = UDim2.new(1, 0, 1, -PLAY_LEDGE);
+	(playFace:FindFirstChildOfClass("UIStroke") :: UIStroke).Thickness = Theme.StrokeToy + 1
+	local playLabel = playFace:FindFirstChild("Label") :: TextLabel
+	playLabel.Size = UDim2.new(1, -28, 0.62, 0)
+	refs.playBreath = Theme.new("UIScale", nil, playFace)
+	play.Activated:Connect(function()
+		if player:GetAttribute("AutoQueue") ~= true then
+			queuedAt = os.clock()
+			Net.request(Net.Actions.SetAutoQueue, { value = true })
+		end
 	end)
-	refs.readyButton = readyButton
+	refs.play, refs.playFace, refs.playLedge, refs.playLabel = play, playFace, playLedge, playLabel
+	local cancel = Theme.button(corner, "Cancel", "secondary", {
+		Name = "Cancel",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.fromOffset(120, 38),
+		Visible = false,
+		back = true,
+	})
+	cancel.Activated:Connect(function()
+		queuedAt = nil
+		Net.request(Net.Actions.SetAutoQueue, { value = false })
+	end)
+	refs.cancel = cancel
 
 	-- Results card (non-blocking): title + tier sticker, coins counting up, three stat wells, level
 	local results = Theme.panel(gui, {
@@ -1185,13 +1205,17 @@ local function update()
 	end
 
 	local phase = ""
-	-- in the hub, say plainly why you aren't being put in a match (never a silent wait)
-	local queueOff = player:GetAttribute("AutoQueue") == false
-	local waitReason = if not queueOff
+	-- in the hub, say plainly why you aren't being put in a match (never a silent wait). A press
+	-- counts straight away, before the server's AutoQueue answers.
+	local tutorialDone = player:GetAttribute("TutorialDone") == true
+	local queued = player:GetAttribute("AutoQueue") == true or (queuedAt ~= nil and os.clock() - queuedAt < 2)
+	local waitReason = if queued
 		then nil
-		elseif state == "Intermission" then "Play again is off · press Ready to play"
-		else "Play again is off · turn it on in ⚙ to play"
-	if not inMatch and waitReason and (state == "WaitingForPlayers" or state == "Intermission" or live) then
+		elseif live then "Match in progress · press PLAY to join the next one"
+		else "Press PLAY to join a match"
+	if not inMatch and not tutorialDone then
+		phase = "" -- the tutorial's step card owns the top of the screen until it's done
+	elseif not inMatch and waitReason and (state == "WaitingForPlayers" or state == "Intermission" or live) then
 		phase = waitReason
 	elseif state == "WaitingForPlayers" then
 		phase = "Getting a match ready..."
@@ -1219,26 +1243,44 @@ local function update()
 	local below = if live then 140 * s else Theme.Space.M
 	refs.phasePill.Position = UDim2.new(0.5, 0, 0, below)
 	refs.results.Position = UDim2.new(0.5, 0, 0, below + (if refs.phasePill.Visible then 40 * s else 0) + 16 * s)
-	local lobby = state == "Intermission" and not inMatch
-	refs.corner.Visible = lobby
-	if lobby then
-		local ready = player:GetAttribute("Ready") == true
-		local face = refs.readyButton:FindFirstChild("Face") :: Frame
-		local label = face:FindFirstChild("Label") :: TextLabel
-		face.BackgroundColor3 = if ready then T.sun else T.leaf
-		label.TextColor3 = if ready then Theme.textOn(T.sun) else T.onFill
-		label.Text = if ready then ("✓ %s · Cancel"):format(fmtTime(left)) else "Ready"
-		local queuedN = num("QueuedCount", 0)
-		refs.readyCount.Visible = queuedN > 0
-		refs.readyCountText.Text = ("%d/%d ready"):format(num("ReadyCount", 0), queuedN)
+	-- PLAY: in the hub once the tutorial is done. Queued, it's the countdown to the next match (the
+	-- same intermission timer as the phase pill; before the intermission starts, its full length).
+	local hub = not inMatch and tutorialDone
+	refs.corner.Visible = hub
+	if hub then
+		local fill = if queued then T.sun else T.leaf
+		local label = refs.playLabel :: TextLabel
+		refs.playFace.BackgroundColor3 = fill
+		refs.playLedge.BackgroundColor3 = fill:Lerp(Color3.new(0, 0, 0), 0.3)
+		label.TextColor3 = if queued then Theme.textOn(T.sun) else T.onFill
+		label.Text = if not queued
+			then "PLAY"
+			elseif state == "Intermission" then ("Waiting for next match · %d"):format(
+				math.max(0, math.ceil(left))
+			)
+			elseif state == "WaitingForPlayers" then ("Waiting for next match · %d"):format(
+				Config.Match.LobbyMaxWait
+			)
+			else "Waiting for next match"
+		(label:FindFirstChildOfClass("UITextSizeConstraint") :: UITextSizeConstraint).MaxTextSize = if queued
+			then 22
+			else 46
+		refs.cancel.Visible = queued
+		-- a gentle breathing pulse while it's asking to be pressed
+		local breathe = not queued and not HUDController.settings.ReducedMotion
+		refs.playBreath.Scale = if breathe then 1 + 0.035 * math.sin(os.clock() * 2.6) else 1
 	end
 	-- on touch screens the controls own the bottom-right corner and the hub icons the bottom row:
-	-- Ready moves to the top right, a size up so it's an easy thumb target, and the kill feed
+	-- PLAY moves to the top right (Cancel under it), sized as an easy thumb target, and the kill feed
 	-- isn't shown at all: phone screens are too small for it
 	local touch = AimController.lastInput == "Touch"
 	if touch ~= touchLayout then
 		touchLayout = touch
-		Theme.autoScale(refs.corner, if touch then 1.2 else 0.95)
+		Theme.autoScale(refs.corner, if touch then 1.05 else 0.95)
+		refs.play.AnchorPoint = if touch then Vector2.new(0.5, 0) else Vector2.new(0.5, 1)
+		refs.play.Position = if touch then UDim2.fromScale(0.5, 0) else UDim2.fromScale(0.5, 1)
+		refs.cancel.AnchorPoint = if touch then Vector2.new(1, 1) else Vector2.new(1, 0)
+		refs.cancel.Position = if touch then UDim2.fromScale(1, 1) else UDim2.fromScale(1, 0)
 	end
 	refs.corner.AnchorPoint = if touch then Vector2.new(1, 0) else Vector2.new(1, 1)
 	refs.corner.Position = if touch
@@ -1400,7 +1442,8 @@ function HUDController.start()
 		end
 	end)
 	player:GetAttributeChangedSignal("AutoQueue"):Connect(function()
-		local v = player:GetAttribute("AutoQueue") ~= false
+		local v = player:GetAttribute("AutoQueue") == true
+		queuedAt = nil
 		for _, set in queueSetters do
 			set(v)
 		end

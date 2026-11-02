@@ -242,10 +242,9 @@ function LobbyService.start()
 		local c = S.PlayerStateService.get(player)
 		if c then
 			c.autoQueue = p.value
+			-- PLAY (true) and its Cancel (false) both come through here; it's also the Play again setting,
+			-- so after a match you come back still queued only if you left it on
 			player:SetAttribute("AutoQueue", p.value)
-			if not p.value then
-				S.MatchService.setReady(c, false) -- out of the queue, so not ready either
-			end
 		end
 	end)
 	-- Player.DevTouchCameraMode can only be set from the server (LockController asks for Shift lock)

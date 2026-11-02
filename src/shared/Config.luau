@@ -14,7 +14,7 @@ Config.Match = {
 	MinPlayers = 1, -- Amendment A2: a solo player gets a bot-filled 3v3
 	MaxPlayers = 12,
 	-- hub time between matches (talk, practice, shop, spin): the match starts after this many
-	-- seconds, or sooner once every queued player has pressed Ready
+	-- seconds (sooner only when the match is already full, IntermissionSkipWhenFull)
 	LobbyMaxWait = 25,
 	IntermissionSkipWhenFull = true,
 	RoundCountdown = 3,

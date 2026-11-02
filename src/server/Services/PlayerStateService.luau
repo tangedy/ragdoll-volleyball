@@ -57,8 +57,7 @@ export type Combatant = {
 	lastHitAt: number,
 	eliminatedBy: Combatant?,
 	jailReturns: number,
-	autoQueue: boolean,
-	ready: boolean, -- pressed Ready this intermission (MatchService owns it)
+	autoQueue: boolean, -- in the match queue: the hub PLAY button turns it on (Player attribute AutoQueue)
 	inMatch: boolean,
 	stats: Stats,
 	settings: { [string]: boolean },
@@ -129,8 +128,7 @@ function PlayerStateService.create(name: string, player: Player?, isBot: boolean
 		lastHitAt = -math.huge,
 		eliminatedBy = nil,
 		jailReturns = 0,
-		autoQueue = true,
-		ready = false,
+		autoQueue = false, -- nobody is queued on join: PLAY puts you in
 		inMatch = false,
 		stats = PlayerStateService.newStats(),
 		settings = { ReducedMotion = false, CameraShake = true },
@@ -140,6 +138,7 @@ function PlayerStateService.create(name: string, player: Player?, isBot: boolean
 	sortedCache = nil
 	if player then
 		byPlayer[player] = c
+		player:SetAttribute("AutoQueue", false)
 	end
 	return c
 end

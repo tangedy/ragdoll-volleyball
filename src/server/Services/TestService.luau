@@ -86,6 +86,11 @@ local function finishTutorials()
 			S.TutorialService.devSkip(c)
 			print(("[Tests] skipped %s's tutorial so a match can start"):format(c.name))
 		end
+		-- nobody is queued on join any more (the PLAY button does it), so press PLAY for them
+		if not c.autoQueue then
+			c.autoQueue = true
+			c.player:SetAttribute("AutoQueue", true)
+		end
 	end
 end
 
