@@ -203,7 +203,12 @@ function QuestService.status(c: any): any
 		end
 		table.insert(quests, entry)
 	end
-	return { quests = quests, resetsAt = resetsAt, featured = S.ShopService.featuredBall() }
+	return {
+		quests = quests,
+		resetsAt = resetsAt,
+		featured = S.ShopService.featuredBall(),
+		skinOfTheDay = S.ShopService.skinOfTheDay(),
+	}
 end
 
 local function inHub(c: any): boolean

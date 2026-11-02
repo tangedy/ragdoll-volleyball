@@ -9,9 +9,9 @@
 -- it the stand stays as decoration but says Owned and its prompt goes away.
 --
 -- The rest of the time the same spot (Config.Lobby.Featured, on the spawn → court sightline) holds
--- the featured ball of the day (ShopService.featuredBall, sent with the quests in the Profile push):
--- the ball turning over a plinth rimmed in its colour, a sign with today's bonuses, and a prompt
--- that opens the Shop on its matching skin (Config.PowerUps.Featured.Skins).
+-- the ball skin of the day (ShopService.skinOfTheDay, sent with the quests in the Profile push): a
+-- ball wearing the skin turns over a plinth rimmed in its rarity's colour, under a sign with its
+-- name and price, and a prompt opens the Shop on it.
 
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -21,12 +21,12 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local ArenaLayout = require(Shared.ArenaLayout)
-local BallDefinitions = require(Shared.BallDefinitions)
 local BundleValue = require(Shared.BundleValue)
 local Catalog = require(Shared.Catalog)
 local Config = require(Shared.Config)
 local JackOLantern = require(Shared.JackOLantern)
 local Net = require(script.Parent.Net)
+local BallSkinController = require(script.Parent.BallSkinController)
 local CoinShopController = require(script.Parent.CoinShopController)
 local HubController = require(script.Parent.HubController)
 local ShopController = require(script.Parent.ShopController)
@@ -44,9 +44,9 @@ local TOP = 0.8 -- the plinth's height
 
 type Stand = {
 	model: Model,
-	key: any, -- the offer it shows, or the featured ball type
+	key: any, -- the offer it shows, or the skin of the day's id
 	offer: any?,
-	skin: string?, -- the featured ball's matching skin (Catalog id)
+	skin: string?, -- the skin of the day (Catalog id)
 	prompt: ProximityPrompt?,
 	status: TextLabel?,
 	ball: Model,
@@ -57,7 +57,7 @@ type Stand = {
 
 local stand: Stand? = nil
 local owned: { [string]: boolean } = {}
-local featured: string? = nil -- today's featured power ball type (nil: the feature is off)
+local skinOfTheDay: string? = nil -- today's ball skin on the stand (Catalog id)
 
 local function part(props: { [string]: any }, parent: Instance): Part
 	local p = Instance.new("Part")
@@ -378,20 +378,23 @@ local function build(offer: any, lobby: Instance): Stand
 	}
 end
 
--- The featured ball of the day: the ball (its match colour and material, 1.5x size) turning over a
--- column inside a tilted neon ring, and a sign saying what being featured means today.
-local function buildFeatured(ballType: string, lobby: Instance): Stand
-	local def = BallDefinitions.get(ballType)
+-- The ball skin of the day: a ball wearing it (BallSkinController draws patterns and models, as on
+-- practice balls) turning over a column inside a tilted ring in its rarity's colour, a sign with its
+-- name and price, and a prompt that opens the Shop on it.
+local function buildFeatured(skinId: string, lobby: Instance): Stand
+	local item = Catalog.get(skinId) :: Catalog.Item
+	local data = item.Data
+	local rarity = Catalog.rarity(item)
+	local glow: Color3 = Config.Spin.RarityColors[rarity]
 	local model = Instance.new("Model")
-	model.Name = "FeaturedBall_" .. ballType
+	model.Name = "SkinOfTheDay_" .. skinId
 	local base = standFrame(Config.Lobby.Featured)
-	plinth(base, def.Color, model)
-	local bonus = Config.PowerUps.Featured
-	sign(base, def.Color, {
-		{ text = "FEATURED BALL", size = 0.22, color = Color3.fromRGB(255, 214, 90) },
-		{ text = def.DisplayName, size = 0.36, color = def.Color:Lerp(Color3.new(1, 1, 1), 0.25) },
-		{ text = ("Drops %dx more today"):format(bonus.WeightBoost), size = 0.18, color = GHOST_TEXT },
-		{ text = ("Its KOs count %dx for mastery"):format(bonus.MasteryBonus), size = 0.18, color = GHOST_TEXT },
+	plinth(base, glow, model)
+	local labels = sign(base, glow, {
+		{ text = "BALL OF THE DAY", size = 0.22, color = Color3.fromRGB(255, 214, 90) },
+		{ text = string.upper(item.Name), size = 0.36, color = glow:Lerp(Color3.new(1, 1, 1), 0.25) },
+		{ text = string.upper(rarity) .. " BALL SKIN", size = 0.18, color = GHOST_TEXT },
+		{ text = "", size = 0.18, color = GHOST_TEXT }, -- price or Owned (render)
 	}, model)
 	part({
 		Name = "Column",
@@ -405,10 +408,10 @@ local function buildFeatured(ballType: string, lobby: Instance): Stand
 		Name = "ColumnCap",
 		Size = Vector3.new(1.9, 0.2, 1.9),
 		CFrame = base * CFrame.new(0, TOP + 2.5, -0.4),
-		Color = def.Color,
+		Color = glow,
 		Material = Enum.Material.Neon,
 	}, model)
-	local r = Config.Ball.Radius * def.RadiusScale * 1.5
+	local r = Config.Ball.Radius * 1.5
 	local ballAt = base * CFrame.new(0, TOP + 3.1 + r, -0.4)
 	local ball = Instance.new("Model")
 	ball.Name = "Ball"
@@ -417,53 +420,55 @@ local function buildFeatured(ballType: string, lobby: Instance): Stand
 		Shape = Enum.PartType.Ball,
 		Size = Vector3.one * r * 2,
 		CFrame = ballAt,
-		Color = def.Color,
-		Material = def.Material,
+		Color = if typeof(data.Color) == "Color3" then data.Color else glow,
+		Material = if typeof(data.Material) == "EnumItem" then data.Material else Enum.Material.SmoothPlastic,
+		Reflectance = if type(data.Reflectance) == "number" then data.Reflectance else 0,
 	}, ball)
+	sphere:SetAttribute("SkinPattern", data.Pattern)
+	sphere:SetAttribute("SkinModel", data.Model)
+	if type(data.Variants) == "table" then
+		sphere:SetAttribute("SkinVariant", data.Variants[1])
+	end
 	ball.PrimaryPart = sphere
 	part({
 		Name = "Orbit",
 		Shape = Enum.PartType.Cylinder,
 		Size = Vector3.new(0.12, r * 2 + 1.4, r * 2 + 1.4),
 		CFrame = ballAt * CFrame.Angles(math.rad(20), 0, math.rad(90)),
-		Color = def.Color:Lerp(Color3.new(1, 1, 1), 0.4),
+		Color = glow:Lerp(Color3.new(1, 1, 1), 0.4),
 		Material = Enum.Material.Neon,
 		Transparency = 0.35,
 	}, ball)
 	local light = Instance.new("PointLight")
-	light.Color = def.Color
+	light.Color = glow
 	light.Range = 10
 	light.Brightness = 1.2
 	light.Shadows = false
 	light.Parent = sphere
 	ball.Parent = model
-	-- the prompt, at the plinth's front edge: opens the Shop on the matching skin
-	local skinId = bonus.Skins[ballType]
-	local skin = skinId and Catalog.get(skinId)
-	local prompt: ProximityPrompt? = nil
-	if skin then
-		local anchor = part({
-			Name = "PromptAnchor",
-			Size = Vector3.one * 0.5,
-			CFrame = base * CFrame.new(0, 2.6, -4.4),
-			Transparency = 1,
-		}, model)
-		local p = Instance.new("ProximityPrompt")
-		p.Name = "FeaturedPrompt"
-		p.ObjectText = string.upper(skin.Name) .. " SKIN"
-		p.HoldDuration = 0
-		p.Style = Enum.ProximityPromptStyle.Custom -- drawn by PromptController
-		p.MaxActivationDistance = Config.Lobby.StationPromptDistance
-		p.RequiresLineOfSight = false
-		p.Parent = anchor
-		prompt = p
-	end
+	-- the prompt, at the plinth's front edge
+	local anchor = part({
+		Name = "PromptAnchor",
+		Size = Vector3.one * 0.5,
+		CFrame = base * CFrame.new(0, 2.6, -4.4),
+		Transparency = 1,
+	}, model)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "FeaturedPrompt"
+	prompt.ObjectText = string.upper(item.Name) .. " SKIN"
+	prompt.HoldDuration = 0
+	prompt.Style = Enum.ProximityPromptStyle.Custom -- drawn by PromptController
+	prompt.MaxActivationDistance = Config.Lobby.StationPromptDistance
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = anchor
 	model.Parent = lobby
+	BallSkinController.track(sphere)
 	return {
 		model = model,
-		key = ballType,
-		skin = if skin then skin.Id else nil,
+		key = skinId,
+		skin = skinId,
 		prompt = prompt,
+		status = labels[4],
 		ball = ball,
 		ballAt = ballAt,
 	}
@@ -486,8 +491,8 @@ local function render()
 	if offer and not CoinShopController.unlocked() then
 		offer = nil
 	end
-	-- a live offer's stand, else the featured ball of the day
-	local key = offer or featured
+	-- a live offer's stand, else the ball skin of the day
+	local key = offer or skinOfTheDay
 	if not key or not lobby then
 		clear()
 		return
@@ -498,9 +503,12 @@ local function render()
 	if not offer then
 		local s = stand or buildFeatured(key, lobby)
 		stand = s
-		if s.prompt and s.skin then
-			s.prompt.ActionText = if owned[s.skin] then "Equip in Shop" else "Buy in Shop"
-		end
+		local item = Catalog.get(s.skin) :: Catalog.Item
+		local have = owned[item.Id] == true
+		local prompt = s.prompt :: ProximityPrompt
+		local status = s.status :: TextLabel
+		prompt.ActionText = if have then "Equip in Shop" else "Buy in Shop"
+		status.Text = if have then "OWNED" else ("%s COINS"):format(commas(item.Price))
 		return
 	end
 	local s = stand or build(offer, lobby)
@@ -525,8 +533,8 @@ function BundleDisplayController.start()
 			owned = d.owned
 		end
 		if type(d.quests) == "table" then
-			local ball = d.quests.featured
-			featured = if type(ball) == "string" and BallDefinitions.Defs[ball] then ball else nil
+			local id = d.quests.skinOfTheDay
+			skinOfTheDay = if type(id) == "string" and Catalog.get(id) then id else nil
 		end
 		render()
 	end)

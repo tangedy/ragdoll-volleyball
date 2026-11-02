@@ -1320,6 +1320,18 @@ function Catalog.isOffered(item: Item, events: { [string]: boolean }?): boolean
 	return (events or Catalog.activeEvents())[item.Event] == true
 end
 
+-- The ball skin of the day (the hub's featured stand): a UTC day number picks one of the ball skins
+-- always sold for coins (no event, bundle, mastery or Robux-exclusive skins), in catalog order.
+function Catalog.skinOfTheDay(day: number): string
+	local list = {}
+	for _, item in items do
+		if item.Category == "BallSkin" and item.Price > 0 and Catalog.isOffered(item, {}) then
+			table.insert(list, item.Id)
+		end
+	end
+	return list[day % #list + 1]
+end
+
 -- A Robux-exclusive item's price in Robux (Config.Economy.RobuxPriceByCategory for titles and
 -- gestures, else RobuxPriceByRarity), or nil for any other item.
 function Catalog.robuxPrice(item: Item): number?

@@ -87,8 +87,8 @@ Config.Lobby = {
 		{ Id = "Daily", Title = "DAILY REWARD", Icon = "🎁", X = 19, F = -33, Color = Color3.fromRGB(70, 150, 255) },
 	},
 	StationPromptDistance = 12,
-	-- the featured display (BundleDisplayController): a live offer's stand, else the featured ball of
-	-- the day. Left of the spawn → court sightline, mirroring the signpost (X 11, F 13), so it's in
+	-- the featured display (BundleDisplayController): a live offer's stand, else the ball skin of the
+	-- day (Catalog.skinOfTheDay). Left of the spawn → court sightline, mirroring the signpost (X 11, F 13), so it's in
 	-- the spawn camera's view but off the court's middle. Checked in Studio: clear of the jack
 	-- sign-post lantern (X -24, F 10), the black cat, the helipad and the practice zone (X < -29)
 	Featured = { X = -15, F = 13 },
@@ -248,14 +248,8 @@ Config.PowerUps = {
 	Weights = { Heavy = 1, Rocket = 1, Pop = 1 },
 	-- Featured ball of the day: one power type a UTC day, in BallDefinitions.PowerTypes order. It
 	-- drops WeightBoost times as often, and its knockouts count MasteryBonus times toward Power Ball
-	-- Mastery (the Catalog Unlock cosmetics). Its hub stand (BundleDisplayController) links to the
-	-- ball skin in Skins, sold for coins in the Shop.
-	Featured = {
-		Enabled = true,
-		WeightBoost = 3,
-		MasteryBonus = 2,
-		Skins = { Heavy = "Skin_Meteor", Rocket = "Skin_Planet", Pop = "Skin_Bomb" } :: { [string]: string },
-	},
+	-- Mastery (the Catalog Unlock cosmetics).
+	Featured = { Enabled = true, WeightBoost = 3, MasteryBonus = 2 },
 }
 
 Config.Bots = {

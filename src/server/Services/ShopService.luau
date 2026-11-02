@@ -144,6 +144,11 @@ function ShopService.featuredBall(): string?
 	return types[(os.time() // 86400) % #types + 1]
 end
 
+-- Today's ball skin on the hub's featured stand (Catalog.skinOfTheDay).
+function ShopService.skinOfTheDay(): string
+	return Catalog.skinOfTheDay(os.time() // 86400)
+end
+
 -- Grant every Unlock cosmetic whose mastery goal is met and isn't owned yet. Returns the new ids.
 function ShopService.checkUnlocks(c: any): { string }
 	local granted = {}

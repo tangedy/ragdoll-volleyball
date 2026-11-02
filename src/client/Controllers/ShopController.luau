@@ -1413,8 +1413,8 @@ function ShopController.openShop(on: boolean)
 	end
 end
 
--- Open the shop on `id`'s tab with that item selected and scrolled into view (the featured ball's
--- stand links its skin here). Turns "Owned only" off if it would hide the item.
+-- Open the shop on `id`'s tab with that item selected and scrolled into view (the hub's ball of the
+-- day stand links here). Turns "Owned only" off if it would hide the item.
 function ShopController.openToItem(id: string)
 	local item = Catalog.get(id)
 	if not item or not inHub() then

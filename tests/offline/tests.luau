@@ -1648,15 +1648,19 @@ return function(H)
 		end
 	end
 
-	test("featured ball: every power ball links to a ball skin sold for coins", function()
-		local BallDefinitions = H.require("shared/BallDefinitions")
-		for _, t in BallDefinitions.PowerTypes do
-			local id = Config.PowerUps.Featured.Skins[t]
-			local item = id and Catalog.get(id)
-			check(item ~= nil, "no skin for " .. t)
-			eq(item.Category, "BallSkin", t .. " skin category")
-			check(Catalog.isOffered(item, {}) and item.Price > 0, t .. " skin isn't sold for coins")
+	test("ball of the day: a ball skin always sold for coins, changing day to day", function()
+		local seen = {}
+		for day = 0, 39 do
+			local item = Catalog.get(Catalog.skinOfTheDay(day))
+			check(item ~= nil, "no skin on day " .. day)
+			eq(item.Category, "BallSkin", "day " .. day .. " category")
+			check(Catalog.isOffered(item, {}) and item.Price > 0, item.Id .. " isn't always sold for coins")
+			check(Catalog.skinOfTheDay(day + 1) ~= item.Id, "same skin two days running")
+			seen[item.Id] = true
 		end
+		check(seen.Skin_Meteor and not seen.Skin_JackOLantern and not seen.Skin_Galaxy, "the rotation's pool")
+		H.now = 5 * 86400 + 60
+		eq(S.ShopService.skinOfTheDay(), Catalog.skinOfTheDay(5), "the server's pick")
 	end)
 
 	test("group reward: the reward is valid and the kiosk stays off at group id 0", function()

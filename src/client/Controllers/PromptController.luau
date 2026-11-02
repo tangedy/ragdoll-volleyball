@@ -30,7 +30,7 @@ local TONES: { [string]: Color3 } = {
 	SpinPrompt = T.candy,
 	DailyPrompt = T.leaf,
 	BundlePrompt = T.sun, -- the Haunted Bundle's stand (BundleDisplayController)
-	FeaturedPrompt = T.sun, -- the featured ball's stand: opens the Shop (BundleDisplayController)
+	FeaturedPrompt = T.sun, -- the ball of the day's stand: opens the Shop (BundleDisplayController)
 	GroupRewardPrompt = T.leaf, -- the group reward kiosk (LobbyBuilder)
 }
 local GROUP_PROMPT = "GroupRewardPrompt"

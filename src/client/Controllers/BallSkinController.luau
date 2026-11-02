@@ -314,6 +314,10 @@ function BallSkinController.flourish(form: string)
 	end
 end
 
+-- Skin a ball outside the folders followed in start (the hub's ball of the day stand), from its
+-- SkinPattern / SkinModel / SkinVariant attributes, and keep it in step with them.
+BallSkinController.track = track
+
 function BallSkinController.init() end
 
 function BallSkinController.start()
