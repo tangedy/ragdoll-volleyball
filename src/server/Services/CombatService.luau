@@ -417,7 +417,7 @@ function CombatService.doThrow(c: any, dir: Vector3, throwId: number): boolean
 	end
 	local charge = 1 -- every throw is full power: tap to fire, no charging
 	c.chargeStart = nil
-	local speed = ProjectileMath.throwSpeed(charge, ball.type)
+	local speed = ProjectileMath.throwSpeed(charge, ball.type) * (if c.isBot then Config.Bots.ThrowSpeedScale else 1)
 	S.BallService.launch(c, dir * speed, charge, throwId)
 	S.PlayerStateService.setAction(c, "Recovering", P.ThrowRecovery)
 	c.stats.throws += 1

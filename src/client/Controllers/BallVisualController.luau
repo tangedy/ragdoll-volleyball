@@ -8,6 +8,8 @@
 -- glide onto the real ball, so the swap never jumps).
 -- The local thrower predicts the launch on release and blends into the server arc when it arrives.
 -- An enemy ball whose arc is about to pass close to you carries a "!" above it all the way in.
+-- A player's throw can bend slightly toward its target (homing): the server then sends the new
+-- arc (BallCourse) and the drawn ball blends onto it.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -31,7 +33,8 @@ type Visual = {
 	origin: Vector3,
 	vel: Vector3,
 	g: number,
-	t0: number, -- server time of launch
+	t0: number, -- server time the current arc starts (launch, or the last homing re-base)
+	launchedAt: number, -- server time of launch (flight-time expiry)
 	offset: Vector3, -- prediction error being blended out
 	blendStart: number,
 	ballId: number?,
@@ -107,7 +110,10 @@ local function makePart(ballType: string, at: Vector3): Part
 	p.CanTouch = false
 	p.CastShadow = false
 	p.CFrame = CFrame.new(at)
-	if def.Trail or ballType ~= "Standard" then
+	do
+		-- every thrown ball streaks (a plain Standard ball gets a faint white one, which an owner's
+		-- trail replaces in applyLook), so throws read as fast
+		local plain = not (def.Trail or ballType ~= "Standard")
 		local a0 = Instance.new("Attachment")
 		a0.Position = Vector3.new(0, 0.4, 0)
 		a0.Parent = p
@@ -117,10 +123,14 @@ local function makePart(ballType: string, at: Vector3): Part
 		local trail = Instance.new("Trail")
 		trail.Attachment0 = a0
 		trail.Attachment1 = a1
-		trail.Lifetime = 0.3
-		trail.Color = ColorSequence.new(def.Color)
-		trail.Transparency = NumberSequence.new(0.2, 1)
+		trail.Lifetime = if plain then 0.12 else 0.3
+		trail.Color = ColorSequence.new(if plain then Color3.new(1, 1, 1) else def.Color)
+		trail.Transparency = NumberSequence.new(if plain then 0.45 else 0.2, 1)
+		trail.WidthScale = NumberSequence.new(1, 0.2)
 		trail.LightEmission = 0.6
+		if plain then
+			trail.Name = "SpeedStreak"
+		end
 		trail.Parent = p
 	end
 	p.Parent = folder
@@ -214,6 +224,7 @@ local function newVisual(part: Part, origin: Vector3, vel: Vector3, g: number, t
 		vel = vel,
 		g = g,
 		t0 = t0,
+		launchedAt = t0,
 		offset = Vector3.zero,
 		blendStart = 0,
 		ballId = nil,
@@ -288,6 +299,7 @@ local function onLaunched(d: any)
 		v.vel = d.vel
 		v.g = g
 		v.t0 = d.t0
+		v.launchedAt = d.t0
 		v.offset = current - ProjectileMath.positionAt(d.origin, d.vel, g, serverNow - d.t0)
 		v.blendStart = os.clock()
 		v.ballId = d.id
@@ -320,6 +332,28 @@ local function onLaunched(d: any)
 	BallVisualController.applyLook(v.part, d.look)
 end
 
+-- Homing bent a ball's arc: follow the new one from where the ball is drawn now, blending out
+-- the difference (and any catch-up lag still being run off).
+local function onCourse(d: any)
+	if type(d.id) ~= "number" or typeof(d.origin) ~= "Vector3" or typeof(d.vel) ~= "Vector3" then
+		return
+	end
+	if type(d.t0) ~= "number" then
+		return
+	end
+	local v = byBallId[d.id]
+	if not v or v.handoffAt or v.stoppedAt then
+		return
+	end
+	local current = v.part.Position
+	v.origin = d.origin
+	v.vel = d.vel
+	v.t0 = d.t0
+	v.lag = 0
+	v.offset = current - ProjectileMath.positionAt(d.origin, d.vel, v.g, math.max(smoothServerNow() - d.t0, 0))
+	v.blendStart = os.clock()
+end
+
 -- Owner cosmetics from the launch record (Standard balls only; the server never sends a look
 -- for power-up types).
 function BallVisualController.applyLook(part: Part, look: any)
@@ -343,6 +377,10 @@ function BallVisualController.applyLook(part: Part, look: any)
 	end
 	if type(look.pattern) == "string" then
 		part:SetAttribute("SkinPattern", look.pattern) -- Zebra / Rainbow (BallSkinController)
+	end
+	local streak = part:FindFirstChild("SpeedStreak")
+	if streak and type(look.trail) == "table" and #look.trail > 0 then
+		streak:Destroy() -- the owner's trail takes over from the plain streak
 	end
 	if type(look.trail) == "table" and #look.trail > 0 and not part:FindFirstChildOfClass("Trail") then
 		local a0 = Instance.new("Attachment")
@@ -464,6 +502,7 @@ function BallVisualController.start()
 	end
 	balls.ChildAdded:Connect(track)
 	Net.on("BallLaunched", onLaunched)
+	Net.on("BallCourse", onCourse)
 	Net.on("ThrowResult", function(d)
 		if d.ok == false then
 			local v = predicted[d.throwId]
@@ -542,7 +581,10 @@ function BallVisualController.start()
 			end
 			local t = serverNow - v.t0
 			-- predictions the server never confirmed, and arcs past max flight time, expire
-			if t > Config.Ball.MaxFlightTime + 0.5 or (v.ballId == nil and clock - v.createdAt > 1) then
+			if
+				serverNow - v.launchedAt > Config.Ball.MaxFlightTime + 0.5
+				or (v.ballId == nil and clock - v.createdAt > 1)
+			then
 				remove(v)
 				continue
 			end

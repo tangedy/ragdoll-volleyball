@@ -34,6 +34,8 @@ AimController.localHeld = function(): boolean
 	return false
 end
 AimController.localThrow = function(_dir: Vector3, _origin: Vector3, _speed: number, _charge: number) end
+-- Set by EffectsController: instant release feedback on your own throw (practice plays its own sound).
+AimController.onThrow = function(_origin: Vector3, _practice: boolean) end
 AimController.extraTargets = function(): { Model }
 	return {}
 end
@@ -276,8 +278,10 @@ local function throwNow()
 	hideDots()
 	if AimController.localHeld() then
 		AimController.localThrow(dir, origin, speed, 1)
+		AimController.onThrow(origin, true)
 		return
 	end
+	AimController.onThrow(origin, false)
 	local ballType = attr("HeldBall") or "Standard"
 	throwId += 1
 	Net.request(Net.Actions.Throw, { dir = dir, throwId = throwId })

@@ -18,6 +18,7 @@ local BallDefinitions = require(Shared.BallDefinitions)
 local ArenaLayout = require(Shared.ArenaLayout)
 local Sounds = require(Shared.Sounds)
 local Net = require(script.Parent.Net)
+local AimController = require(script.Parent.AimController)
 local HUDController = require(script.Parent.HUDController)
 local SoundController = require(script.Parent.SoundController)
 local GraphicsController = require(script.Parent.GraphicsController)
@@ -491,8 +492,17 @@ function EffectsController.start()
 			SoundController.play(d.cue, if typeof(d.position) == "Vector3" then d.position else nil)
 		end
 	end)
+	-- your own throw: the whoosh, a quick FOV punch and a tap of shake on release, not a round trip
+	-- later when the server's launch arrives
+	AimController.onThrow = function(origin: Vector3, practice: boolean)
+		if not practice then
+			SoundController.play("Throw", origin, 1)
+		end
+		fovKick = math.max(fovKick, 4)
+		EffectsController.addShake(0.06)
+	end
 	Net.on("BallLaunched", function(d)
-		if typeof(d.origin) == "Vector3" then
+		if typeof(d.origin) == "Vector3" and d.thrower ~= player then
 			SoundController.play("Throw", d.origin, if d.thrower == player then 1 else 0.7)
 		end
 	end)

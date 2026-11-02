@@ -513,6 +513,7 @@ local function aimDirection(c: any, target: any, chargeHold: number): Vector3
 	local forward = if flatTo.Magnitude > 0.1 then flatTo.Unit else root.CFrame.LookVector
 	local origin = root.Position + Vector3.new(0, Config.Ball.SpawnUp, 0) + forward * Config.Ball.SpawnForward
 	local speed = ProjectileMath.throwSpeed(ProjectileMath.chargeFromHold(chargeHold), ballType)
+		* Config.Bots.ThrowSpeedScale
 	local g = ProjectileMath.gravity(ballType)
 	local dir = (tp - origin).Unit
 	for _ = 1, 2 do

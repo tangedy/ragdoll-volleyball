@@ -36,6 +36,9 @@ export type Ball = {
 	hasHit: boolean,
 	syncedAt: number, -- flightT when the part's CFrame was last written during flight
 	launchSeq: number, -- unique per launch across all balls (bots key their reactions on it)
+	homing: any?, -- the enemy this throw bends toward (Config.AimAssist.Homing)
+	turned: number, -- radians of homing used so far
+	courseDirty: boolean, -- homing bent the arc since clients were last told (BallCourse)
 }
 
 local BallService = {}
@@ -55,6 +58,10 @@ local rng = Random.new()
 -- part only needs an occasional position while flying (late joiners, debugging). Writing it every
 -- 1/60 s step replicated ~60 CFrame updates a second per ball to every client.
 local FLIGHT_SYNC_INTERVAL = 0.1
+local HOMING = Config.AimAssist.Homing
+local HOMING_CONE_COS = math.cos(math.rad(HOMING.ConeDeg))
+local HOMING_RATE = math.rad(HOMING.TurnDegPerSec)
+local HOMING_MAX = math.rad(HOMING.MaxTurnDeg)
 -- Sweep filters, one per (context, thrower team). Building the include list and assigning
 -- FilterDescendantsInstances (which marshals the whole array into the engine) used to happen for
 -- every flying ball on every 1/60 s step; now each list is rebuilt once per frame, and the params
@@ -308,6 +315,8 @@ function BallService.spawn(ballType: string, pos: Vector3, context: string, isPo
 		throwerLockoutUntil = 0,
 		pos = pos,
 		vel = Vector3.zero,
+		turned = 0,
+		courseDirty = false,
 		charge = 0,
 		throwId = 0,
 		flightT = 0,
@@ -387,6 +396,61 @@ function BallService.drop(c: any)
 	setState(ball, "Spent")
 end
 
+-- Homing pick: the enemy nearest the throw's line, inside the cone.
+local function homingTarget(targets: { any }, origin: Vector3, velocity: Vector3): any?
+	if velocity.Magnitude < 1e-3 then
+		return nil
+	end
+	local dir = velocity.Unit
+	local best, bestCos = nil, HOMING_CONE_COS
+	for _, t in targets do
+		local root = t.root :: BasePart?
+		if root then
+			local to = root.Position - origin
+			local cos = if to.Magnitude > 1e-3 then to.Unit:Dot(dir) else 1
+			if cos > bestCos then
+				best, bestCos = t, cos
+			end
+		end
+	end
+	return best
+end
+
+-- Bend the ball's velocity a little toward its homing target (same speed, a capped angle).
+local function steer(ball: Ball, dt: number)
+	local target = ball.homing
+	local root = target.root :: BasePart?
+	if
+		not root
+		or not root.Parent
+		or target.status ~= "Active" and ball.context == "Match"
+		or now() < target.immuneUntil
+		or ball.turned >= HOMING_MAX
+	then
+		ball.homing = nil
+		return
+	end
+	local to = root.Position - ball.pos
+	local v = ball.vel
+	local speed = v.Magnitude
+	if speed < 1e-3 or to.Magnitude < 1e-3 or to:Dot(v) <= 0 then
+		ball.homing = nil -- already past them
+		return
+	end
+	local angle = math.acos(math.clamp(v.Unit:Dot(to.Unit), -1, 1))
+	local step = math.min(angle, HOMING_RATE * dt, HOMING_MAX - ball.turned)
+	if step < 1e-4 then
+		return
+	end
+	local axis = v:Cross(to)
+	if axis.Magnitude < 1e-6 then
+		return
+	end
+	ball.vel = CFrame.fromAxisAngle(axis.Unit, step):VectorToWorldSpace(v)
+	ball.turned += step
+	ball.courseDirty = true
+end
+
 -- Launch a held ball. `velocity` is fully server-computed.
 function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: number): Ball?
 	local ball = c.heldBall :: Ball?
@@ -416,6 +480,9 @@ function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: 
 	ball.flightT = 0
 	ball.syncedAt = 0
 	ball.hasHit = false
+	ball.homing = nil
+	ball.turned = 0
+	ball.courseDirty = false
 	launchSeq += 1
 	ball.launchSeq = launchSeq
 	ball.lastThrower = c
@@ -444,6 +511,9 @@ function BallService.launch(c: any, velocity: Vector3, charge: number, throwId: 
 	})
 	-- Explicit initial-overlap handling: a target already inside the ball's sphere is hit now.
 	local targets = S.CombatService.targetsFor(ball)
+	if not c.isBot then
+		ball.homing = homingTarget(targets, origin, velocity)
+	end
 	if #targets > 0 then
 		local proxies = {}
 		for _, t in targets do
@@ -478,6 +548,9 @@ function BallService.spend(ball: Ball, pos: Vector3, vel: Vector3)
 end
 
 local function simulate(ball: Ball, dt: number)
+	if ball.homing then
+		steer(ball, dt)
+	end
 	local g = ProjectileMath.gravity(ball.type)
 	local r = ProjectileMath.radius(ball.type)
 	local from = ball.pos
@@ -528,6 +601,16 @@ local function simulate(ball: Ball, dt: number)
 	if ball.flightT - ball.syncedAt >= FLIGHT_SYNC_INTERVAL then
 		ball.syncedAt = ball.flightT
 		ball.part.CFrame = CFrame.new(to)
+		if ball.courseDirty then
+			-- homing bent the arc: clients re-base their drawn flight on it (BallVisualController)
+			ball.courseDirty = false
+			S.NetService.broadcast("BallCourse", {
+				id = ball.id,
+				origin = to,
+				vel = ball.vel,
+				t0 = ball.stateAt + ball.flightT,
+			})
+		end
 	end
 	local voidY = if ball.context == "Lobby" then ArenaLayout.LobbyVoidY else ArenaLayout.VoidY
 	-- a wild match throw that sails over the hub deck is out (it never flies through hub players)

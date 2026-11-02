@@ -118,9 +118,9 @@ Config.Player = {
 	MaxHeldBalls = 1,
 	FullChargeTime = 0.65,
 	-- Every throw is full power (tap to fire), so both ends are the same speed.
-	MinThrowSpeed = 147,
-	MaxThrowSpeed = 147,
-	ThrowRecovery = 0.4,
+	MinThrowSpeed = 195,
+	MaxThrowSpeed = 195,
+	ThrowRecovery = 0.25,
 	RagdollDuration = 1.1,
 	PostHitImmunity = 0.75,
 	DodgeDuration = 0.28,
@@ -150,10 +150,11 @@ Config.Knockback = {
 	LimbSpin = 9, -- rad/s random per-limb spin
 	LimbFlail = 10, -- studs/s random per-limb velocity (averages out across the body)
 	-- Each hit you take launches you harder (Smash-style). The knockback above is scaled by
-	-- First + PerHit × (hits already taken), up to Max; the ragdoll lasts a little longer too.
-	-- Hits thrown from jail land at your current level without raising it. The count resets each
-	-- round and when you get back on court from jail.
-	Escalation = { First = 0.3, PerHit = 0.3, Max = 2.4 },
+	-- First × Growth^(hits already taken), up to Max, so every hit is 1.25× the last; the ragdoll
+	-- lasts a little longer too, and the hop grows up to UpMax. Hits thrown from jail land at your
+	-- current level without raising it. The count resets each round and when you get back on court
+	-- from jail.
+	Escalation = { First = 1.125, Growth = 1.25, Max = 12, UpMax = 2.5 },
 }
 
 Config.Ball = {
@@ -185,6 +186,10 @@ Config.AimAssist = {
 	-- incoming-ball warning: an enemy ball whose arc passes this close to you shows a "!"
 	WarnRadius = 7,
 	WarnLookahead = 1.2, -- seconds of the arc checked ahead
+	-- Midair homing (players only, not bots): a thrown ball bends gently toward the enemy closest
+	-- to its line, within ConeDeg of the throw, turning at most TurnDegPerSec and MaxTurnDeg in all.
+	-- It stops bending once it has passed them or they can't be hit.
+	Homing = { ConeDeg = 20, TurnDegPerSec = 45, MaxTurnDeg = 14 },
 }
 
 -- Camera lock modes (the lock button, or Shift / R3): Free is normal Roblox movement, Shift lock
@@ -289,6 +294,7 @@ Config.Bots = {
 	JailPickupDelay = 3, -- a jailed bot waits this long after a ball shows up before going for it
 	PickupAfterThrow = 2, -- after throwing, a bot wanders this long before going for another ball
 	RewardMultiplier = 0.5,
+	ThrowSpeedScale = 0.75, -- bots throw at this share of player speed (about the old 147 studs/s)
 	-- bots wear these Roblox users' avatars and display names (in rotation); Names is the fallback
 	-- when a profile can't be fetched
 	Avatars = { 3568710137, 87247403, 1081151462, 765160767, 749465889, 171080174 },

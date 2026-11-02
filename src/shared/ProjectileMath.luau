@@ -73,10 +73,10 @@ function ProjectileMath.randomInCone(dir: Vector3, halfAngleDeg: number, rng: Ra
 	return (cf * offset).LookVector
 end
 
--- Knockback scale after `hitsTaken` earlier hits: tiny at first, growing with every hit.
+-- Knockback scale after `hitsTaken` earlier hits: small at first, then 1.25× the last every hit.
 function ProjectileMath.escalation(hitsTaken: number): number
 	local e = Config.Knockback.Escalation
-	return math.min(e.First + e.PerHit * math.max(hitsTaken, 0), e.Max)
+	return math.min(e.First * e.Growth ^ math.max(hitsTaken, 0), e.Max)
 end
 
 -- Speed cap for a launch at this escalation (big late-game launches go past the base cap).
@@ -101,7 +101,7 @@ function ProjectileMath.knockback(ballVelocity: Vector3, charge: number, ballTyp
 		* def.HorizontalKnockbackScale
 		* k
 	-- the hop grows more gently than the push, so big hits fly far rather than straight up
-	local up = kb.Upward * def.UpwardKnockbackScale * math.clamp(k, 0.5, 1.4)
+	local up = kb.Upward * def.UpwardKnockbackScale * math.clamp(k, 0.5, kb.Escalation.UpMax)
 	local v = dir * horizontal + Vector3.new(0, up, 0)
 	local cap = ProjectileMath.maxKnockbackSpeed(k)
 	if v.Magnitude > cap then
