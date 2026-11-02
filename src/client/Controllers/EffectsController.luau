@@ -458,6 +458,145 @@ local function onElimination(d: any)
 	end
 end
 
+-- Homing lock-on: when a player's throw bends toward you (Config.AimAssist.Homing), a joy-red
+-- reticle snaps in under your feet with a sharp LockOn sound. It rides with you for the length of a
+-- throw, then fades. The "!" over the ball (BallVisualController) still says where it's coming from.
+local LOCK_SIZE = 12 -- studs across the floor canvas
+local LOCK_PPS = 25 -- canvas pixels per stud
+local LOCK_HOLD = 0.55 -- seconds at full strength (a full-speed throw crosses the court in ~0.7 s)
+local LOCK_FADE = 0.25
+type LockRing = { part: BasePart, conn: RBXScriptConnection }
+local lockRing: LockRing? = nil
+
+local function clearLockOn()
+	local ring = lockRing
+	if ring then
+		lockRing = nil
+		ring.conn:Disconnect()
+		ring.part:Destroy()
+	end
+end
+
+local function lockOn(character: Model)
+	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not root or not humanoid then
+		return
+	end
+	clearLockOn()
+	SoundController.play("LockOn")
+	local T = Theme.Toybox
+	local still = reduced()
+	local part = Instance.new("Part")
+	part.Name = "LockOn"
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CastShadow = false
+	part.Transparency = 1
+	part.Size = Vector3.new(LOCK_SIZE, 0.05, LOCK_SIZE)
+	local gui = Theme.new("SurfaceGui", {
+		Face = Enum.NormalId.Top,
+		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+		PixelsPerStud = LOCK_PPS,
+		LightInfluence = 0,
+		Brightness = 1.5,
+		ResetOnSpawn = false,
+	}, part)
+	local px = LOCK_SIZE * LOCK_PPS
+	local holder = Theme.new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(px / 2, px / 2),
+		BackgroundTransparency = 1,
+	}, gui)
+	-- the ring: joy red with a paper rim, the toy sticker look, and four notches pointing in
+	local strokes: { UIStroke } = {}
+	local rim = Theme.new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, 8, 1, 8),
+		BackgroundTransparency = 1,
+	}, holder)
+	Theme.round(rim)
+	table.insert(strokes, Theme.stroke(rim, T.paper, 5))
+	local ring = Theme.new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+	}, holder)
+	Theme.round(ring)
+	table.insert(strokes, Theme.stroke(ring, T.joyRed, 9))
+	local notches: { Frame } = {}
+	for i = 0, 3 do
+		local a = i * math.pi / 2
+		local notch = Theme.new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5 + math.cos(a) * 0.38, 0.5 + math.sin(a) * 0.38),
+			Size = if i % 2 == 0 then UDim2.fromOffset(16, 7) else UDim2.fromOffset(7, 16),
+			BackgroundColor3 = T.joyRed,
+			BorderSizePixel = 0,
+		}, holder)
+		Theme.corner(notch, 3)
+		table.insert(notches, notch)
+	end
+	local scale = Theme.new("UIScale", { Scale = if still then 1 else 1.9 }, holder)
+	if not still then
+		Theme.tween(scale, 0.16, { Scale = 1 }, Enum.EasingStyle.Back) -- snaps in
+	end
+	-- ride along at the feet, just above the floor (placed before parenting so it never shows at the origin)
+	local function place()
+		local feet = root.Position.Y - root.Size.Y / 2 - humanoid.HipHeight + 0.12
+		part.CFrame = CFrame.new(root.Position.X, feet, root.Position.Z)
+	end
+	place()
+	part.Parent = fxFolder
+
+	-- one expanding echo off the snap (not in performance mode or with reduced motion)
+	if not still and not GraphicsController.low then
+		local echo = Theme.new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(px / 2, px / 2),
+			BackgroundTransparency = 1,
+		}, gui)
+		Theme.round(echo)
+		local echoStroke = Theme.stroke(echo, T.joyRed, 5, 0.2)
+		task.delay(0.12, function()
+			Theme.tween(echo, 0.3, { Size = UDim2.fromOffset(px * 0.95, px * 0.95) })
+			Theme.tween(echoStroke, 0.3, { Transparency = 1 })
+		end)
+	end
+
+	local entry: LockRing = { part = part, conn = (nil :: any) :: RBXScriptConnection }
+	local started = os.clock()
+	local fading = false
+	entry.conn = RunService.RenderStepped:Connect(function()
+		if not root.Parent or not part.Parent then
+			if lockRing == entry then
+				clearLockOn()
+			end
+			return
+		end
+		place()
+		local age = os.clock() - started
+		if not fading and age >= LOCK_HOLD then
+			fading = true
+			for _, s in strokes do
+				Theme.tween(s, LOCK_FADE, { Transparency = 1 })
+			end
+			for _, n in notches do
+				Theme.tween(n, LOCK_FADE, { BackgroundTransparency = 1 })
+			end
+		elseif age >= LOCK_HOLD + LOCK_FADE and lockRing == entry then
+			clearLockOn()
+		end
+	end)
+	lockRing = entry
+end
+
 -- Client-side hits (hub practice dummy) get the same impact effects as server hits.
 function EffectsController.localImpact(d: any)
 	onImpact(d)
@@ -504,6 +643,10 @@ function EffectsController.start()
 	Net.on("BallLaunched", function(d)
 		if typeof(d.origin) == "Vector3" and d.thrower ~= player then
 			SoundController.play("Throw", d.origin, if d.thrower == player then 1 else 0.7)
+		end
+		local character = player.Character
+		if character and d.target == character and d.thrower ~= player then
+			lockOn(character)
 		end
 	end)
 	-- the dodge sound plays in CharacterController, on the press when the dodge is predicted

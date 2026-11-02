@@ -109,6 +109,23 @@ function PurchaseService.grantOffer(c: any, offer: any): boolean
 	return true
 end
 
+-- Grant the one-time Starter Pack (Config.CoinShop.Starter): its items and coins like a bundle, its
+-- free boost, and the flag that takes it off the Coins sheet. A second receipt (a purchase that was
+-- already in flight) still grants, since it was paid for.
+function PurchaseService.grantStarter(c: any): boolean
+	local starter = Config.CoinShop.Starter
+	if not PurchaseService.grantOffer(c, starter) then
+		return false
+	end
+	for _, boost in Config.CoinShop.Boosts do
+		if boost.Id == starter.Boost then
+			S.BoostService.grant(c, boost)
+		end
+	end
+	c.profile.StarterBought = true
+	return true
+end
+
 local TICK = 10
 local function playClock()
 	while true do
@@ -143,6 +160,7 @@ function PurchaseService.start()
 			return PurchaseService.grantOffer(c, offer)
 		end)
 	end
+	PurchaseService.register(Config.CoinShop.Starter.ProductId, PurchaseService.grantStarter)
 	-- Robux-exclusive cosmetics: one product per item, granted like a one-item bundle with no coins.
 	-- Their RobuxProductIds are still the placeholder 0, so none is registered until the products exist.
 	for _, item in Catalog.Items do

@@ -882,6 +882,202 @@ local function station(def: any, parent: Folder)
 	model.Parent = parent
 end
 
+-- What the group kiosk's screen says it pays ("RARE+ SPIN", "500 COINS").
+local function rewardText(reward: Config.Reward): string
+	if reward.Kind == "Spin" then
+		local wheel = Config.Spin.Wheels[reward.Wheel or ""]
+		return string.upper(if wheel then wheel.Name else "Bonus spin")
+	elseif reward.Kind == "Coins" then
+		return ("%d COINS"):format(reward.Amount or 0)
+	end
+	return "A REWARD"
+end
+
+-- The group reward kiosk (GroupRewardService): a toy chest on a pedestal under a turning gold coin,
+-- with the same diamond-plate platform, lit title sign and "stand here" ring as the stations. Only
+-- built once Config.GroupReward has a real group id.
+local function groupKiosk(parent: Folder)
+	local cfg = Config.GroupReward
+	local base = at(cfg.Kiosk.X, 0, cfg.Kiosk.F) * CFrame.Angles(0, math.rad(cfg.Kiosk.Yaw), 0)
+	local col = Color3.fromRGB(90, 220, 110)
+	local dark = col:Lerp(INK, 0.65)
+	local model = Instance.new("Model")
+	model.Name = "GroupRewardKiosk"
+	model:SetAttribute("Station", "GroupReward")
+	solid({
+		Name = "Platform",
+		Size = Vector3.new(10, 0.4, 8),
+		CFrame = base * CFrame.new(0, 0.2, 0.5),
+		Color = PAL.Metal:Lerp(PAL.Deck, 0.5),
+		Material = Enum.Material.DiamondPlate,
+	}, model)
+	-- sign on two posts behind the chest: the title, and a screen saying what it pays
+	for _, sx in { -4.4, 4.4 } do
+		solid({
+			Name = "Post",
+			Size = Vector3.new(0.6, 10.4, 0.6),
+			CFrame = base * CFrame.new(sx, 5.2, 3.8),
+			Color = PAL.Metal,
+			Material = Enum.Material.Metal,
+		}, model)
+	end
+	local sign = decor({
+		Name = "TitleSign",
+		Size = Vector3.new(9.6, 2.4, 0.5),
+		CFrame = base * CFrame.new(0, 9.4, 3.8),
+		Color = INK,
+	}, model)
+	for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
+		screenText(sign, face, { { text = "GROUP REWARD", size = 0.85, color = col:Lerp(Color3.new(1, 1, 1), 0.35) } })
+	end
+	outline(base * CFrame.new(0, 9.4, 3.5), 9.7, 2.5, col, model)
+	local screen = decor({
+		Name = "Screen",
+		Size = Vector3.new(8.2, 3, 0.2),
+		CFrame = base * CFrame.new(0, 6.4, 3.8),
+		Color = Color3.fromRGB(20, 16, 40),
+	}, model)
+	screenText(screen, Enum.NormalId.Front, {
+		{ text = "JOIN THE GROUP", size = 0.4, color = Color3.new(1, 1, 1) },
+		{ text = "FREE " .. rewardText(cfg.Reward), size = 0.36, color = GOLD },
+	})
+	outline(base * CFrame.new(0, 6.4, 3.65), 8.4, 3.2, col, model)
+	-- pedestal with a glowing front strip
+	solid({
+		Name = "Pedestal",
+		Size = Vector3.new(5.6, 1.4, 3.8),
+		CFrame = base * CFrame.new(0, 1.1, 0),
+		Color = dark,
+	}, model)
+	neon("PedestalGlow", base * CFrame.new(0, 1.1, -1.95), Vector3.new(5.2, 0.25, 0.1), col, model)
+	-- the chest: a wooden box and a round lid, gold straps, a lock plate
+	local wood = PAL.Wood
+	solid({
+		Name = "Chest",
+		Size = Vector3.new(4.4, 2.2, 3),
+		CFrame = base * CFrame.new(0, 2.9, 0),
+		Color = wood,
+		Material = Enum.Material.WoodPlanks,
+	}, model)
+	solid({
+		Name = "Lid",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(4.4, 3, 3),
+		CFrame = base * CFrame.new(0, 4, 0),
+		Color = wood:Lerp(Color3.new(1, 1, 1), 0.08),
+		Material = Enum.Material.WoodPlanks,
+	}, model)
+	for _, sx in { -1.4, 1.4 } do
+		decor({
+			Name = "Strap",
+			Size = Vector3.new(0.4, 2.26, 3.06),
+			CFrame = base * CFrame.new(sx, 2.9, 0),
+			Color = GOLD,
+			Material = Enum.Material.Metal,
+		}, model)
+		decor({
+			Name = "LidStrap",
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.4, 3.06, 3.06),
+			CFrame = base * CFrame.new(sx, 4, 0),
+			Color = GOLD,
+			Material = Enum.Material.Metal,
+		}, model)
+	end
+	decor({
+		Name = "Lock",
+		Size = Vector3.new(0.9, 1.1, 0.2),
+		CFrame = base * CFrame.new(0, 3.9, -1.55),
+		Color = GOLD,
+		Material = Enum.Material.Metal,
+	}, model)
+	decor({
+		Name = "Keyhole",
+		Size = Vector3.new(0.2, 0.42, 0.05),
+		CFrame = base * CFrame.new(0, 3.82, -1.67),
+		Color = INK,
+	}, model)
+	-- a gold coin turning over the lid (HubController spins HubWheel models about the pivot's X,
+	-- which points up here), with sparkles and a warm light
+	local coin = Instance.new("Model")
+	coin.Name = "Coin"
+	local pivot = decor({
+		Name = "Pivot",
+		Size = Vector3.one * 0.2,
+		CFrame = base * CFrame.new(0, 7.2, 0) * CFrame.Angles(0, 0, math.rad(90)),
+		Transparency = 1,
+	}, coin)
+	coin.PrimaryPart = pivot
+	local discs: { { any } } =
+		{ { 0.3, 2.4, GOLD, Enum.Material.Neon }, { 0.36, 1.5, GOLD:Lerp(INK, 0.25), Enum.Material.Metal } }
+	for _, disc in discs do
+		decor({
+			Name = "Disc",
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(disc[1], disc[2], disc[2]),
+			CFrame = base * CFrame.new(0, 7.2, 0) * CFrame.Angles(0, math.rad(90), 0),
+			Color = disc[3],
+			Material = disc[4],
+			CastShadow = false,
+		}, coin)
+	end
+	make("PointLight", { Color = GOLD, Range = 12, Brightness = 1.4, Shadows = false }, pivot)
+	coin:SetAttribute("SpinRate", 1.5)
+	coin:AddTag("HubWheel")
+	coin.Parent = model
+	local sparkle = decor({
+		Name = "Sparkle",
+		Size = Vector3.new(3.6, 0.2, 2.4),
+		CFrame = base * CFrame.new(0, 5.4, 0),
+		Transparency = 1,
+	}, model)
+	local emitter = make("ParticleEmitter", {
+		Name = "ChestSparkles",
+		Texture = "rbxasset://textures/particles/sparkles_main.dds",
+		Color = ColorSequence.new(GOLD),
+		LightEmission = 1,
+		Rate = 6,
+		Lifetime = NumberRange.new(0.9, 1.5),
+		Speed = NumberRange.new(1.5, 3),
+		SpreadAngle = Vector2.new(25, 25),
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 0) }),
+		EmissionDirection = Enum.NormalId.Top,
+	}, sparkle)
+	emitter:SetAttribute("Scenery", true) -- off in performance mode (GraphicsController)
+	-- "stand here" ring in front of the chest
+	local rings: { { any } } = {
+		{ "StandRing", 6.4, 0.04, col, Enum.Material.Neon },
+		{ "StandPad", 5.6, 0.05, Color3.fromRGB(28, 24, 44), Enum.Material.SmoothPlastic },
+	}
+	for _, ring in rings do
+		decor({
+			Name = ring[1],
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.06, ring[2], ring[2]),
+			CFrame = base * CFrame.new(0, ring[3], -6.5) * CFrame.Angles(0, 0, math.rad(90)),
+			Color = ring[4],
+			Material = ring[5],
+			CastShadow = false,
+		}, model)
+	end
+	local anchor = decor({
+		Name = "PromptAnchor",
+		Size = Vector3.one * 0.5,
+		CFrame = base * CFrame.new(0, 3.6, -2.4),
+		Transparency = 1,
+	}, model)
+	make("ProximityPrompt", {
+		Name = "GroupRewardPrompt",
+		ActionText = "Claim",
+		ObjectText = "Group reward",
+		HoldDuration = 0,
+		Style = Enum.ProximityPromptStyle.Custom, -- drawn by PromptController in the Toybox style
+		MaxActivationDistance = cfg.PromptDistance,
+		RequiresLineOfSight = false,
+	}, anchor)
+	model.Parent = parent
+end
+
 -- Server leaderboard. LobbyService.refreshLeaderboard fills the rows in.
 local function leaderboard(parent: Folder, collidable: Folder)
 	local cfg = L.Leaderboard
@@ -1163,6 +1359,9 @@ function LobbyBuilder.build(): Folder
 	-- zones: stations along the back, leaderboard on the right end, bleachers at the railing
 	for _, def in L.Stations do
 		station(def, stations)
+	end
+	if Config.GroupReward.GroupId ~= 0 then
+		groupKiosk(stations)
 	end
 	leaderboard(stations, collidable)
 	watchZone(collidable, decorF)

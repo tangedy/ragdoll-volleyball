@@ -26,6 +26,7 @@ NetSchema.Actions = {
 	PickReward = "PickReward", -- choose one cosmetic from a waiting reward pick (day 7 of the ladder)
 	Spin = "Spin",
 	MarkSeen = "MarkSeen",
+	HubGuideSeen = "HubGuideSeen", -- the first-visit hub guidance has started (saved once per account)
 	ClaimQuest = "ClaimQuest", -- open a finished daily quest's chest (Config.Quests.List id)
 	Practice = "Practice",
 	Dev = "Dev",
@@ -141,6 +142,9 @@ NetSchema.Validators = {
 			return nil
 		end
 		return { id = p.id }
+	end,
+	HubGuideSeen = function(_p: any): any
+		return {} -- no payload
 	end,
 	MarkSeen = function(p: any): any
 		-- a shop category the player just looked at

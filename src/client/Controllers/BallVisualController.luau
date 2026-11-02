@@ -9,7 +9,8 @@
 -- The local thrower predicts the launch on release and blends into the server arc when it arrives.
 -- An enemy ball whose arc is about to pass close to you carries a "!" above it all the way in.
 -- A player's throw can bend slightly toward its target (homing): the server then sends the new
--- arc (BallCourse) and the drawn ball blends onto it.
+-- arc (BallCourse) and the drawn ball blends onto it. Its trail leans a little toward the target's
+-- team colour for everyone but the target, who gets a lock-on reticle instead (EffectsController).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -50,6 +51,7 @@ type Visual = {
 	handoffAt: number?, -- the server ended the flight: glide onto the real ball, then hand over
 	lag: number, -- seconds the drawn ball starts behind the true arc (catch-up from the hand)
 	lagTime: number, -- seconds over which that lag is caught up
+	tinted: boolean, -- the trail already leans toward a homing target's team colour
 }
 
 local BallVisualController = {}
@@ -71,6 +73,7 @@ local HANDOFF_RATE = 25
 -- the true position, and hits are always the server's.
 local CATCHUP_MAX_LAG = 0.35 -- beyond this (a very laggy link) the ball starts partway out
 local CATCHUP_BASE = 0.12 -- catch-up takes this plus the lag: at most ~1.7x speed, briefly
+local HOMING_TINT = 0.3 -- how far a homing ball's trail leans toward its target's team colour
 local folder: Folder
 local visuals: { [Visual]: boolean } = {}
 local byBallId: { [number]: Visual } = {}
@@ -240,6 +243,7 @@ local function newVisual(part: Part, origin: Vector3, vel: Vector3, g: number, t
 		handoffAt = nil,
 		lag = 0,
 		lagTime = 0,
+		tinted = false,
 	}
 end
 
@@ -280,6 +284,31 @@ function BallVisualController.predict(throwId: number, origin: Vector3, vel: Vec
 	end
 end
 
+-- A homing throw (d.target, d.targetTeam from BallLaunched/BallCourse): lean every trail on the
+-- ball a little toward the target's team colour. The target sees the lock-on reticle instead.
+local function tintHoming(v: Visual, d: any)
+	if v.tinted or typeof(d.target) ~= "Instance" or type(d.targetTeam) ~= "string" then
+		return
+	end
+	if d.target == player.Character then
+		return
+	end
+	local team = Config.Teams[d.targetTeam]
+	if not team then
+		return
+	end
+	v.tinted = true
+	for _, trail in v.part:GetChildren() do
+		if trail:IsA("Trail") then
+			local keys = {}
+			for _, k in trail.Color.Keypoints do
+				table.insert(keys, ColorSequenceKeypoint.new(k.Time, k.Value:Lerp(team.Color, HOMING_TINT)))
+			end
+			trail.Color = ColorSequence.new(keys)
+		end
+	end
+end
+
 local function onLaunched(d: any)
 	if type(d.id) ~= "number" or typeof(d.origin) ~= "Vector3" or typeof(d.vel) ~= "Vector3" then
 		return
@@ -307,6 +336,7 @@ local function onLaunched(d: any)
 		byBallId[d.id] = v
 		setServerHidden(d.id, true)
 		BallVisualController.applyLook(v.part, d.look)
+		tintHoming(v, d)
 		return
 	end
 	local old = byBallId[d.id]
@@ -330,6 +360,7 @@ local function onLaunched(d: any)
 	byBallId[d.id] = v
 	setServerHidden(d.id, true)
 	BallVisualController.applyLook(v.part, d.look)
+	tintHoming(v, d)
 end
 
 -- Homing bent a ball's arc: follow the new one from where the ball is drawn now, blending out
@@ -352,6 +383,7 @@ local function onCourse(d: any)
 	v.lag = 0
 	v.offset = current - ProjectileMath.positionAt(d.origin, d.vel, v.g, math.max(smoothServerNow() - d.t0, 0))
 	v.blendStart = os.clock()
+	tintHoming(v, d) -- in case the launch record came without it
 end
 
 -- Owner cosmetics from the launch record (Standard balls only; the server never sends a look

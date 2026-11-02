@@ -21,6 +21,9 @@ BallGuideController.enabled = false -- driven by TutorialController
 BallGuideController.practiceBalls = function(): Instance?
 	return nil
 end
+-- a spot to lead you to instead of a ball (HubGuideController's first-visit walk to the Shop). While
+-- it returns a position the chevrons point there, ball or no ball; nil hands back to the ball guide.
+BallGuideController.goal = nil :: (() -> Vector3?)?
 
 local MAX_CHEVRONS = 14
 local SPACING = 3
@@ -135,7 +138,9 @@ function BallGuideController.start()
 		local held = player:GetAttribute("HeldBall")
 		-- also shown whenever you're in jail, pointing at the nearest ball you can grab there
 		local jailed = player:GetAttribute("Status") == "Jailed"
-		if not (BallGuideController.enabled or jailed) or not root or (type(held) == "string" and held ~= "") then
+		local goal = if BallGuideController.goal then BallGuideController.goal() else nil
+		local wantBall = (BallGuideController.enabled or jailed) and not (type(held) == "string" and held ~= "")
+		if not root or not (goal or wantBall) then
 			hideAll()
 			return
 		end
@@ -156,13 +161,14 @@ function BallGuideController.start()
 			end
 			floorParams.FilterDescendantsInstances = floors
 		end
-		local ball = nearestBall(root.Position)
-		if not ball then
+		local ball = if goal then nil else nearestBall(root.Position)
+		local target = goal or (ball and ball.Position)
+		if not target then
 			hideAll()
 			return
 		end
 		local from = Vector3.new(root.Position.X, 0, root.Position.Z)
-		local to = Vector3.new(ball.Position.X, 0, ball.Position.Z)
+		local to = Vector3.new(target.X, 0, target.Z)
 		local delta = to - from
 		local dist = delta.Magnitude
 		local t = os.clock()
@@ -196,11 +202,11 @@ function BallGuideController.start()
 				p.Transparency = transparency
 			end
 		end
-		-- pulsing ring under the target ball
-		local by = floorAt(ball.Position) or (ball.Position.Y - 1)
-		local s = 3.2 + 0.5 * math.sin(t * 6)
+		-- pulsing ring under the target (wider under a spot than under a ball)
+		local by = floorAt(target) or (target.Y - 1)
+		local s = (if goal then 6 else 3.2) + 0.5 * math.sin(t * 6)
 		ring.Size = Vector3.new(0.06, s, s)
-		ring.CFrame = CFrame.new(ball.Position.X, by + 0.07, ball.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+		ring.CFrame = CFrame.new(target.X, by + 0.07, target.Z) * CFrame.Angles(0, 0, math.rad(90))
 		ring.Transparency = 0.25
 	end)
 end

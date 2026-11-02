@@ -1073,6 +1073,55 @@ return function(H)
 		check(S.PurchaseService.robuxUnlocked(c), "after a finished match")
 	end)
 
+	test("starter pack: items, coins and boost once, and the flag survives a reload", function()
+		local c = H.combatant()
+		local starter = Config.CoinShop.Starter
+		check(starter.Once and #starter.Items > 0, "starter config")
+		for _, id in starter.Items do
+			check(Catalog.get(id) ~= nil, "unknown starter item " .. id)
+		end
+		check(not c.profile.StarterBought, "new player already bought it")
+		check(S.PurchaseService.grantStarter(c), "grant")
+		for _, id in starter.Items do
+			check(c.profile.OwnedCosmetics[id], id .. " not granted")
+		end
+		eq(c.profile.Coins, starter.Coins, "starter coins")
+		check(c.profile.CoinBoostUntil > os.time(), "starter boost not running")
+		check(c.profile.StarterBought, "flag")
+		eq(S.DataService.migrate(H.deepCopy(c.profile)).StarterBought, true, "flag lost on reload")
+		eq(S.DataService.migrate({ SchemaVersion = 13 }).StarterBought, false, "old save")
+		-- its product (once created) goes through the same receipt path as every other product
+		S.PurchaseService.register(777101, S.PurchaseService.grantStarter)
+		local r = receipt(c, 777101)
+		eq(S.PurchaseService.process(r), Granted, "receipt")
+		eq(S.PurchaseService.process(r), Granted, "retry")
+		eq(c.profile.Coins, starter.Coins * 2, "a retried receipt granted twice")
+	end)
+
+	test("passes: 2x Coins pass doubles like the lifetime boost; the VIP gift pays once a day", function()
+		local G = S.GamePassService
+		local c = H.combatant()
+		eq(S.BoostService.multiplier(c), 1, "no pass")
+		G.setOwned(c, "DoubleCoins")
+		eq(S.BoostService.multiplier(c), Config.CoinShop.BoostMultiplier, "pass not doubling")
+		check(S.BoostService.status(c).forever, "status should say forever")
+		eq(c.player:GetAttribute("Pass_DoubleCoins"), true, "attribute")
+		check(not c.profile.CoinBoostForever, "pass wrote the product flag")
+
+		local vip = Config.CoinShop.Passes.VIP
+		local v = H.combatant()
+		check(not G.dailyGift(v), "gift without VIP")
+		G.setOwned(v, "VIP")
+		eq(v.profile.Coins, vip.DailyCoins, "first gift coins")
+		eq(v.profile.BonusSpins[#v.profile.BonusSpins], vip.DailyWheel, "gift spin")
+		eq(#H.eventsNamed("VipGift"), 1, "gift announced")
+		check(not G.dailyGift(v), "gift paid twice in a day")
+		v.profile.VipGiftDate = "2000-01-01"
+		check(G.dailyGift(v), "next day's gift")
+		eq(v.profile.Coins, vip.DailyCoins * 2, "second gift coins")
+		eq(S.DataService.migrate({ SchemaVersion = 13, VipGiftDate = 5 }).VipGiftDate, "", "damaged date")
+	end)
+
 	-- Shop, daily, Halloween -------------------------------------------------------------------------
 
 	test("shop: buy and equip are checked on the server", function()
@@ -1349,5 +1398,348 @@ return function(H)
 		eq(v13.TutorialStep, 4, "a v13 step is kept")
 		eq(v13.TutorialRewarded, false, "reward flag default")
 		eq(D.migrate({ SchemaVersion = 13, TutorialStep = 99 }).TutorialStep, done, "out of range")
+	end)
+
+	-- Robux value tags ------------------------------------------------------------------------------
+
+	test("value tags: bonus %, best value and worth match Config and the Catalog", function()
+		local BundleValue = H.require("shared/BundleValue")
+		local bundles = Config.CoinShop.Bundles
+		local base = bundles[1]
+		local baseRate = base.Coins / base.Robux
+		local bestRate, bestIndex = baseRate, nil
+		for i, b in bundles do
+			local exact = (b.Coins / b.Robux / baseRate - 1) * 100
+			local shown = BundleValue.bonus(b, base)
+			-- never more than the real bonus, and less than a point under it
+			check(
+				shown <= exact + 1e-6 and shown > exact - 1,
+				("%s: +%d%% for a real +%.2f%%"):format(b.Id, shown, exact)
+			)
+			if b.Coins / b.Robux > bestRate then
+				bestRate, bestIndex = b.Coins / b.Robux, i
+			end
+		end
+		eq(BundleValue.bonus(base, base), 0, "the smallest bundle is the baseline")
+		eq(BundleValue.best(bundles), bestIndex, "best value index")
+		check(bestIndex ~= nil, "no bundle beats the smallest one")
+		-- the worked example in docs/ECONOMY.md: 999 R for 35,000 is +71.7%, shown as +71%
+		eq(BundleValue.bonus({ Coins = 35000, Robux = 999 }, { Coins = 1000, Robux = 49 }), 71, "docs example")
+		eq(BundleValue.bonus({ Coins = 3000, Robux = 100 }, { Coins = 1000, Robux = 50 }), 50, "exact 50% stays 50")
+		-- a tie with the smallest bundle isn't a best value
+		eq(BundleValue.best({ { Coins = 100, Robux = 10 }, { Coins = 200, Robux = 20 } }), nil, "tie")
+
+		for _, offer in Config.CoinShop.Offers do
+			local sum = offer.Coins or 0
+			for _, id in offer.Items do
+				local item = Catalog.get(id)
+				check(item ~= nil, offer.Id .. " has an unknown item " .. id)
+				check(item.Price > 0, id .. " has no value")
+				sum += item.Price
+			end
+			eq(BundleValue.worth(offer, Catalog), sum, offer.Id .. " worth")
+		end
+		local haunted
+		for _, offer in Config.CoinShop.Offers do
+			if offer.Id == "Halloween2026" then
+				haunted = offer
+			end
+		end
+		if haunted then
+			eq(BundleValue.worth(haunted, Catalog), 21500, "Haunted Bundle worth (docs/ECONOMY.md)")
+		end
+	end)
+
+	-- Level rewards -----------------------------------------------------------------------------------
+
+	-- coins the Coins rewards pay from level `from` to `to`
+	local function levelCoins(from, to)
+		local sum = 0
+		for lv = from, to do
+			local r = Config.Progression.Rewards[lv]
+			if r and r.Kind == "Coins" then
+				sum += r.Amount
+			end
+		end
+		return sum
+	end
+
+	test("level rewards: levels 2-100 each pay a valid reward: coins, a bonus every 5th, a title every 10th", function()
+		local R = S.RewardService
+		local PR = Config.Progression
+		check(R.levelReward(1) == nil, "level 1 pays")
+		check(R.levelReward(PR.LevelCap + 1) == nil, "a level past the cap pays")
+		local titles = {}
+		for lv = 2, PR.LevelCap do
+			local reward = R.levelReward(lv)
+			check(reward ~= nil, "level " .. lv .. " has no reward")
+			check(R.valid(reward), "level " .. lv .. "'s reward isn't valid")
+			if lv % 10 == 0 then
+				eq(reward.Kind, "Cosmetic", "level " .. lv .. " kind")
+				local item = Catalog.get(reward.Id)
+				eq(item.Category, "Title", reward.Id .. " category")
+				eq(item.Unlock and item.Unlock.Level, lv, reward.Id .. " Unlock.Level")
+				check(not titles[reward.Id], reward.Id .. " is on two levels")
+				titles[reward.Id] = true
+			elseif lv % 5 == 0 then
+				check(
+					(reward.Kind == "Spin" and reward.Wheel == "RarePlus") or reward.Kind == "Chest",
+					"level " .. lv .. " isn't a Rare+ spin or a chest"
+				)
+			else
+				eq(reward.Kind, "Coins", "level " .. lv .. " kind")
+				check(reward.Amount >= 50 and reward.Amount <= 300, "level " .. lv .. " coins")
+			end
+		end
+		-- every level title is on the table, and none can be bought, spun, rolled or mastered
+		local c = H.combatant()
+		c.profile.Coins = 1e6
+		c.profile.Level = PR.LevelCap
+		c.profile.PowerKOs = { Heavy = 999, Rocket = 999, Pop = 999 }
+		S.ShopService.checkUnlocks(c)
+		local pools = {}
+		for _, list in S.SpinService.pool() do
+			for _, it in list do
+				pools[it.Id] = true
+			end
+		end
+		for _, q in Config.Quests.List do
+			if q.Chest then
+				for _, list in S.RewardService.chestPool(q.Chest) do
+					for _, it in list do
+						pools[it.Id] = true
+					end
+				end
+			end
+		end
+		for _, item in Catalog.Items do
+			if item.Unlock and item.Unlock.Level then
+				check(titles[item.Id], item.Id .. " isn't on any level")
+				check(not Catalog.isOffered(item), item.Id .. " offered for coins")
+				check(not S.ShopService.buy(c, item.Id), item.Id .. " sold for coins")
+				check(not pools[item.Id], item.Id .. " is on a wheel or in a chest")
+				check(not c.profile.OwnedCosmetics[item.Id], item.Id .. " granted by a mastery check")
+				eq(select(2, Catalog.unlockProgress(item, nil, 1)), item.Unlock.Level, item.Id .. " progress")
+			end
+		end
+	end)
+
+	test("level rewards: a match level-up banks that level once and announces it", function()
+		local P = Config.Progression
+		local c = H.combatant()
+		c.team = "Red"
+		c.stats.throws = 2
+		c.matchEliminations = 1
+		c.aliveAtWin = true
+		c.profile.Level = 4
+		c.profile.XP = P.LevelBase + P.LevelPerLevel * 4 - 1
+		c.profile.LevelRewardsPaid = 4
+		local m = ctx("Red")
+		S.RewardService.awardMatch({ c }, m)
+		eq(c.profile.Level, 5, "level after the match")
+		eq(c.profile.LevelRewardsPaid, 5, "banked mark")
+		eq(#c.profile.BonusSpins, 1, "level 5's Rare+ spin")
+		eq(c.profile.BonusSpins[1], "RarePlus", "level 5's wheel")
+		eq(c.profile.Coins, Config.Coins.WinAlive, "coins (the match only)")
+		local ups = H.eventsNamed("LevelUp")
+		eq(#ups, 1, "level-up card")
+		eq(ups[1].to, c.player, "card sent to")
+		eq(ups[1].payload.level, 5, "card level")
+		eq(ups[1].payload.from, 4, "card from")
+		eq(#ups[1].payload.rewards, 1, "card rewards")
+		eq(ups[1].payload.rewards[1].kind, "Spin", "card reward")
+		local feed = H.eventsNamed("Feed")
+		check(#feed == 1 and feed[1].to == "all" and feed[1].payload.text:find("Level 5"), "feed line")
+		-- the same match again pays nothing; a match that doesn't level up says nothing
+		S.RewardService.awardMatch({ c }, m)
+		eq(#c.profile.BonusSpins, 1, "paid twice")
+		c.stats = H.stats()
+		c.stats.throws = 1
+		S.RewardService.awardMatch({ c }, ctx("Red"))
+		eq(c.profile.Level, 5, "levelled again")
+		eq(#H.eventsNamed("LevelUp"), 1, "a card without a level-up")
+		-- the next level up pays coins
+		c.profile.XP = P.LevelBase + P.LevelPerLevel * 5 - 1
+		local coins = c.profile.Coins
+		c.stats = H.stats()
+		c.stats.throws = 1
+		S.RewardService.awardMatch({ c }, ctx("Red"))
+		eq(c.profile.Level, 6, "level 6")
+		eq(c.profile.Coins - coins, Config.Coins.WinAlive + Config.Progression.Rewards[6].Amount, "level 6 coins")
+	end)
+
+	test("level rewards: an old save gets every level it has passed, once, and never again", function()
+		local D, R = S.DataService, S.RewardService
+		local old = D.migrate({ SchemaVersion = 13, Level = 23, XP = 10, Coins = 100, TutorialStep = 7 })
+		eq(old.LevelRewardsPaid, 1, "an old save starts at level 1")
+		local c = H.combatant()
+		c.profile = old
+		local banked = R.payLevels(c)
+		eq(#banked, 22, "levels 2-23")
+		for i, b in banked do
+			eq(b.level, i + 1, "banked in order")
+		end
+		eq(c.profile.LevelRewardsPaid, 23, "banked mark")
+		eq(c.profile.Coins, 100 + levelCoins(2, 23), "back-pay coins")
+		eq(#c.profile.BonusSpins, 1, "level 5's spin")
+		check(c.profile.OwnedCosmetics.Title_WarmedUp and c.profile.OwnedCosmetics.Title_CourtRegular, "titles")
+		check(not c.profile.OwnedCosmetics.Title_SeasonedPro, "a title above the level")
+		local owned = 0
+		for id in c.profile.OwnedCosmetics do
+			if Catalog.get(id).Category == "Finisher" then
+				owned += 1
+			end
+		end
+		eq(owned, 1, "level 15's Finisher Chest")
+		-- again, and after a save and reload: nothing more
+		local coins = c.profile.Coins
+		eq(#R.payLevels(c), 0, "paid twice")
+		c.profile = D.migrate(c.profile)
+		eq(#R.payLevels(c), 0, "paid again after a reload")
+		eq(c.profile.Coins, coins, "coins after a reload")
+		eq(#c.profile.BonusSpins, 1, "spins after a reload")
+		-- a damaged mark is repaired, never below level 1
+		eq(D.migrate({ SchemaVersion = 13, LevelRewardsPaid = "x" }).LevelRewardsPaid, 1, "bad mark")
+		eq(D.migrate({ SchemaVersion = 13, LevelRewardsPaid = -4 }).LevelRewardsPaid, 1, "negative mark")
+		-- an unloaded profile banks nothing
+		local d = H.combatant()
+		d.profile.Level = 9
+		d.profileLoaded = false
+		eq(#R.payLevels(d), 0, "banked before the profile loaded")
+		eq(d.profile.LevelRewardsPaid, 1, "mark moved before the profile loaded")
+	end)
+
+	test("level rewards: joining with an old save banks the back-pay and marks it new", function()
+		local c = H.combatant()
+		local key = "u_" .. c.player.UserId
+		H.store[key] = { SchemaVersion = 13, Level = 12, XP = 0, Coins = 0, TutorialStep = 7 }
+		S.DataService.load(c)
+		eq(c.profile.LevelRewardsPaid, 12, "banked on join")
+		eq(c.profile.Coins, levelCoins(2, 12), "back-pay coins")
+		local pushes = H.eventsNamed("Profile")
+		local lr = pushes[#pushes].payload.levelRewards
+		check(lr and lr.paid == 12 and lr.since == 1, "profile levelRewards")
+		eq(#H.eventsNamed("LevelUp"), 0, "a level-up card on join")
+		check(S.DataService.save(c, true), "release save")
+		eq(H.store[key].LevelRewardsPaid, 12, "saved mark")
+		-- the next session pays nothing more
+		local again = H.combatant(false)
+		again.player = c.player
+		S.DataService.load(again)
+		eq(again.profile.Coins, levelCoins(2, 12), "paid twice across sessions")
+		pushes = H.eventsNamed("Profile")
+		eq(pushes[#pushes].payload.levelRewards.since, 12, "new marks in the next session")
+	end)
+
+	-- Group reward -----------------------------------------------------------------------------------
+
+	-- The group reward service with Roblox's group check replaced: `answer` is what isMember returns.
+	local function groupService(answer)
+		local G = H.require("server/Services/GroupRewardService")
+		G.init(S)
+		local calls = 0
+		G.isMember = function(_player, groupId)
+			calls += 1
+			eq(groupId, Config.GroupReward.GroupId, "group asked about")
+			return answer()
+		end
+		return G, function()
+			return calls
+		end
+	end
+
+	test("group reward: the reward is valid and the kiosk stays off at group id 0", function()
+		check(S.RewardService.valid(Config.GroupReward.Reward), "Config.GroupReward.Reward isn't valid")
+		check(type(Config.GroupReward.GroupId) == "number" and Config.GroupReward.GroupId >= 0, "GroupId")
+		local G = groupService(function()
+			return true
+		end)
+		local saved = Config.GroupReward.GroupId
+		Config.GroupReward.GroupId = 0
+		local c = H.combatant()
+		c.player:SetAttribute("TutorialDone", true)
+		eq(G.claim(c).reason, "Off", "a claim at group id 0")
+		eq(#c.profile.BonusSpins, 0, "paid at group id 0")
+		Config.GroupReward.GroupId = saved
+	end)
+
+	test("group reward: refused before the tutorial and to a non-member, then granted once", function()
+		local member = false
+		local G, calls = groupService(function()
+			return member
+		end)
+		local saved = Config.GroupReward.GroupId
+		Config.GroupReward.GroupId = 4242
+		local c = H.combatant()
+		eq(G.claim(c).reason, "Tutorial", "before the tutorial")
+		eq(calls(), 0, "asked Roblox during the tutorial")
+		c.player:SetAttribute("TutorialDone", true)
+		local answer = G.claim(c)
+		check(answer.ok == false and answer.reason == "NotMember", "a non-member")
+		eq(#c.profile.BonusSpins, 0, "paid a non-member")
+		check(not c.profile.GroupRewardClaimed, "flag set for a non-member")
+		-- a second press straight away doesn't ask again; after the cooldown it does
+		eq(G.claim(c).reason, "Busy", "a press inside the cooldown")
+		eq(calls(), 1, "asked twice inside the cooldown")
+		c.groupCheckedAt = nil
+		member = true
+		answer = G.claim(c)
+		check(answer.ok == true, "a member's claim")
+		eq(calls(), 2, "asked again on the next press")
+		eq(answer.reward.kind, Config.GroupReward.Reward.Kind, "reward kind")
+		eq(#c.profile.BonusSpins, 1, "the bonus spin")
+		eq(c.profile.BonusSpins[1], Config.GroupReward.Reward.Wheel, "the wheel")
+		check(c.profile.GroupRewardClaimed == true, "flag")
+		local pushes = H.eventsNamed("Profile")
+		check(#pushes > 0 and pushes[#pushes].payload.groupReward == true, "profile push")
+		-- never twice, and Roblox isn't asked again
+		c.groupCheckedAt = nil
+		eq(G.claim(c).reason, "Claimed", "a second claim")
+		eq(#c.profile.BonusSpins, 1, "paid twice")
+		eq(calls(), 2, "asked after it was claimed")
+		-- Roblox can't be reached: nothing is paid and nothing is marked
+		local d = H.combatant()
+		d.player:SetAttribute("TutorialDone", true)
+		member = nil
+		eq(G.claim(d).reason, "Error", "a failed check")
+		check(not d.profile.GroupRewardClaimed and #d.profile.BonusSpins == 0, "paid on a failed check")
+		Config.GroupReward.GroupId = saved
+	end)
+
+	test("hub guide: new players haven't seen it, returning players have, and the flag is kept", function()
+		local D = S.DataService
+		check(D.migrate(nil).HubGuideSeen == false, "new profile")
+		check(D.migrate({ SchemaVersion = 13, Matches = 0 }).HubGuideSeen == false, "an old save with no match")
+		check(D.migrate({ SchemaVersion = 13, Matches = 4 }).HubGuideSeen == true, "an old save that played")
+		check(D.migrate({ SchemaVersion = 13, Matches = 4, HubGuideSeen = false }).HubGuideSeen == false, "kept")
+		check(D.migrate({ SchemaVersion = 13, HubGuideSeen = true }).HubGuideSeen == true, "seen kept")
+	end)
+
+	test("group reward: the claimed flag survives migration and a save", function()
+		local D = S.DataService
+		check(D.migrate(nil).GroupRewardClaimed == false, "new profile")
+		check(D.migrate({ SchemaVersion = 5, Coins = 10 }).GroupRewardClaimed == false, "an old save")
+		check(D.migrate({ SchemaVersion = 13, GroupRewardClaimed = true }).GroupRewardClaimed == true, "kept")
+		check(D.migrate({ SchemaVersion = 13, GroupRewardClaimed = "yes" }).GroupRewardClaimed == false, "repaired")
+		local G = groupService(function()
+			return true
+		end)
+		local saved = Config.GroupReward.GroupId
+		Config.GroupReward.GroupId = 4242
+		local c = H.combatant()
+		local key = "u_" .. c.player.UserId
+		H.store[key] = { SchemaVersion = 13, Level = 1, Coins = 0, TutorialStep = 7 }
+		D.load(c)
+		c.player:SetAttribute("TutorialDone", true)
+		check(G.claim(c).ok == true, "claim")
+		check(D.save(c, true), "release save")
+		eq(H.store[key].GroupRewardClaimed, true, "saved flag")
+		local again = H.combatant(false)
+		again.player = c.player
+		D.load(again)
+		check(again.profile.GroupRewardClaimed == true, "flag after a reload")
+		eq(G.claim(again).reason, "Claimed", "claimed again in the next session")
+		eq(#again.profile.BonusSpins, 1, "spins after a reload")
+		Config.GroupReward.GroupId = saved
 	end)
 end

@@ -205,6 +205,9 @@ function ShopService.applyCosmetics(c: any)
 	if p.CurrentWinStreak >= Config.Progression.StreakFlameAt then
 		badge ..= (" 🔥%d"):format(p.CurrentWinStreak)
 	end
+	if S.GamePassService.owns(c, "VIP") then
+		badge = '<font color="#f7cd46"><b>VIP</b></font> ' .. badge
+	end
 	local item = Catalog.equipped(p.Equipped, "Title")
 	local title = item.Data.Text
 	local gradient: { Color3 }? = item.Data.Gradient

@@ -61,6 +61,16 @@ local function holding(): string
 	return if type(held) == "string" then held else ""
 end
 
+-- Step 3 opens with two callouts, CardSeconds each: the dummy's % ("Dummy"), then your own HUD %
+-- ("Yours"). nil once both have shown.
+local function callout(): string?
+	if step ~= 3 or os.clock() < cheerUntil then
+		return nil
+	end
+	local since = os.clock() - stepAt
+	return if since < TU.CardSeconds then "Dummy" elseif since < 2 * TU.CardSeconds then "Yours" else nil
+end
+
 -- Headline, help line (each <= 10 words) and the touch button to point at.
 local function copy(): (string, string, string?)
 	local input = AimController.lastInput
@@ -77,8 +87,11 @@ local function copy(): (string, string, string?)
 		end
 		return "Hit the dummy!", throwHelp, "Throw"
 	elseif step == 3 then
-		if os.clock() - stepAt < TU.CardSeconds then
-			return "Its % went up!", "Higher % = it flies further", nil
+		local c = callout()
+		if c == "Dummy" then
+			return "Its % went up!", "It goes up with every hit", nil
+		elseif c == "Yours" then
+			return "This is YOUR %!", "Higher % = you fly further", nil
 		end
 		return "Knock it off the court!", "Keep hitting it until it falls off", "Throw"
 	elseif step == 4 then
@@ -186,6 +199,34 @@ local function buildCard(parent: ScreenGui): Card
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, chips)
 	return { holder = holder, badge = badge, count = count, title = title, help = help, chips = chips }
+end
+
+-- Top centre, unless that would cover the daily quest panel (phones, and the wider Heavy and Discover
+-- cards): then just right of it, as far as the screen edge allows.
+local function placeCard()
+	local holder = card.holder
+	local origin = gui.AbsolutePosition
+	local width = gui.AbsoluteSize.X
+	-- its resting width, so a pop doesn't slide it sideways (Theme.autoScale's UIScale and Base)
+	local scale = holder:FindFirstChildOfClass("UIScale")
+	local base = scale and scale:GetAttribute("Base")
+	local w = holder.AbsoluteSize.X
+	if scale and scale.Scale > 0 and type(base) == "number" then
+		w = w / scale.Scale * base
+	end
+	local left = Theme.Space.M
+	local hub = player.PlayerGui:FindFirstChild("Hub")
+	local quests = hub and hub:FindFirstChild("Quests") :: GuiObject?
+	if quests and quests.Visible then
+		local qa, qs = quests.AbsolutePosition, quests.AbsoluteSize
+		local top = holder.AbsolutePosition.Y
+		if qa.Y < top + holder.AbsoluteSize.Y and qa.Y + qs.Y > top then
+			left = qa.X + qs.X - origin.X + Theme.Space.S
+		end
+	end
+	local x = math.max(width / 2, left + w / 2)
+	x = math.min(x, math.max(left + w / 2, width - Theme.Space.M - w / 2))
+	holder.Position = UDim2.fromOffset(math.floor(x + 0.5), 62)
 end
 
 -- A ball type as a sticker: its colour in a toy disc, a mark on it ("✓" found, "?" still to find),
@@ -315,6 +356,80 @@ local function updateArrow()
 	local bob = if Theme.settings.reducedMotion then 0 else 0.5 * math.sin(t * 5)
 	m:PivotTo(CFrame.new(at + Vector3.new(0, bob, 0)) * CFrame.Angles(0, t * 2.5, 0))
 	m.Parent = Workspace
+end
+
+-- % callouts --------------------------------------------------------------------------------------
+
+-- A breathing select-coloured ring round a % (the dummy's billboard, or your HUD %). The "Yours" ring
+-- also wears a sun "YOU" sticker pointing down at the number.
+local rings: { [string]: Frame } = {}
+
+local function makeRing(parent: GuiObject, sticker: boolean): Frame
+	local ring = Theme.new("Frame", {
+		Name = "TutorialRing",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, 16, 1, 10),
+		BackgroundTransparency = 1,
+		ZIndex = 0,
+	}, parent)
+	Theme.corner(ring, Theme.Radius.L)
+	Theme.stroke(ring, Theme.Colors.Select, 4)
+	if sticker then
+		local tag = Theme.new("Frame", {
+			Name = "You",
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.new(0.5, 0, 0, -10),
+			Size = UDim2.fromOffset(78, 32),
+			BackgroundColor3 = T.sun,
+		}, ring)
+		Theme.corner(tag, Theme.Radius.M)
+		Theme.stroke(tag, T.outline, Theme.StrokeToy)
+		Theme.text(tag, 20, { Size = UDim2.fromScale(1, 1), FontFace = Theme.DisplayFace, Text = "YOU" })
+		-- the point: a turned square tucked under the sticker
+		local point = Theme.new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 1),
+			Size = UDim2.fromOffset(14, 14),
+			Rotation = 45,
+			BackgroundColor3 = T.sun,
+			ZIndex = 0,
+		}, tag)
+		Theme.stroke(point, T.outline, Theme.StrokeToy)
+	end
+	Theme.pop(ring, 1.3, Theme.Motion.Base)
+	return ring
+end
+
+local function setRing(key: string, parent: GuiObject?)
+	local ring: Frame? = rings[key]
+	if ring and (parent == nil or ring.Parent ~= parent) then
+		ring:Destroy()
+		rings[key] = nil
+		ring = nil
+	end
+	if parent and not ring then
+		ring = makeRing(parent, key == "Yours")
+		rings[key] = ring
+	end
+	if ring then
+		local stroke = ring:FindFirstChildOfClass("UIStroke")
+		if stroke then
+			stroke.Thickness = if Theme.settings.reducedMotion then 4 else 4 + 2 * math.sin(os.clock() * 8)
+		end
+	end
+end
+
+local function updateCallouts(showing: boolean)
+	local c = if showing then callout() else nil
+	local dummy = PracticeController.dummyModel()
+	local head = dummy and dummy:FindFirstChild("Head")
+	local tag = head and head:FindFirstChild("DamageTag")
+	local label = tag and tag:FindFirstChildWhichIsA("TextLabel")
+	setRing("Dummy", if c == "Dummy" then label else nil)
+	setRing("Yours", if c == "Yours" then HUDController.damageFrame() else nil)
+	-- your own % shows from the callout on (the dodge drill raises it when you're hit)
+	HUDController.tutorialDamage = showing and step >= 3
 end
 
 -- Done --------------------------------------------------------------------------------------------
@@ -490,6 +605,12 @@ function TutorialController.start()
 		if debugging then
 			return
 		end
+		local g = done
+		if g and d.step < TU.Done then
+			-- the dev reset (RD_Gallery "TutorialReset") while the Done card was up
+			g:Destroy()
+			done = nil
+		end
 		local finished = was >= 1 and was < TU.Done -- not just the sync on join
 		step = d.step
 		stepAt = os.clock()
@@ -544,6 +665,7 @@ function TutorialController.start()
 		BallGuideController.enabled = showing and step <= 4 and (step == 1 or holding() == "")
 		card.holder.Visible = showing
 		updateArrow()
+		updateCallouts(showing)
 		local pointer: string? = nil
 		if showing then
 			local cheering = os.clock() < cheerUntil
@@ -565,6 +687,7 @@ function TutorialController.start()
 				setChips(chips)
 				Theme.pop(card.holder, if cheering then 1.15 else 0.85, Theme.Motion.Base)
 			end
+			placeCard()
 		else
 			shownKey = ""
 		end
@@ -573,25 +696,27 @@ function TutorialController.start()
 			return -- nothing pointed at now or last frame: the outlines are already at rest
 		end
 		lastPointer = pointer
-		for name, b in InputController.buttons do
-			local stroke = b:FindFirstChild("Outline", true) :: UIStroke?
-			if stroke then
-				local pulsing = pointer == name
-				local restColor = stroke:GetAttribute("RestColor")
-				local restThickness = stroke:GetAttribute("RestThickness")
-				local restTransparency = stroke:GetAttribute("RestTransparency")
-				stroke.Color = if pulsing
-					then Theme.Colors.Select
-					elseif typeof(restColor) == "Color3" then restColor
-					else Theme.Colors.Outline
-				stroke.Thickness = if pulsing
-					then 5 + 2 * math.sin(os.clock() * 8)
-					elseif type(restThickness) == "number" then restThickness
-					else Theme.StrokeToy
-				stroke.Transparency = if pulsing
-					then 0
-					elseif type(restTransparency) == "number" then restTransparency
-					else 0
+		for _, set in { InputController.buttons, InputController.keyButtons } do
+			for name, b in set do
+				local stroke = b:FindFirstChild("Outline", true) :: UIStroke?
+				if stroke then
+					local pulsing = pointer == name
+					local restColor = stroke:GetAttribute("RestColor")
+					local restThickness = stroke:GetAttribute("RestThickness")
+					local restTransparency = stroke:GetAttribute("RestTransparency")
+					stroke.Color = if pulsing
+						then Theme.Colors.Select
+						elseif typeof(restColor) == "Color3" then restColor
+						else Theme.Colors.Outline
+					stroke.Thickness = if pulsing
+						then 5 + 2 * math.sin(os.clock() * 8)
+						elseif type(restThickness) == "number" then restThickness
+						else Theme.StrokeToy
+					stroke.Transparency = if pulsing
+						then 0
+						elseif type(restTransparency) == "number" then restTransparency
+						else 0
+				end
 			end
 		end
 	end)

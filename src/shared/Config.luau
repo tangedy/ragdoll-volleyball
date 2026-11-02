@@ -86,6 +86,17 @@ Config.Lobby = {
 		{ Id = "Daily", Title = "DAILY REWARD", Icon = "🎁", X = 17, F = -33, Color = Color3.fromRGB(70, 150, 255) },
 	},
 	StationPromptDistance = 12,
+	-- the featured display (BundleDisplayController): a live offer's stand, else the featured ball of
+	-- the day. Left of the spawn → court sightline, mirroring the signpost (X 11, F 13), so it's in
+	-- the spawn camera's view but off the court's middle. Checked in Studio: clear of the jack
+	-- sign-post lantern (X -24, F 10), the black cat, the helipad, the string lights (its sign stays
+	-- under F 19) and the practice zone (X < -29)
+	Featured = { X = -15, F = 13 },
+	-- first-visit guidance (HubGuideController): once per account, after the tutorial
+	Guide = {
+		Settle = 0.75, -- seconds the hub must be clear (no Done card, no sheet) before it starts
+		QuestSeconds = 6, -- how long the quest panel callout stays
+	},
 	Leaderboard = { X = 52, F = -12, Rows = 8, Refresh = 5 }, -- on the right end, facing the deck
 	WatchZone = { F = 33, Width = 50, Rows = 3 }, -- low bleachers at the court-side railing
 	Palette = {
@@ -365,7 +376,37 @@ Config.CoinShop = {
 			Image = 0, -- PLACEHOLDER: icon image id (optional)
 			Minutes = 0,
 			Forever = true,
+			-- sold as the DoubleCoins game pass once that pass exists (its card prompts the pass);
+			-- this product stays registered so a receipt from before the switch still grants
+			Pass = "DoubleCoins",
 		},
+	},
+	-- Game passes (GamePassService): one-time purchases Roblox also lists on the game page's Store
+	-- tab. Create each in the Creator Dashboard (Monetization > Passes) and paste its id into PassId;
+	-- while it's 0 nothing prompts it (Studio still shows the card). Robux is only what the card shows
+	-- until the real price loads from the pass.
+	Passes = {
+		-- lifetime 2x coins, the same perk as the BoostForever product above
+		DoubleCoins = { Name = "2x Coins Forever", Robux = 199, PassId = 0 },
+		-- a gold VIP tag on the name tag, and a daily gift the first time you're here each UTC day: a
+		-- free bonus spin on DailyWheel and DailyCoins coins. Nothing that changes a match.
+		VIP = { Name = "VIP", Robux = 299, PassId = 0, Image = 0, DailyCoins = 150, DailyWheel = "Standard" },
+	},
+	-- The Starter Pack: a one-time developer product shown on the Coins sheet once Robux buttons
+	-- unlock, until bought (profile.StarterBought). It grants Items (Robux exclusives that are also sold
+	-- on their own), Coins and a free Boost. ProductId 0 until created: Studio shows it as "Soon".
+	Starter = {
+		Id = "Starter",
+		Name = "Starter Pack",
+		Items = { "Skin_Galaxy", "Title_NeonAce" },
+		Coins = 5000,
+		Boost = "Boost30",
+		Robux = 99,
+		ProductId = 0, -- PLACEHOLDER: developer product "Starter Pack"
+		Image = 0, -- PLACEHOLDER: card art image id (optional)
+		Glyph = "🎁",
+		Tag = "One time",
+		Once = true,
 	},
 	Bundles = {
 		{ Id = "Handful", Name = "Handful of coins", Coins = 1000, Robux = 49, ProductId = 3723376190, Image = 0 },
@@ -423,7 +464,7 @@ Config.CoinShop = {
 			End = "2026-11-04T00:00:00Z", -- on sale through Nov 3 (UTC)
 			Tag = "Limited",
 			-- its stand in the hub (BundleDisplayController), in deck coordinates like Config.Lobby
-			Display = { X = 12, F = -14 },
+			Display = Config.Lobby.Featured,
 		},
 	},
 }
@@ -603,13 +644,74 @@ Config.Tutorial = {
 	},
 }
 
+-- Group reward (GroupRewardService): a chest kiosk on the hub deck pays Reward once per account to a
+-- member of the game's Roblox group (Player:IsInGroup, checked again on every press). Roblox can't
+-- verify a like, so joining the group is what's rewarded. The developer signs off on any like or
+-- reward mechanic before release (docs/RELEASE_PLAN.md, Compliance). Setting GroupId to 0 turns it
+-- off: the kiosk isn't built and claims are refused.
+Config.GroupReward = {
+	GroupId = 432934144, -- FAIRE GAME, the group that owns the game
+	Reward = { Kind = "Spin", Wheel = "RarePlus" } :: Reward,
+	-- deck frame (X right, F toward the court), behind the helipad's left side (the featured display,
+	-- Config.Lobby.Featured, is in front of it), clear of the practice zone (X < -29) and the Halloween
+	-- props; Yaw turns it toward the spawn
+	Kiosk = { X = -14, F = -14, Yaw = -30 },
+	PromptDistance = 10,
+	Cooldown = 2, -- seconds between checks for one player (each press asks Roblox again)
+}
+
+-- Level rewards (docs/ECONOMY.md §8): what reaching each level pays, banked the moment you get there
+-- (RewardService.payLevels), as the typed rewards RewardService.grant hands out. Level 1 is where
+-- everyone starts, so it pays nothing. Most levels pay coins, 25 more every ten levels; every 5th
+-- takes turns between a Rare+ bonus spin and a quest chest; every 10th is an earn-only title (a
+-- Catalog item with Unlock.Level: never sold, spun or rolled).
+local LEVEL_CAP = 100
+local LEVEL_COINS = { Base = 50, PerTen = 25 } -- level n pays Base + PerTen * ((n - 1) // 10)
+local LEVEL_BONUS: { [number]: Reward } = {
+	[5] = { Kind = "Spin", Wheel = "RarePlus" },
+	[15] = { Kind = "Chest", Chest = "Finisher" },
+	[25] = { Kind = "Spin", Wheel = "RarePlus" },
+	[35] = { Kind = "Chest", Chest = "Gesture" },
+	[45] = { Kind = "Spin", Wheel = "RarePlus" },
+	[55] = { Kind = "Chest", Chest = "Title" },
+	[65] = { Kind = "Spin", Wheel = "RarePlus" },
+	[75] = { Kind = "Chest", Chest = "Finisher" },
+	[85] = { Kind = "Spin", Wheel = "RarePlus" },
+	[95] = { Kind = "Chest", Chest = "Gesture" },
+}
+local LEVEL_TITLES: { [number]: string } = {
+	[10] = "Title_WarmedUp",
+	[20] = "Title_CourtRegular",
+	[30] = "Title_SeasonedPro",
+	[40] = "Title_Veteran",
+	[50] = "Title_HalfCentury",
+	[60] = "Title_BallWhisperer",
+	[70] = "Title_Juggernaut",
+	[80] = "Title_HallOfFamer",
+	[90] = "Title_LivingLegend",
+	[100] = "Title_Centurion",
+}
+local levelRewards: { [number]: Reward } = {}
+for level = 2, LEVEL_CAP do
+	local title = LEVEL_TITLES[level]
+	levelRewards[level] = if title
+		then { Kind = "Cosmetic", Id = title }
+		else LEVEL_BONUS[level] or {
+			Kind = "Coins",
+			Amount = LEVEL_COINS.Base + LEVEL_COINS.PerTen * ((level - 1) // 10),
+		}
+end
+
 Config.Progression = {
 	XP = { Complete = 40, Win = 20, Hit = 3, Catch = 6, Knockout = 8, Revenge = 6 },
 	MaxXPPerMatch = 150,
-	LevelCap = 100,
+	LevelCap = LEVEL_CAP,
 	LevelBase = 100,
 	LevelPerLevel = 25,
 	StreakFlameAt = 3,
+	LevelCoins = LEVEL_COINS,
+	LevelTitles = LEVEL_TITLES,
+	Rewards = levelRewards, -- by level, 2..LevelCap
 }
 
 Config.Finisher = {

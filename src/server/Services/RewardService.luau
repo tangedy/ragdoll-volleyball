@@ -6,9 +6,12 @@
 -- overlay, never during combat.
 --
 -- RewardService.grant is the one place any typed reward (Config.DailyRewards explains the kinds)
--- lands on a profile: the daily login ladder and the daily quest chests (QuestService) both use it.
+-- lands on a profile: the daily login ladder, the daily quest chests (QuestService) and the level
+-- rewards (payLevels) all use it.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
@@ -112,6 +115,7 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 			p.Coins += coins
 			local oldLevel = p.Level
 			p.Level, p.XP = Progression.addXP(p.Level, p.XP, xp)
+			local banked = RewardService.payLevels(c)
 			if not ctx.aborted then
 				p.Matches += 1
 			end
@@ -157,10 +161,64 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 				},
 				persistent = c.persistent,
 			})
+			if p.Level > oldLevel then
+				RewardService.announceLevel(c, oldLevel, banked)
+			end
 			S.DataService.push(c)
 			task.spawn(S.DataService.save, c, false)
 		end
 	end
+end
+
+-- Level rewards ---------------------------------------------------------------------------------------
+
+-- What reaching `level` pays (Config.Progression.Rewards), or nil (level 1, or past the cap).
+function RewardService.levelReward(level: number): Config.Reward?
+	return Config.Progression.Rewards[level]
+end
+
+-- Bank every level reward the player is owed, in order: each level above LevelRewardsPaid up to their
+-- level, once. A save from before level rewards existed starts at 1, so it gets every level it has
+-- already passed. Each level is marked paid before its grant lands, so nothing pays twice. The caller
+-- pushes and saves. Returns what was banked: { { level, kind, coins?, id?, rarity?, wheel?, chest?,
+-- duplicate? } } for the level-up card.
+function RewardService.payLevels(c: any): { { [string]: any } }
+	local banked = {}
+	local p = c.profile
+	if not c.profileLoaded or not p then
+		return banked
+	end
+	local top = math.min(p.Level, Config.Progression.LevelCap)
+	for level = math.max(1, p.LevelRewardsPaid or 1) + 1, top do
+		p.LevelRewardsPaid = level
+		local reward = RewardService.levelReward(level)
+		local result = if reward then RewardService.grant(c, reward, "Level" .. level) else nil
+		if result then
+			table.insert(banked, {
+				level = level,
+				kind = result.kind,
+				coins = result.coins,
+				id = result.id,
+				rarity = result.rarity,
+				wheel = result.wheel,
+				chest = result.chest,
+				duplicate = result.duplicate,
+			})
+		end
+	end
+	return banked
+end
+
+-- The level-up moment: the player's own card (LevelUp: { from, level, rewards }) and a feed line
+-- for everyone.
+function RewardService.announceLevel(c: any, from: number, banked: { { [string]: any } })
+	if not c.player or not c.profile then
+		return
+	end
+	S.NetService.send(c.player, "LevelUp", { from = from, level = c.profile.Level, rewards = banked })
+	S.NetService.broadcast("Feed", {
+		text = ("⭐ %s reached <b>Level %d</b>!"):format(S.MatchService.tag(c), c.profile.Level),
+	})
 end
 
 -- Typed rewards -------------------------------------------------------------------------------------
@@ -430,6 +488,34 @@ function RewardService.start()
 		local result, why = RewardService.pick(c, p.id)
 		S.NetService.send(player, "PickResult", result or { ok = false, message = why })
 	end)
+	-- Studio: try level rewards from the server command bar with player:SetAttribute("RD_Level", n).
+	-- It sets the level and banks (and announces) what's owed; a lower level also lowers the banked
+	-- mark, so the same rewards can be tried again.
+	if RunService:IsStudio() then
+		local function watch(player: Player)
+			player:GetAttributeChangedSignal("RD_Level"):Connect(function()
+				local n = tonumber(player:GetAttribute("RD_Level"))
+				local c = S.PlayerStateService.get(player)
+				if not n or not c or not c.profileLoaded then
+					return
+				end
+				local p = c.profile
+				local from = p.Level
+				p.Level = math.clamp(math.floor(n), 1, Config.Progression.LevelCap)
+				p.XP = 0
+				p.LevelRewardsPaid = math.min(p.LevelRewardsPaid, p.Level)
+				local banked = RewardService.payLevels(c)
+				if p.Level > from then
+					RewardService.announceLevel(c, from, banked)
+				end
+				S.DataService.push(c)
+			end)
+		end
+		Players.PlayerAdded:Connect(watch)
+		for _, player in Players:GetPlayers() do
+			watch(player)
+		end
+	end
 end
 
 return RewardService

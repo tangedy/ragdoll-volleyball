@@ -5,6 +5,10 @@
 -- afford yet: the sheet then says how many coins they're short and points at the smallest bundle
 -- that covers it, and after a purchase takes them straight back to the shop.
 --
+-- Value tags (shared/BundleValue, all worked out from Config and the Catalog): each coin bundle shows
+-- "+X% BONUS" over the smallest bundle's coins per Robux, the best ratio wears a BEST VALUE ribbon,
+-- and each limited-time offer says what it's "Worth" in coins.
+--
 -- Under the bundles, a row of 2x coins boosts (Config.CoinShop.Boosts, granted by BoostService):
 -- the timed one shows its time left, the lifetime one says Owned once bought.
 --
@@ -20,6 +24,10 @@
 --
 -- Clicking a bundle's strip (anywhere but Buy), or any of its items on the Shop's shelf, opens the
 -- bundle's own page: every item in it as a card, plus its coins, with Buy and a Back button.
+--
+-- The same strip stack also carries the one-time Starter Pack (Config.CoinShop.Starter, until it's
+-- bought) and the VIP game pass (until owned), at most MAX_STRIPS at once, limited offers first.
+-- The lifetime 2x boost card prompts the DoubleCoins game pass once that pass exists.
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -30,6 +38,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Catalog = require(Shared.Catalog)
+local BundleValue = require(Shared.BundleValue)
 local Net = require(script.Parent.Net)
 local HUDController = require(script.Parent.HUDController)
 local SoundController = require(script.Parent.SoundController)
@@ -48,13 +57,23 @@ local CARD = Vector2.new(156, 300)
 local ART_H = 120
 local BOOST = Vector2.new(400, 76)
 local OFFER = Vector2.new(816, 96)
+local MAX_STRIPS = 2 -- offer, Starter Pack and VIP strips shown on the Coins sheet at once
 local SUBTITLE = "Coins go straight to your wallet."
 -- "Witch's Brew ball skin" in an offer's contents line
 local KIND = { BallSkin = "ball skin", Trail = "trail", Title = "title", Finisher = "finisher", Pose = "pose" }
 
 local sheet: any -- Theme.Sheet
 local walletLabel: TextLabel
-local cards: { [string]: { root: GuiObject, art: GuiObject, buy: TextButton } } = {}
+type BundleCard = {
+	root: GuiObject,
+	art: GuiObject,
+	buy: TextButton,
+	bonus: GuiObject,
+	ribbon: GuiObject,
+	tag: GuiObject?,
+}
+local cards: { [string]: BundleCard } = {}
+local bundleRobux: { [string]: number } = {} -- a coin bundle's real Robux price, from its product
 local backToShop = false -- opened from the shop's Buy: return there after a purchase
 local boostCards: { [string]: { root: GuiObject, status: TextLabel, buy: TextButton } } = {}
 local boost = { untilTime = 0, forever = false } -- profile.boost from the server
@@ -63,7 +82,9 @@ type OfferCard = { offer: any, root: GuiObject, status: TextLabel, buy: TextButt
 local offerCards: { OfferCard } = {}
 local shopBanners = false -- built the Shop shelf's banners yet
 local owned: { [string]: boolean } = {} -- profile.owned from the server
-local offersShown: boolean? = nil -- is the offer strip up (nil until the first layout)
+local starterBought = false -- profile.starter from the server
+local vipStrip: { root: GuiObject, buy: TextButton }? = nil
+local offersShown: number? = nil -- how many strips are up (nil until the first layout)
 local offerRow: Frame
 local bundleRow: Frame
 local boostRow: Frame
@@ -101,12 +122,33 @@ local function commas(n: number): string
 	return (s:gsub("^,", ""))
 end
 
--- Bonus over the smallest bundle's coins-per-Robux, e.g. "+40% bonus" (nil for none).
-local function bonusText(bundle: any): string?
-	local base = CS.Bundles[1]
-	local rate = base.Coins / base.Robux
-	local extra = math.floor((bundle.Coins / bundle.Robux / rate - 1) * 100 + 0.5)
-	return if extra >= 5 then ("+%d%% bonus"):format(extra) else nil
+-- Each bundle at the price it really sells for: Config's Robux until the product's price loads.
+local function pricedBundles(): { { Coins: number, Robux: number } }
+	local list = {}
+	for _, bundle in CS.Bundles do
+		table.insert(list, { Coins = bundle.Coins, Robux = bundleRobux[bundle.Id] or bundle.Robux })
+	end
+	return list
+end
+
+-- The "+X% BONUS" pills and the BEST VALUE ribbon, from coins per Robux against the smallest
+-- bundle (BundleValue). Re-run whenever a real price loads, so the tags always match the buttons.
+local function renderValue()
+	local list = pricedBundles()
+	local best = BundleValue.best(list)
+	for i, bundle in CS.Bundles do
+		local card = cards[bundle.Id]
+		if not card then
+			continue
+		end
+		local extra = BundleValue.bonus(list[i], list[1])
+		card.bonus.Visible = extra > 0
+		Theme.setText(card.bonus, ("+%d%% BONUS"):format(extra))
+		card.ribbon.Visible = i == best
+		if card.tag then
+			card.tag.Visible = i ~= best -- the ribbon takes the sticker's spot
+		end
+	end
 end
 
 -- A heap of coins that grows with the bundle: `rows` rows of overlapping coins, wider at the bottom.
@@ -140,6 +182,34 @@ local function drawIcon(parent: GuiObject, image: number, inset: number)
 	}, parent)
 end
 
+-- A loud outlined pill of paper text on `tone` ("+48% BONUS", "WORTH 21,500 COINS"), sized to its text.
+local function valuePill(parent: Instance, text: string, tone: Color3, size: number, props: { [string]: any }): Frame
+	local f = new("Frame", {
+		Name = "Value",
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, size + 10),
+		BackgroundColor3 = tone,
+		BorderSizePixel = 0,
+	}, nil)
+	for k, v in props do
+		(f :: any)[k] = v
+	end
+	Theme.round(f)
+	Theme.stroke(f, T.outline, 2)
+	new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, f)
+	Theme.label(f, {
+		Name = "Label",
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromScale(0, 1),
+		TextScaled = false,
+		TextSize = size,
+		Text = text,
+		ZIndex = f.ZIndex + 1,
+	}, 2)
+	f.Parent = parent
+	return f
+end
+
 local function buy(bundle: any)
 	if bundle.ProductId <= 0 then
 		SoundController.play("UIError")
@@ -147,6 +217,33 @@ local function buy(bundle: any)
 		return
 	end
 	MarketplaceService:PromptProductPurchase(player, bundle.ProductId)
+end
+
+-- Prompt a game pass (Config.CoinShop.Passes id). Studio shows passes before they exist.
+local function buyPass(id: string)
+	local pass = CS.Passes[id]
+	if pass.PassId <= 0 then
+		SoundController.play("UIError")
+		HUDController.hint("This pass isn't on sale yet", 1.6)
+		return
+	end
+	MarketplaceService:PromptGamePassPurchase(player, pass.PassId)
+end
+
+-- A pass's card Buy button shows its real price once it loads.
+local function passPrice(id: string, button: TextButton)
+	local pass = CS.Passes[id]
+	if pass.PassId <= 0 then
+		return
+	end
+	task.spawn(function()
+		local ok, info = pcall(function()
+			return MarketplaceService:GetProductInfo(pass.PassId, Enum.InfoType.GamePass)
+		end)
+		if ok and type(info) == "table" and type(info.PriceInRobux) == "number" then
+			Theme.setText(button, ("R$ %d"):format(info.PriceInRobux))
+		end
+	end)
 end
 
 -- "12:05 left"
@@ -232,10 +329,21 @@ local function boostCard(parent: Instance, def: any, order: number)
 		Size = UDim2.fromOffset(104, 48),
 		ZIndex = 8,
 	})
+	-- the lifetime boost is sold as its game pass once that pass exists
+	local pass = if def.Pass and CS.Passes[def.Pass].PassId > 0 then def.Pass else nil
 	button.Activated:Connect(function()
-		buy(def)
+		if pass then
+			buyPass(pass)
+		else
+			buy(def)
+		end
 	end)
 	boostCards[def.Id] = { root = root, status = status, buy = button }
+	if pass then
+		Theme.setText(button, ("R$ %d"):format(CS.Passes[pass].Robux))
+		passPrice(pass, button)
+		return
+	end
 	task.spawn(function()
 		local ok, info = pcall(function()
 			return MarketplaceService:GetProductInfo(def.ProductId, Enum.InfoType.Product)
@@ -289,13 +397,25 @@ local function bundleCard(parent: Instance, bundle: any, order: number, tone: Co
 	else
 		drawHeap(heap, order)
 	end
-	if bundle.Tag then
-		Theme.sticker(root, bundle.Tag, if order == #CS.Bundles then T.sun else T.candy, {
+	-- Config's own "Best value" tag is skipped: the ribbon below goes on whichever bundle really
+	-- gives the most coins per Robux, so the two can never disagree.
+	local tag: GuiObject? = nil
+	if bundle.Tag and string.lower(bundle.Tag) ~= "best value" then
+		tag = Theme.sticker(root, bundle.Tag, T.candy, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0),
 			ZIndex = 20,
 		})
 	end
+	local ribbon = valuePill(root, "★ BEST VALUE", T.joyRed, 18, {
+		Name = "BestValue",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0, 2),
+		Rotation = -4,
+		Visible = false,
+		ZIndex = 21,
+	})
+	Theme.stroke(ribbon, T.outline, Theme.StrokeToy)
 	-- the amount: a coin and the number, big
 	local amount = new("Frame", {
 		Name = "Amount",
@@ -327,17 +447,14 @@ local function bundleCard(parent: Instance, bundle: any, order: number, tone: Co
 		Text = bundle.Name,
 		ZIndex = 7,
 	})
-	local bonus = bonusText(bundle)
-	if bonus then
-		Theme.text(root, 16, {
-			Name = "Bonus",
-			Position = UDim2.fromOffset(10, ART_H + 72),
-			Size = UDim2.new(1, -20, 0, 20),
-			Text = bonus,
-			TextColor3 = T.success,
-			ZIndex = 7,
-		})
-	end
+	-- filled in by renderValue (hidden on the smallest bundle, which is the baseline)
+	local bonus = valuePill(root, "", T.leaf, 16, {
+		Name = "Bonus",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromOffset(CARD.X / 2, ART_H + 72),
+		Visible = false,
+		ZIndex = 8,
+	})
 	local button = Theme.button(root, ("R$ %d"):format(bundle.Robux), "primary", {
 		Name = "Buy",
 		AnchorPoint = Vector2.new(0.5, 1),
@@ -352,8 +469,9 @@ local function bundleCard(parent: Instance, bundle: any, order: number, tone: Co
 	button.Activated:Connect(function()
 		buy(bundle)
 	end)
-	cards[bundle.Id] = { root = root, art = art, buy = button }
-	-- the real price comes from the product itself (it can be changed on the dashboard)
+	cards[bundle.Id] = { root = root, art = art, buy = button, bonus = bonus, ribbon = ribbon, tag = tag }
+	-- the real price comes from the product itself (it can be changed on the dashboard); the bonus
+	-- tags are worked out again from it
 	if bundle.ProductId > 0 then
 		task.spawn(function()
 			local ok, info = pcall(function()
@@ -361,6 +479,8 @@ local function bundleCard(parent: Instance, bundle: any, order: number, tone: Co
 			end)
 			if ok and type(info) == "table" and type(info.PriceInRobux) == "number" then
 				Theme.setText(button, ("R$ %d"):format(info.PriceInRobux))
+				bundleRobux[bundle.Id] = info.PriceInRobux
+				renderValue()
 			end
 		end)
 	end
@@ -381,6 +501,9 @@ local function endsIn(seconds: number): string
 end
 
 local function offerOwned(offer: any): boolean
+	if offer.Once then
+		return starterBought -- the Starter Pack: bought once, even if its items came another way
+	end
 	for _, id in offer.Items do
 		if not owned[id] then
 			return false
@@ -389,8 +512,28 @@ local function offerOwned(offer: any): boolean
 	return true
 end
 
--- Show each offer only inside its window; the strip (and the room the sheet makes for it) comes
--- and goes with the first live one.
+-- A one-time offer (the Starter Pack) is always on sale; a limited one only inside its window.
+local function offerOn(offer: any, now: number): boolean
+	return offer.Once == true or Catalog.offerLive(offer, now)
+end
+
+-- The status line under an offer's name.
+local function offerStatus(offer: any, now: number): string
+	if offerOwned(offer) then
+		return "Owned: equip it in the Shop"
+	elseif offer.Once then
+		return "One-time offer · only once per account"
+	end
+	return "Limited time · " .. endsIn(stamp(offer.End) - now)
+end
+
+-- Products that don't exist yet stay off the live game; Studio shows them (with "Soon") to test.
+local function onSale(id: number): boolean
+	return id > 0 or RunService:IsStudio()
+end
+
+-- Show each offer only inside its window; the strip stack (and the room the sheet makes for it)
+-- grows with the strips showing, up to MAX_STRIPS.
 local offerCard: (parent: Instance, offer: any, order: number, place: string) -> ()
 local function renderOffers()
 	local shelf = ShopController.shelf()
@@ -401,28 +544,37 @@ local function renderOffers()
 		end
 	end
 	local now = Workspace:GetServerTimeNow()
-	local any = false
+	local strips = 0
 	for _, card in offerCards do
 		local offer = card.offer
-		local live = Catalog.offerLive(offer, now)
+		local live = offerOn(offer, now)
 		local have = offerOwned(offer)
 		if card.place == "Shop" then
 			-- (and not while the shelf shows only what you own)
 			card.root.Visible = live and not have and CoinShopController.unlocked() and not ShopController.ownedOnly
+		elseif card.place == "Coins" then
+			-- the Starter Pack leaves once bought; a limited offer stays up saying Owned
+			local show = live and not (offer.Once and have) and onSale(offer.ProductId) and strips < MAX_STRIPS
+			card.root.Visible = show
+			strips += if show then 1 else 0
 		else
 			card.root.Visible = live
-			any = any or (live and card.place == "Coins")
 		end
 		if live then
-			card.status.Text = if have
-				then "Owned: equip it in the Shop"
-				else "Limited time · " .. endsIn(stamp(offer.End) - now)
+			card.status.Text = offerStatus(offer, now)
 			card.buy.Visible = not have
 		end
 	end
-	if any ~= offersShown then
-		offersShown = any
-		local shift = if any then OFFER.Y + Theme.Space.L else 0
+	if vipStrip then
+		local show = player:GetAttribute("Pass_VIP") ~= true and onSale(CS.Passes.VIP.PassId) and strips < MAX_STRIPS
+		vipStrip.root.Visible = show
+		strips += if show then 1 else 0
+	end
+	local any = strips > 0
+	if strips ~= offersShown then
+		offersShown = strips
+		local shift = strips * (OFFER.Y + Theme.Space.L)
+		offerRow.Size = UDim2.new(1, 0, 0, math.max(0, shift - Theme.Space.L))
 		offerRow.Visible = any
 		bundleRow.Position = UDim2.fromOffset(0, 16 + shift)
 		boostRow.Position = UDim2.fromOffset(0, 16 + shift + CARD.Y + Theme.Space.L)
@@ -433,7 +585,7 @@ local function renderOffers()
 end
 
 local function buyOffer(offer: any)
-	if not Catalog.offerLive(offer, Workspace:GetServerTimeNow()) then
+	if not offerOn(offer, Workspace:GetServerTimeNow()) then
 		SoundController.play("UIError")
 		HUDController.hint("This offer has ended", 1.6)
 		renderOffers()
@@ -491,7 +643,7 @@ function offerCard(parent: Instance, offer: any, order: number, place: string)
 		Theme.stroke(disc, T.outline, Theme.StrokeToy)
 		Theme.text(disc, 40, {
 			Size = UDim2.fromScale(1, 1),
-			Text = "🎃",
+			Text = offer.Glyph or "🎃",
 			TextXAlignment = Enum.TextXAlignment.Center,
 			ZIndex = 7,
 		})
@@ -505,11 +657,19 @@ function offerCard(parent: Instance, offer: any, order: number, place: string)
 	end
 	Theme.text(root, 22, {
 		Position = UDim2.fromOffset(98, 10),
-		Size = UDim2.new(1, -240, 0, 26),
+		Size = UDim2.new(1, -440, 0, 26),
 		FontFace = Theme.DisplayFace,
 		Text = offer.Name,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 7,
+	})
+	-- what it's worth: every item's catalog Price (their value) plus the coins (BundleValue.worth)
+	valuePill(root, ("WORTH %s COINS"):format(commas(BundleValue.worth(offer, Catalog))), T.sun, 16, {
+		Name = "Worth",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -146, 0, 10),
+		Rotation = -2,
+		ZIndex = 9,
 	})
 	-- what's inside: "Witch's Brew ball skin · Ectoplasm trail · ... · +5,000 coins"
 	-- (just the names once there are more than four, so the line still fits)
@@ -524,6 +684,11 @@ function offerCard(parent: Instance, offer: any, order: number, place: string)
 		end
 	end
 	table.insert(parts, ("+%s coins"):format(commas(offer.Coins)))
+	for _, b in CS.Boosts do
+		if b.Id == offer.Boost then
+			table.insert(parts, ("%dx coins for %s"):format(CS.BoostMultiplier, b.Detail))
+		end
+	end
 	local contents = Theme.body(root, {
 		Position = UDim2.fromOffset(98, 40),
 		Size = UDim2.new(1, -240, 0, 18),
@@ -542,6 +707,10 @@ function offerCard(parent: Instance, offer: any, order: number, place: string)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 7,
 	})
+	-- The price is shown once, as it is. There's deliberately no crossed-out "was R$ ..." price: none
+	-- of these bundles has ever sold for more Robux, and a strike-through price that never existed is
+	-- a made-up discount that misleads players (the fake "reference price" consumer rules ban). Add one
+	-- only if the product really sold at that higher price first, and take the number from that.
 	local button = Theme.button(root, ("R$ %d"):format(offer.Robux), "primary", {
 		Name = "Buy",
 		AnchorPoint = Vector2.new(1, 0.5),
@@ -580,6 +749,91 @@ function offerCard(parent: Instance, offer: any, order: number, place: string)
 	end
 end
 
+-- The VIP game pass as a strip like an offer's: what it gives and Buy. It leaves once you own it.
+local function vipCard(parent: Instance, order: number)
+	local vip = CS.Passes.VIP
+	local root = new("Frame", {
+		Name = "VIP",
+		LayoutOrder = order,
+		Size = UDim2.fromOffset(OFFER.X, OFFER.Y),
+		BackgroundColor3 = T.surface,
+		Visible = false,
+		ZIndex = 5,
+	}, parent)
+	Theme.corner(root, Theme.Radius.M)
+	Theme.stroke(root, T.outline, Theme.StrokeToy)
+	local disc = new("Frame", {
+		Name = "Art",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 12, 0.5, 0),
+		Size = UDim2.fromOffset(72, 72),
+		BackgroundColor3 = T.sun,
+		BackgroundTransparency = if (vip.Image or 0) > 0 then 1 else 0,
+		ZIndex = 6,
+	}, root)
+	if (vip.Image or 0) > 0 then
+		drawIcon(disc, vip.Image, -4)
+	else
+		Theme.round(disc)
+		Theme.stroke(disc, T.outline, Theme.StrokeToy)
+		Theme.label(disc, {
+			Size = UDim2.fromScale(1, 1),
+			Text = "VIP",
+			TextXAlignment = Enum.TextXAlignment.Center,
+			ZIndex = 7,
+		}, 2)
+	end
+	Theme.sticker(root, "Forever", T.candy, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(48, 0),
+		ZIndex = 20,
+	})
+	Theme.text(root, 22, {
+		Position = UDim2.fromOffset(98, 10),
+		Size = UDim2.new(1, -240, 0, 26),
+		FontFace = Theme.DisplayFace,
+		Text = vip.Name,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 7,
+	})
+	local perks = Theme.body(root, {
+		Position = UDim2.fromOffset(98, 40),
+		Size = UDim2.new(1, -240, 0, 18),
+		FontFace = Theme.TextFace,
+		Text = ("A gold VIP tag on your name · a free spin and %s coins every day you play"):format(
+			commas(vip.DailyCoins)
+		),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 7,
+	})
+	new("UITextSizeConstraint", { MaxTextSize = 18 }, perks)
+	Theme.text(root, 16, {
+		Position = UDim2.fromOffset(98, 64),
+		Size = UDim2.new(1, -240, 0, 20),
+		Text = "Game pass · yours forever",
+		TextColor3 = T.success,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 7,
+	})
+	local button = Theme.button(root, ("R$ %d"):format(vip.Robux), "primary", {
+		Name = "Buy",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -12, 0.5, 0),
+		Size = UDim2.fromOffset(120, 52),
+		ZIndex = 8,
+	})
+	if vip.PassId <= 0 then
+		Theme.setText(button, "Soon")
+		Theme.recolor(button, "secondary")
+	end
+	button.Activated:Connect(function()
+		buyPass("VIP")
+	end)
+	passPrice("VIP", button)
+	vipStrip = { root = root, buy = button }
+end
+
 -- The pumpkin button shows only while an offer is on sale (and Robux buttons are unlocked).
 local function anyOfferLive(): boolean
 	local now = Workspace:GetServerTimeNow()
@@ -607,9 +861,7 @@ local function renderPreviewStatus()
 		return
 	end
 	local have = offerOwned(offer)
-	preview.status.Text = if have
-		then "Owned: equip it in the Shop"
-		else "Limited time · " .. endsIn(stamp(offer.End) - Workspace:GetServerTimeNow())
+	preview.status.Text = offerStatus(offer, Workspace:GetServerTimeNow())
 	preview.buy.Visible = not have
 	if offer.ProductId <= 0 then
 		Theme.setText(preview.buy, "Soon")
@@ -701,7 +953,11 @@ local function fillPreview(offer: any)
 	if (offer.Coins or 0) > 0 then
 		preview.cards.Coins = coinsCard(preview.grid, offer.Coins, #offer.Items + 1)
 	end
-	preview.summary.Text = ("%d items + %s coins"):format(#offer.Items, commas(offer.Coins or 0))
+	preview.summary.Text = ("%d items + %s coins · worth %s"):format(
+		#offer.Items,
+		commas(offer.Coins or 0),
+		commas(BundleValue.worth(offer, Catalog))
+	)
 end
 
 local function buildPreview()
@@ -844,14 +1100,17 @@ local function build()
 		ZIndex = 4,
 	}, sheet.body)
 	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
+		FillDirection = Enum.FillDirection.Vertical,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		Padding = UDim.new(0, Theme.Space.L),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, offerRow)
+	-- limited offers first, then the Starter Pack, then VIP (renderOffers shows the first MAX_STRIPS)
 	for i, offer in CS.Offers do
 		offerCard(offerRow, offer, i, "Coins")
 	end
+	offerCard(offerRow, CS.Starter, #CS.Offers + 1, "Coins")
+	vipCard(offerRow, #CS.Offers + 2)
 	local row = new("Frame", {
 		Name = "Bundles",
 		Position = UDim2.fromOffset(0, 16),
@@ -869,6 +1128,7 @@ local function build()
 	for i, bundle in CS.Bundles do
 		bundleCard(row, bundle, i, Theme.Fills[(i - 1) % #Theme.Fills + 1])
 	end
+	renderValue()
 	local boosts = new("Frame", {
 		Name = "Boosts",
 		Position = UDim2.fromOffset(0, 16 + CARD.Y + Theme.Space.L),
@@ -1053,6 +1313,10 @@ end
 
 -- Buy a limited-time bundle (the Shop's bundle items and banner use this too).
 CoinShopController.buyOffer = buyOffer
+-- An offer's Robux price: the product's real one once loaded, else Config's (the hub stand's sign).
+function CoinShopController.offerRobux(offer: any): number
+	return prices[offer.Id] or offer.Robux
+end
 -- Show, hide and count down the bundle strips (the Shop calls this when it draws its shelf).
 CoinShopController.renderOffers = renderOffers
 
@@ -1066,6 +1330,9 @@ function CoinShopController.start()
 		if type(d.boost) == "table" then
 			boost = { untilTime = tonumber(d.boost.untilTime) or 0, forever = d.boost.forever == true }
 			renderBoosts()
+		end
+		if d.starter ~= nil then
+			starterBought = d.starter == true
 		end
 		if type(d.owned) == "table" then
 			owned = d.owned
@@ -1099,6 +1366,18 @@ function CoinShopController.start()
 				HUDController.hint(("%s unlocked! Equip it in the Shop"):format(offer.Name), 2.4)
 			end
 		end
+		if d.id == CS.Starter.Id then
+			HUDController.hint("Starter Pack unlocked! Equip it in the Shop", 2.4)
+		end
+	end)
+	-- VIP's daily gift: its coins and a bonus spin (waiting on the Spin sheet)
+	Net.on("VipGift", function(d)
+		SoundController.play("Purchase")
+		HUDController.coinPop(tonumber(d.coins) or 0)
+		HUDController.hint("VIP daily gift: coins and a free spin!", 2.4)
+	end)
+	player:GetAttributeChangedSignal("Pass_VIP"):Connect(function()
+		renderOffers()
 	end)
 	Net.on("BoostBought", function(d)
 		SoundController.play("Purchase")

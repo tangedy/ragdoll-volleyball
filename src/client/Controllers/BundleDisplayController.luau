@@ -7,6 +7,10 @@
 -- It stands while an offer with a Display spot (Config.CoinShop.Offers) is live and Robux buttons
 -- are unlocked for you (RobuxOk), the same as the shop's bundle strip. Once you own everything in
 -- it the stand stays as decoration but says Owned and its prompt goes away.
+--
+-- The rest of the time the same spot (Config.Lobby.Featured, on the spawn → court sightline) holds
+-- the featured ball of the day (ShopService.featuredBall, sent with the quests in the Profile push):
+-- the ball turning over a plinth rimmed in its colour, and a sign with today's bonuses.
 
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -16,6 +20,8 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local ArenaLayout = require(Shared.ArenaLayout)
+local BallDefinitions = require(Shared.BallDefinitions)
+local BundleValue = require(Shared.BundleValue)
 local Catalog = require(Shared.Catalog)
 local Config = require(Shared.Config)
 local JackOLantern = require(Shared.JackOLantern)
@@ -37,17 +43,19 @@ local TOP = 0.8 -- the plinth's height
 
 type Stand = {
 	model: Model,
-	offer: any,
-	prompt: ProximityPrompt,
-	status: TextLabel,
+	key: any, -- the offer it shows, or the featured ball type
+	offer: any?,
+	prompt: ProximityPrompt?,
+	status: TextLabel?,
 	ball: Model,
 	ballAt: CFrame,
-	ghost: Model,
-	ghostAt: CFrame,
+	ghost: Model?,
+	ghostAt: CFrame?,
 }
 
 local stand: Stand? = nil
 local owned: { [string]: boolean } = {}
+local featured: string? = nil -- today's featured power ball type (nil: the feature is off)
 
 local function part(props: { [string]: any }, parent: Instance): Part
 	local p = Instance.new("Part")
@@ -208,15 +216,15 @@ local function screen(p: BasePart, lines: { { text: string, size: number, color:
 	return labels
 end
 
-local function build(offer: any, lobby: Instance): Stand
-	local model = Instance.new("Model")
-	model.Name = "BundleDisplay_" .. offer.Id
-	local spot = ArenaLayout.lobbyPoint(offer.Display.X, 0, offer.Display.F)
+-- The featured spot `at` (deck coordinates), facing the helipad where everyone arrives.
+local function standFrame(at: { X: number, F: number }): CFrame
+	local spot = ArenaLayout.lobbyPoint(at.X, 0, at.F)
 	local spawn = ArenaLayout.lobbyPoint(Config.Lobby.Spawn.X, 0, Config.Lobby.Spawn.F)
-	-- facing the helipad, where everyone arrives
-	local base = CFrame.lookAt(spot, Vector3.new(spawn.X, spot.Y, spawn.Z))
+	return CFrame.lookAt(spot, Vector3.new(spawn.X, spot.Y, spawn.Z))
+end
 
-	-- plinth, with a glowing orange rim
+-- The round plinth, with a glowing rim in `glow`.
+local function plinth(base: CFrame, glow: Color3, model: Model)
 	part({
 		Name = "Plinth",
 		Shape = Enum.PartType.Cylinder,
@@ -231,17 +239,24 @@ local function build(offer: any, lobby: Instance): Stand
 		Shape = Enum.PartType.Cylinder,
 		Size = Vector3.new(0.2, 9.3, 9.3),
 		CFrame = base * CFrame.new(0, TOP - 0.15, 0) * CFrame.Angles(0, 0, math.rad(90)),
-		Color = ORANGE,
+		Color = glow,
 		Material = Enum.Material.Neon,
 	}, model)
 	local rimLight = Instance.new("PointLight")
-	rimLight.Color = ORANGE
+	rimLight.Color = glow
 	rimLight.Range = 12
 	rimLight.Brightness = 1.4
 	rimLight.Shadows = false
 	rimLight.Parent = rim
+end
 
-	-- the sign at the back, on two posts
+-- The sign at the back, on two posts, framed in `glow`. Returns its text labels.
+local function sign(
+	base: CFrame,
+	glow: Color3,
+	lines: { { text: string, size: number, color: Color3 } },
+	model: Model
+): { TextLabel }
 	for _, sx in { -3.9, 3.9 } do
 		part({
 			Name = "Post",
@@ -258,20 +273,36 @@ local function build(offer: any, lobby: Instance): Stand
 		CFrame = base * CFrame.new(0, TOP + 8, 3.4),
 		Color = INK,
 	}, model)
-	local labels = screen(board, {
-		{ text = string.upper(offer.Name), size = 0.42, color = ORANGE },
-		{ text = ("%d items + %s coins"):format(#offer.Items, commas(offer.Coins)), size = 0.24, color = GHOST_TEXT },
-		{ text = "", size = 0.26, color = Color3.fromRGB(255, 214, 90) },
-	})
+	local labels = screen(board, lines)
 	for _, e in { { 0, 1.5, 8.6, 0.12 }, { 0, -1.5, 8.6, 0.12 }, { -4.25, 0, 0.12, 3.1 }, { 4.25, 0, 0.12, 3.1 } } do
 		part({
 			Name = "SignGlow",
 			Size = Vector3.new(e[3], e[4], 0.1),
 			CFrame = board.CFrame * CFrame.new(e[1], e[2], -0.22),
-			Color = ORANGE,
+			Color = glow,
 			Material = Enum.Material.Neon,
 		}, model)
 	end
+	return labels
+end
+
+local function build(offer: any, lobby: Instance): Stand
+	local model = Instance.new("Model")
+	model.Name = "BundleDisplay_" .. offer.Id
+	local base = standFrame(offer.Display)
+	plinth(base, ORANGE, model)
+	-- the worth line is the items' catalog Price (their value) plus the coins, as in the Shop's strip;
+	-- no crossed-out "was" price, for the reason given at the strip's Buy button (CoinShopController)
+	local labels = sign(base, ORANGE, {
+		{ text = string.upper(offer.Name), size = 0.34, color = ORANGE },
+		{ text = ("%d items + %s coins"):format(#offer.Items, commas(offer.Coins)), size = 0.2, color = GHOST_TEXT },
+		{
+			text = ("WORTH %s COINS"):format(commas(BundleValue.worth(offer, Catalog))),
+			size = 0.22,
+			color = Color3.fromRGB(255, 214, 90),
+		},
+		{ text = "", size = 0.2, color = GHOST_TEXT },
+	}, model)
 
 	-- the dummy in the Pumpkin Head pose
 	local rig = ShopController.posedDummy("PumpkinHead")
@@ -334,14 +365,78 @@ local function build(offer: any, lobby: Instance): Stand
 	model.Parent = lobby
 	return {
 		model = model,
+		key = offer,
 		offer = offer,
 		prompt = prompt,
-		status = labels[3],
+		status = labels[4],
 		ball = ball,
 		ballAt = ballAt,
 		ghost = ghost,
 		ghostAt = ghostAt,
 	}
+end
+
+-- The featured ball of the day: the ball (its match colour and material, 1.5x size) turning over a
+-- column inside a tilted neon ring, and a sign saying what being featured means today.
+local function buildFeatured(ballType: string, lobby: Instance): Stand
+	local def = BallDefinitions.get(ballType)
+	local model = Instance.new("Model")
+	model.Name = "FeaturedBall_" .. ballType
+	local base = standFrame(Config.Lobby.Featured)
+	plinth(base, def.Color, model)
+	local bonus = Config.PowerUps.Featured
+	sign(base, def.Color, {
+		{ text = "FEATURED BALL", size = 0.22, color = Color3.fromRGB(255, 214, 90) },
+		{ text = def.DisplayName, size = 0.36, color = def.Color:Lerp(Color3.new(1, 1, 1), 0.25) },
+		{ text = ("Drops %dx more today"):format(bonus.WeightBoost), size = 0.18, color = GHOST_TEXT },
+		{ text = ("Its KOs count %dx for mastery"):format(bonus.MasteryBonus), size = 0.18, color = GHOST_TEXT },
+	}, model)
+	part({
+		Name = "Column",
+		Size = Vector3.new(1.6, 2.4, 1.6),
+		CFrame = base * CFrame.new(0, TOP + 1.2, -0.4),
+		Color = PLINTH:Lerp(Color3.new(1, 1, 1), 0.08),
+		Material = Enum.Material.Slate,
+		CanCollide = true,
+	}, model)
+	part({
+		Name = "ColumnCap",
+		Size = Vector3.new(1.9, 0.2, 1.9),
+		CFrame = base * CFrame.new(0, TOP + 2.5, -0.4),
+		Color = def.Color,
+		Material = Enum.Material.Neon,
+	}, model)
+	local r = Config.Ball.Radius * def.RadiusScale * 1.5
+	local ballAt = base * CFrame.new(0, TOP + 3.1 + r, -0.4)
+	local ball = Instance.new("Model")
+	ball.Name = "Ball"
+	local sphere = part({
+		Name = "Sphere",
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * r * 2,
+		CFrame = ballAt,
+		Color = def.Color,
+		Material = def.Material,
+	}, ball)
+	ball.PrimaryPart = sphere
+	part({
+		Name = "Orbit",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(0.12, r * 2 + 1.4, r * 2 + 1.4),
+		CFrame = ballAt * CFrame.Angles(math.rad(20), 0, math.rad(90)),
+		Color = def.Color:Lerp(Color3.new(1, 1, 1), 0.4),
+		Material = Enum.Material.Neon,
+		Transparency = 0.35,
+	}, ball)
+	local light = Instance.new("PointLight")
+	light.Color = def.Color
+	light.Range = 10
+	light.Brightness = 1.2
+	light.Shadows = false
+	light.Parent = sphere
+	ball.Parent = model
+	model.Parent = lobby
+	return { model = model, key = ballType, ball = ball, ballAt = ballAt }
 end
 
 local function clear()
@@ -358,20 +453,33 @@ local function render()
 		lobby = stand.model.Parent -- the hub is lifted out while you're on the court: keep the stand
 	end
 	local offer = liveOffer()
-	if not offer or not lobby or not CoinShopController.unlocked() then
+	if offer and not CoinShopController.unlocked() then
+		offer = nil
+	end
+	-- a live offer's stand, else the featured ball of the day
+	local key = offer or featured
+	if not key or not lobby then
 		clear()
 		return
 	end
-	if stand and (stand.offer ~= offer or stand.model.Parent ~= lobby) then
-		clear() -- another offer, or the hub was rebuilt
+	if stand and (stand.key ~= key or stand.model.Parent ~= lobby) then
+		clear() -- another offer or ball, or the hub was rebuilt
+	end
+	if not offer then
+		stand = stand or buildFeatured(key, lobby)
+		return
 	end
 	local s = stand or build(offer, lobby)
 	stand = s
 	local have = ownsAll(offer)
-	s.prompt.Enabled = not have
-	s.status.Text = if have
+	local robux = CoinShopController.offerRobux(offer) -- the product's real price once it has loaded
+	local prompt = s.prompt :: ProximityPrompt
+	local status = s.status :: TextLabel
+	prompt.Enabled = not have
+	prompt.ActionText = if offer.ProductId > 0 then ("Buy · R$ %d"):format(robux) else "Soon"
+	status.Text = if have
 		then "OWNED · equip it in the Shop"
-		elseif offer.ProductId > 0 then ("R$ %d · LIMITED TIME"):format(offer.Robux)
+		elseif offer.ProductId > 0 then ("R$ %d · LIMITED TIME"):format(robux)
 		else "COMING SOON"
 end
 
@@ -381,28 +489,36 @@ function BundleDisplayController.start()
 	Net.on("Profile", function(d)
 		if type(d.owned) == "table" then
 			owned = d.owned
-			render()
 		end
+		if type(d.quests) == "table" then
+			local ball = d.quests.featured
+			featured = if type(ball) == "string" and BallDefinitions.Defs[ball] then ball else nil
+		end
+		render()
 	end)
 	player:GetAttributeChangedSignal("RobuxOk"):Connect(render)
-	ProximityPromptService.PromptTriggered:Connect(function(prompt)
-		if stand and prompt == stand.prompt then
+	ProximityPromptService.PromptTriggered:Connect(function(prompt: ProximityPrompt)
+		if stand and stand.offer and prompt == stand.prompt then
 			CoinShopController.buyOffer(stand.offer)
 		end
 	end)
 	-- the ball turns and the ghost bobs (only while you can see them)
 	RunService.RenderStepped:Connect(function()
 		local s = stand
-		if not s or HubController.lobbyHidden then
+		-- skip a stand that's been taken out of the world (render rebuilds it within 5 s)
+		if not s or HubController.lobbyHidden or not s.model.Parent or not s.ball.PrimaryPart then
 			return
 		end
 		local t = os.clock()
 		s.ball:PivotTo(s.ballAt * CFrame.new(0, math.sin(t * 2) * 0.15, 0) * CFrame.Angles(0, t * 1.2, 0))
-		s.ghost:PivotTo(
-			s.ghostAt
-				* CFrame.new(math.sin(t * 0.7) * 0.4, math.sin(t * 1.6) * 0.5, 0)
-				* CFrame.Angles(0, math.sin(t * 0.9) * 0.35, math.sin(t * 1.3) * 0.12)
-		)
+		local ghost, ghostAt = s.ghost, s.ghostAt
+		if ghost and ghostAt and ghost.PrimaryPart then
+			ghost:PivotTo(
+				ghostAt
+					* CFrame.new(math.sin(t * 0.7) * 0.4, math.sin(t * 1.6) * 0.5, 0)
+					* CFrame.Angles(0, math.sin(t * 0.9) * 0.35, math.sin(t * 1.3) * 0.12)
+			)
+		end
 	end)
 	-- offers open and close on the clock, and the hub can stream in late
 	task.spawn(function()

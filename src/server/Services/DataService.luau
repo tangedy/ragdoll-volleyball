@@ -11,6 +11,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Progression = require(Shared.Progression)
 local Catalog = require(Shared.Catalog)
+local NetSchema = require(Shared.NetSchema)
 
 local DataService = {}
 
@@ -62,6 +63,18 @@ export type Profile = {
 	PowerKOs: { [string]: number },
 	-- quests ever claimed (unix time of the first claim; it gets the short Config.Quests.FirstCooldown)
 	QuestFirstClaims: { [string]: number },
+	-- level rewards: the highest level whose reward is banked (RewardService.payLevels). Level 1 pays
+	-- nothing, so it starts at 1; a save from before level rewards gets every level it has passed.
+	LevelRewardsPaid: number,
+	-- the group reward (GroupRewardService) was paid; it pays once per account
+	GroupRewardClaimed: boolean,
+	-- the one-time Starter Pack (Config.CoinShop.Starter) was bought
+	StarterBought: boolean,
+	-- the UTC date of the last VIP daily gift (GamePassService.dailyGift); it pays once a day
+	VipGiftDate: string,
+	-- the first-visit hub guidance (HubGuideController: the walk to the Shop, then the quest panel)
+	-- has played; it plays once per account
+	HubGuideSeen: boolean,
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -93,6 +106,11 @@ local function default(): Profile
 		RewardPicks = {},
 		PowerKOs = {},
 		QuestFirstClaims = {},
+		LevelRewardsPaid = 1,
+		GroupRewardClaimed = false,
+		StarterBought = false,
+		VipGiftDate = "",
+		HubGuideSeen = false,
 		Lock = nil,
 	}
 end
@@ -200,6 +218,7 @@ function DataService.migrate(old: any): Profile
 	if type(data.QuestFirstClaims) ~= "table" then
 		data.QuestFirstClaims = {}
 	end
+	data.LevelRewardsPaid = math.max(1, math.floor(tonumber(data.LevelRewardsPaid) or 1))
 	local done = Config.Tutorial.Done
 	if version < 13 then
 		-- v13: the 6-step tutorial (6 = done) becomes the 7-step guided hub tutorial. Anyone who had
@@ -212,6 +231,15 @@ function DataService.migrate(old: any): Profile
 	local step = tonumber(data.TutorialStep) or 1
 	data.TutorialStep = math.clamp(math.floor(step), 1, done)
 	data.TutorialRewarded = data.TutorialRewarded == true
+	data.GroupRewardClaimed = data.GroupRewardClaimed == true
+	data.StarterBought = data.StarterBought == true
+	data.VipGiftDate = if type(data.VipGiftDate) == "string" then data.VipGiftDate else ""
+	-- a save from before the guidance existed: anyone who has played a match already knows the hub
+	if type(old.HubGuideSeen) == "boolean" then
+		data.HubGuideSeen = old.HubGuideSeen
+	else
+		data.HubGuideSeen = (tonumber(data.Matches) or 0) >= 1
+	end
 	data.SchemaVersion = D.SchemaVersion
 	return data
 end
@@ -279,6 +307,11 @@ local function pushProfile(c: any)
 		boost = S.BoostService.status(c),
 		powerKOs = p.PowerKOs,
 		matches = p.Matches,
+		-- banked level rewards; `since` is where this session started, so the client knows which are new
+		levelRewards = { paid = p.LevelRewardsPaid, since = c.levelRewardsSince or p.LevelRewardsPaid },
+		groupReward = p.GroupRewardClaimed,
+		starter = p.StarterBought,
+		hubGuide = p.HubGuideSeen,
 	})
 	S.PlayerStateService.setAttr(c, "Level", p.Level)
 	S.PlayerStateService.setAttr(c, "Streak", p.CurrentWinStreak)
@@ -379,7 +412,13 @@ function DataService.load(c: any)
 		end
 		return
 	end
+	-- bank the level rewards this player is owed (all of them, once, for a save from before level
+	-- rewards); the ones above `levelRewardsSince` show as new on the client
+	c.levelRewardsSince = c.profile.LevelRewardsPaid
+	S.RewardService.payLevels(c)
 	pushProfile(c)
+	-- game passes are checked with Roblox after the profile is up, so a slow lookup never holds the join
+	task.spawn(S.GamePassService.refresh, c)
 	-- set before ProfileReady so the Robux buttons (Bundles, Coins) are there when the loading
 	-- screen lifts, with the rest of the row; PurchaseService's clock keeps it current after that
 	player:SetAttribute("RobuxOk", S.PurchaseService.robuxUnlocked(c))
@@ -401,6 +440,13 @@ function DataService.save(c: any, release: boolean): boolean
 end
 
 function DataService.start()
+	-- the first-visit guidance started (HubGuideController): it never plays again for this account
+	S.NetService.on(NetSchema.Actions.HubGuideSeen, function(player)
+		local c = S.PlayerStateService.get(player)
+		if c and c.profile and c.profileLoaded then
+			c.profile.HubGuideSeen = true
+		end
+	end)
 	task.spawn(function()
 		while true do
 			task.wait(D.AutosaveInterval)

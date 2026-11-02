@@ -1,4 +1,4 @@
-# Handoff for the next Claude session (Oct 27, 2026)
+# Handoff for the next Claude session (Nov 2, 2026)
 
 Ragdoll Dodgeball is a Roblox game written in Luau and synced with Rojo. Read these first:
 - [README.md](../README.md): setup, controls, dev keys, checks.
@@ -30,11 +30,63 @@ This doc covers how to work on the project, what the user likes, what changed in
 - `RD_Gallery` `Preview…` leaves the shop open until you close it (or a match starts and closes it).
 - Local parts more than about 1,000 studs from your character aren't simulated on the client, and change signals are deferred (a "writing" flag can't guard your own writes).
 - Studio blocks DataStores ("API access is not enabled"). The game plays unsaved; that's expected.
-- The daily rewards sheet auto-opens on join and blocks matchmaking until you close it. With Play again on, a 3v3 bot match starts about 7 s after the hub is clear.
-- Useful `RD_Gallery` values: `Shop`, `DailyPanel`, `DailyClaim`, `Preview<FinisherModule>` (e.g. `PreviewMeteor`), `Tutorial1`..`Tutorial5`, `Hint`, `Feed`. Set `""` between repeats.
+- A brand-new player (every Studio join: Studio can't save) starts in the guided tutorial on their own court copy, with no daily sheet and no PLAY. `RD_Gallery = "TutorialSkip"` jumps to the hub. Players who have finished get the daily sheet on join and the PLAY button; nobody is queued until they press PLAY (or come back from a match with Play again on). The countdown always runs the full 25 s; `SkipIntermission` (Dev remote) cuts it short.
+- Useful `RD_Gallery` values: `Shop`, `DailyPanel`, `DailyClaim`, `Preview<FinisherModule>` (e.g. `PreviewMeteor`), `Hint`, `Feed`, `Touch`, and the tutorial ones under "Guided tutorial" below. Set `""` between repeats. `""` does nothing by itself: it doesn't un-pin a `Tutorial<N>` step (use `Tutorial0` or `Clear`).
+- **Studio only draws while its window is in front.** Covered or unfocused, it drops to about 15 fps and then 0: `RenderStepped` stops (Heartbeat keeps going), so the HUD and tutorial UI freeze and `screen_capture` times out. Check with a 1 s `RenderStepped` count before trusting UI reads, and ask the user to keep Studio in front.
+- **Phone emulation** (Studio's device emulator, 750 × 381) turns `user_mouse_input` clicks into touches, shifted: the game sees (x − 62, y − 20). So click at a GUI's `AbsolutePosition + AbsoluteSize/2 + (62, 20)`. Touch Throw then works reliably (every press fired).
+- To drive the tutorial's server side directly, fire the real remote from the Client context: find `NetSchema.ActionRemote` under ReplicatedStorage and `FireServer("Practice", { event = "Pickup" })`. That's also how to test that spam can't skip steps.
 - Ask before stopping a playtest the user may be in.
 
 **Commits:** the user commits by themselves. Don't commit unless asked.
+
+## Guided tutorial and PLAY (Nov 2)
+Prompts 2–6 and 9 in [docs/prompts/build-path.md](prompts/build-path.md); the 7-step contract there is fixed. What's verified is in the top section of [STATUS.md](STATUS.md).
+
+**Flow**
+1. Join → `TutorialService.sync` sends the saved step. `PracticeController` builds your own client-only copy of `workspace.Arena` at `Config.Tutorial.Court.Offset` (800 out in −Z). You stand on the Red half, the dummy on the far half.
+2. The steps: Grab → FirstHit → KnockOff (opens with the two % callouts) → Heavy (the dummy at 50%, one Heavy ball) → Discover (4 s, by itself) → Dodge (`TutorialDrillController`) → Done.
+3. The server only moves a step on that step's own Practice event, at most once per 0.5 s. At Done it pays `Config.Tutorial.Reward` once (`TutorialRewarded`) and sets the `TutorialDone` player attribute.
+4. The Done card shows the reward. "Let's play!" → `PracticeController.finishTutorial` moves you to the hub, then the daily sheet opens.
+5. In the hub: PLAY (HUDController "Corner") → queued → "Waiting for next match · N" with Cancel. `MatchService.queuedPlayers` never queues `TutorialDone ~= true`.
+
+**Client pieces**
+- `TutorialController`:
+  - the step card at the top centre, which slides right of the quest panel if they'd overlap
+  - the 3D arrow
+  - the step-3 callouts (`callout()`: "Dummy", then "Yours", `CardSeconds` each, with pulsing rings)
+  - the Done card
+  - `HUDController.tutorialDamage`, which shows your HUD % from step 3 on
+- `PracticeController`:
+  - the court copy, dummy, balls, the Heavy ball, DummyOut / HeavyOut
+  - API: `dummyModel()`, `ballParts()`, `tutorialStep()`, `onCourt()`, `setBallsEnabled()`, `finishTutorial()`
+- `TutorialDrillController`: the dummy's throws, the local knock and the local HUD %. The drill ball is never a server ball, so it can't count toward the "Dodge 5 balls" quest.
+
+**Dev shortcuts** (Studio only; the client command bar or MCP Client context)
+- `RD_Gallery = "TutorialReset"`: back to step 1 on the server. It doesn't pay again: the reward flag stays set. It also closes a Done card left up.
+- `RD_Gallery = "TutorialSkip"`: straight to Done, with no reward.
+- `RD_Gallery = "Tutorial1"`..`"Tutorial6"`: pins that step's card for screenshots, showing everywhere, not just on the court. `"Tutorial7"` shows the Done card. `"Tutorial0"` (or `"Clear"`) goes back to the real step. While pinned, real Tutorial messages are only stored, so finish a pinned check before playing on.
+- `RD_Gallery = "Touch"`: the touch layout on a desktop.
+
+## Level rewards (Nov 2, prompt 10, not committed)
+Design and totals are in [ECONOMY.md §8](ECONOMY.md). Offline tests: the four "level rewards:" tests (70/70 pass).
+
+**Server**
+- `Config.Progression.Rewards[level]` (levels 2–100; level 1 pays nothing) is built from `LEVEL_COINS`, `LEVEL_BONUS` and `LEVEL_TITLES` just above `Config.Progression`. Most levels pay coins (50, then +25 every ten levels); every 5th a Rare+ bonus spin or a quest chest; every 10th an earn-only title.
+- **Auto-bank, no claiming.** `RewardService.payLevels(c)` grants every level above `profile.LevelRewardsPaid` up to the player's level, in order, marking each level before its grant (so it can never pay twice). It runs in `awardMatch` right after XP, and in `DataService.load` before the first push, which is how a save from before level rewards gets back-pay (its mark defaults to 1). `LevelRewardsPaid` is an additive field; the schema wasn't bumped.
+- On a level-up in a match: `LevelUp` to the player (`{ from, level, rewards }`) and a broadcast `Feed` line ("⭐ Name reached Level N!"). `LevelUp` isn't listed in `NetSchema.Feedback` (not my file; nothing enforces that list).
+- The Profile push carries `levelRewards = { paid, since }`; `since` is the mark when this session started (`c.levelRewardsSince`), so the client knows which are new.
+- **Level titles** are Catalog `Title`s with `Unlock = { Level = n }` (the `Unlock` type now has optional `Ball`/`Knockouts`/`Level`). Like the mastery titles they're never sold, spun or rolled. `Catalog.unlockProgress` takes an optional `level` and returns 0 progress without it, so `ShopService.checkUnlocks` never grants one.
+
+**Client** (`LevelRewardsController`, after `QuestController` in Bootstrap)
+- It doesn't edit `HUDController`: it finds the Lv sticker on the coins chip (`PlayerGui.Profile.Chip`, the Frame whose label reads "Lv N"), lays an invisible button over it (only while in the hub, so match clicks go to the game) and adds the `Theme.dot`. The dot shows while levels banked this session haven't been seen in the sheet. That "seen" is session-only, with no remote.
+- The sheet (leaf band, 760 × 596): a level/XP strip, then ten cards a page (2 × 5) with ‹ › and ten page pips. Arrows or L1/R1 flip pages, B closes. Cards: banked = check stamp + "✓ Got it!" (+ NEW! if banked this session), next = breathing glow, sunburst and an XP bar, later = paper veil + frame-built padlock. 5ths wear BONUS, 10ths are sun cards at 1.05× with a turning sunburst and a TITLE (MAX! at 100) sticker. All art is frames (coins, mini wheel, toy chest, name tag, padlock).
+- It won't open during the tutorial (`TutorialDone ~= true`) or outside the hub: a hint says why. It closes itself if you leave the hub.
+- The level-up card slides in at the left: a sun star with the level, LEVEL UP! on a leaf band, up to three reward rows ("+N more" past that). It stays about 5 s and tapping it opens the sheet in the hub. A title level adds confetti. Back-pay on join shows one feed line instead.
+- **Small touch outside the named files:** `ShopController` (`primaryAction` / `renderAction`) shows level titles as "🔒 Level N" with a "Reach level N" hint, instead of the power-ball KO text.
+
+**Dev shortcut** (Studio, server context): `player:SetAttribute("RD_Level", n)` sets the level, banks what's owed and plays the level-up card. A lower n also lowers the banked mark, so the same rewards can be tried again.
+
+**Checked in Studio (phone emulator, 750 × 381):** the sticker hook found the right frame; tapping it during the tutorial showed the hint and kept the sheet shut. After `TutorialSkip`, `RD_Level` 4 then 5 showed the card ("LEVEL UP!", "5", "Lv 5 Rare+ spin · in Spin"), both feed lines and the dot. **Not checked:** the sheet itself (the playtest closed before I could open it, and screenshots failed because Studio wasn't in front), the card by eye, a real match level-up, gamepad paging, and the join back-pay on a real saved profile (offline tests only).
 
 ## User preferences
 - Wants bold, "poppy", attention-grabbing UI, built in the Toybox Island language. They rejected a first pass as "barely changed".
@@ -97,6 +149,9 @@ Results are in the "Oct 27 verification sweep" table in [ACCEPTANCE_TESTS.md](AC
   - The tip card on touch sits at `(1,-12,1,-320)`, which isn't checked on a real phone size.
   - The headshot plates on narrow screens aren't checked.
 - **Gamepad navigation** through the new shop grid and the daily sheet.
+- **The tutorial with a mouse and with a gamepad,** the Discover card by eye, rejoining mid-tutorial (Studio can't save) and falling into the void during the drill. See the Nov 2 section of STATUS.md.
+- **Strict `luau-lsp` has 70 errors again** (Config's quest table, JackOLantern, Theme, QuestService and others). None are in the tutorial files.
+- **Level rewards (prompt 10):** the sheet in Studio, a real match level-up and gamepad paging. See "Level rewards" above.
 - **Live publish:** the user publishes manually. Remind them that running servers keep old code until restarted ("Restart servers for updates").
 
 ## UI sound vocabulary (`uiCues` in `Sounds.luau`)

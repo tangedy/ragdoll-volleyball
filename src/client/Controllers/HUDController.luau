@@ -20,6 +20,7 @@ local ProjectileMath = require(Shared.ProjectileMath)
 local Net = require(script.Parent.Net)
 local AimController = require(script.Parent.AimController)
 local LockController = require(script.Parent.LockController)
+local InputController = require(script.Parent.InputController)
 local SoundController = require(script.Parent.SoundController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
@@ -31,6 +32,7 @@ local HUDController = {}
 
 HUDController.settings = { CameraShake = true, ReducedMotion = false }
 HUDController.cinematic = false
+HUDController.tutorialDamage = false -- TutorialController: show your % in the hub during the tutorial
 
 local gui: ScreenGui
 local overlay: ScreenGui -- full-screen flashes (ignores insets)
@@ -44,6 +46,8 @@ local shownDamage = 0 -- the damage % the HUD last drew
 local queuedAt: number? = nil -- os.clock() of the last PLAY press, until the server's AutoQueue answers
 local PLAY_SIZE = Vector2.new(280, 92) -- the hub PLAY button, ledge included
 local PLAY_LEDGE = 8
+local KEY_SIZE = 68 -- the PC key bar's circles
+local KEYS_H = KEY_SIZE + 10 -- plus the key tags hanging off their bottom edge
 
 local function tween(
 	inst: Instance,
@@ -520,7 +524,7 @@ local function build()
 	local damage = Theme.new("Frame", {
 		Name = "Damage",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L - 46 - Theme.Space.M - 42 - Theme.Space.S),
+		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L - KEYS_H - Theme.Space.M - 42 - Theme.Space.S),
 		Size = UDim2.fromOffset(140, 64),
 		BackgroundTransparency = 1,
 		Visible = false,
@@ -535,35 +539,36 @@ local function build()
 		Text = "DAMAGE",
 	}, 2)
 
-	-- Bottom centre: controller legends (with cooldowns)
+	-- Bottom centre: the PC / controller key bar, the touch buttons' glyphs in see-through circles
+	-- with the key under each (cooldowns and dimming come from InputController)
+	local keyNames = { "Lock", "Dodge", "Throw", "Catch" }
 	local legends = Theme.new("Frame", {
 		Name = "Legends",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -Theme.Space.L),
-		Size = UDim2.fromOffset(3 * 144 + 2 * Theme.Space.S, 46),
+		Size = UDim2.fromOffset(#keyNames * KEY_SIZE + (#keyNames - 1) * Theme.Space.M, KEYS_H),
 		BackgroundTransparency = 1,
 	}, gui)
 	Theme.new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
-		Padding = UDim.new(0, Theme.Space.S),
+		Padding = UDim.new(0, Theme.Space.M),
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Top,
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, legends)
 	Theme.autoScale(legends, 0.95)
 	refs.chips = legends
-	refs.dodgeChip, refs.dodgeKey = Theme.legend(legends, "Q", "Dodge", { LayoutOrder = 1 }, T.joyRed)
-	refs.catchChip, refs.catchKey = Theme.legend(legends, "E", "Catch", { LayoutOrder = 2 }, T.joyBlue)
-	-- camera lock: shows the current mode; Shift (R3) or a click cycles it
-	local lockChip, lockKey, lockCaption = Theme.legend(legends, "Shift", "Free", { LayoutOrder = 3 }, T.sun)
-	lockKey.TextSize = 10
-	refs.lockKey, refs.lockCaption = lockKey, lockCaption
+	for i, name in keyNames do
+		InputController.keyButton(legends, name, KEY_SIZE, { LayoutOrder = i })
+	end
+	-- camera lock: its glyph shows the current mode; Shift (R3) or a click cycles it
 	Theme.new("TextButton", {
 		Name = "Hit",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		Text = "",
-		ZIndex = lockChip.ZIndex + 4,
-	}, lockChip).Activated
+		ZIndex = 5,
+	}, InputController.keyButtons.Lock).Activated
 		:Connect(function()
 			LockController.cycle()
 		end)
@@ -1281,6 +1286,16 @@ local function update()
 		refs.play.Position = if touch then UDim2.fromScale(0.5, 0) else UDim2.fromScale(0.5, 1)
 		refs.cancel.AnchorPoint = if touch then Vector2.new(1, 1) else Vector2.new(1, 0)
 		refs.cancel.Position = if touch then UDim2.fromScale(1, 1) else UDim2.fromScale(1, 0)
+		-- no legends on touch: your % and the held ball drop into their row, side by side, so on a
+		-- phone they sit under your character's feet instead of over its body
+		local legendsRow = -Theme.Space.L
+		local above = legendsRow - KEYS_H - Theme.Space.M
+		refs.damageFrame.AnchorPoint = if touch then Vector2.new(1, 1) else Vector2.new(0.5, 1)
+		refs.damageFrame.Position = if touch
+			then UDim2.new(0.5, -Theme.Space.S, 1, legendsRow)
+			else UDim2.new(0.5, 0, 1, above - 42 - Theme.Space.S)
+		refs.held.AnchorPoint = if touch then Vector2.new(0, 1) else Vector2.new(0.5, 1)
+		refs.held.Position = if touch then UDim2.new(0.5, Theme.Space.S, 1, legendsRow) else UDim2.new(0.5, 0, 1, above)
 	end
 	refs.corner.AnchorPoint = if touch then Vector2.new(1, 0) else Vector2.new(1, 1)
 	refs.corner.Position = if touch
@@ -1331,7 +1346,8 @@ local function update()
 	end
 
 	-- damage %
-	refs.damageFrame.Visible = live and inMatch and status == "Active"
+	refs.damageFrame.Visible = (live and inMatch and status == "Active")
+		or (HUDController.tutorialDamage and not inMatch)
 	local dmg = tonumber(player:GetAttribute("Damage")) or 0
 	if dmg ~= shownDamage then
 		refs.damage.Text = ("%d%%"):format(dmg)
@@ -1342,23 +1358,13 @@ local function update()
 		shownDamage = dmg
 	end
 
-	-- legends + cooldowns (touch screens have their own buttons)
+	-- key bar (touch screens have their own buttons)
 	refs.chips.Visible = AimController.lastInput ~= "Touch"
-	local t = Workspace:GetServerTimeNow()
-	local function fill(chip: Frame, readyAt: any, duration: number)
-		local frac = if type(readyAt) == "number" then math.clamp((readyAt - t) / duration, 0, 1) else 0
-		(chip:FindFirstChild("Fill") :: Frame).Size = UDim2.fromScale(frac, 1)
-		local key = chip:FindFirstChild("Key") :: Frame
-		key.BackgroundTransparency = if frac > 0 then 0.55 else 0
-	end
-	fill(refs.dodgeChip, player:GetAttribute("DodgeReadyAt"), Config.Player.DodgeCooldown)
-	fill(refs.catchChip, player:GetAttribute("CatchReadyAt"), Config.Player.CatchCooldown)
-	local gamepad = AimController.lastInput == "Gamepad"
-	refs.dodgeKey.Text = if gamepad then "X" else "Q"
-	refs.catchKey.Text = if gamepad then "LB" else "E"
-	refs.lockKey.Text = if gamepad then "R3" else "Shift"
-	local mode = LockController.mode
-	refs.lockCaption.Text = if mode == "Shift" then "Shift lock" elseif mode == "Aim" then "Aim lock" else "Free cam"
+end
+
+-- Your damage % frame (the tutorial's "This is YOUR %" callout rings it).
+function HUDController.damageFrame(): Frame?
+	return refs.damageFrame
 end
 
 function HUDController.init()

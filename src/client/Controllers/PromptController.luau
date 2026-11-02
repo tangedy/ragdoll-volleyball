@@ -4,13 +4,18 @@
 -- with Style = Custom, so Roblox draws nothing of its own; this draws each one floating over the
 -- thing it opens: the station's name in outlined paper text over a toned toy button with the key to press (E, or the gamepad button) and the action. The key still works
 -- through the prompt itself; clicking or tapping the button triggers it the same way.
+-- The group reward kiosk's answer (GroupRewardService) comes back here as a hint.
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local RunService = game:GetService("RunService")
 
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 local HUDController = require(script.Parent.HUDController)
+local Net = require(script.Parent.Net)
 local ShopController = require(script.Parent.ShopController)
+local SoundController = require(script.Parent.SoundController)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
 
 local player = Players.LocalPlayer
@@ -25,11 +30,23 @@ local TONES: { [string]: Color3 } = {
 	SpinPrompt = T.candy,
 	DailyPrompt = T.leaf,
 	BundlePrompt = T.sun, -- the Haunted Bundle's stand (BundleDisplayController)
+	GroupRewardPrompt = T.leaf, -- the group reward kiosk (LobbyBuilder)
+}
+local GROUP_PROMPT = "GroupRewardPrompt"
+-- what the kiosk says when it doesn't pay (GroupRewardService.claim's reasons)
+local GROUP_HINTS: { [string]: string } = {
+	NotMember = "Join the group, then come back!",
+	Claimed = "Already claimed. Thanks for joining!",
+	Tutorial = "Finish the tutorial first!",
+	Error = "Couldn't check the group. Try again soon!",
+	NotReady = "One moment, still loading…",
 }
 local BUTTON = Vector2.new(250, 58)
 local KEY = 34
 
 local shown: { [ProximityPrompt]: BillboardGui } = {}
+local inputs: { [ProximityPrompt]: Enum.ProximityPromptInputType } = {}
+local groupClaimed = false -- this account has had the group reward (Profile push)
 
 local function keyText(prompt: ProximityPrompt, inputType: Enum.ProximityPromptInputType): string?
 	if inputType == Enum.ProximityPromptInputType.Touch then
@@ -44,6 +61,7 @@ local function hide(prompt: ProximityPrompt)
 	local bb = shown[prompt]
 	if bb then
 		shown[prompt] = nil
+		inputs[prompt] = nil
 		bb:Destroy()
 	end
 end
@@ -55,6 +73,10 @@ local function show(prompt: ProximityPrompt, inputType: Enum.ProximityPromptInpu
 		return
 	end
 	local tone = TONES[prompt.Name] or T.sky
+	local action = prompt.ActionText
+	if prompt.Name == GROUP_PROMPT and groupClaimed then
+		tone, action = T.surfaceSunk, "Claimed ✓"
+	end
 	local bb = new("BillboardGui", {
 		Name = "Prompt_" .. prompt.Name,
 		Adornee = anchor,
@@ -78,7 +100,7 @@ local function show(prompt: ProximityPrompt, inputType: Enum.ProximityPromptInpu
 		ZIndex = 2,
 	}, 2.5)
 	new("UITextSizeConstraint", { MaxTextSize = 26 }, title)
-	local button = Theme.button(root, prompt.ActionText, tone, {
+	local button = Theme.button(root, action, tone, {
 		Name = "Action",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 40),
@@ -115,10 +137,46 @@ local function show(prompt: ProximityPrompt, inputType: Enum.ProximityPromptInpu
 		prompt:InputHoldEnd()
 	end)
 	shown[prompt] = bb
+	inputs[prompt] = inputType
 	Theme.pop(root, 0.6, Theme.Motion.Slow)
 end
 
+-- The hint for a group reward claim, and the kiosk's button turns to Claimed once it has paid.
+local function rewardLine(reward: { [string]: any }): string
+	if reward.kind == "Spin" then
+		local wheel = Config.Spin.Wheels[reward.wheel]
+		return ("🎁 %s! Use it in Spin"):format(if wheel then wheel.Name else "Bonus spin")
+	elseif reward.kind == "Coins" then
+		return ("🎁 +%d coins!"):format(reward.coins or 0)
+	end
+	return "🎁 Reward claimed!"
+end
+
+local function refreshGroupPrompt()
+	for prompt, inputType in table.clone(inputs) do
+		if prompt.Name == GROUP_PROMPT then
+			show(prompt, inputType)
+		end
+	end
+end
+
 function PromptController.start()
+	Net.on("Profile", function(data)
+		local claimed = data.groupReward == true
+		if claimed ~= groupClaimed then
+			groupClaimed = claimed
+			refreshGroupPrompt()
+		end
+	end)
+	Net.on("GroupReward", function(data)
+		if data.ok then
+			SoundController.play("UISuccess")
+			HUDController.hint(rewardLine(data.reward or {}), 3)
+		else
+			SoundController.play("UIError")
+			HUDController.hint(GROUP_HINTS[data.reason] or GROUP_HINTS.Error, 2.4)
+		end
+	end)
 	ProximityPromptService.PromptShown:Connect(function(prompt, inputType)
 		if prompt.Style == Enum.ProximityPromptStyle.Custom then
 			show(prompt, inputType)

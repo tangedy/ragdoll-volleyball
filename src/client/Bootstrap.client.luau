@@ -34,9 +34,11 @@ local ORDER = {
 	"ShopController",
 	"SpinController",
 	"QuestController",
+	"LevelRewardsController",
 	"PromptController",
 	"CoinShopController",
 	"BundleDisplayController",
+	"HubGuideController",
 	"FavoriteController",
 	"DebugController",
 }

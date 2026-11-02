@@ -593,7 +593,12 @@ local function primaryAction(item: Catalog.Item?)
 		Net.request(Net.Actions.EquipItem, { id = item.Id })
 	elseif item.Unlock then
 		SoundController.play("UIError")
-		HUDController.hint("Earn it with power-ball knockouts", 1.6)
+		HUDController.hint(
+			if item.Unlock.Level
+				then ("Reach level %d to earn it"):format(item.Unlock.Level)
+				else "Earn it with power-ball knockouts",
+			1.6
+		)
 	elseif liveOffer(item) then
 		local CoinShopController = require(script.Parent.CoinShopController) :: any
 		CoinShopController.buyOffer(liveOffer(item))
@@ -659,10 +664,15 @@ local function renderAction(item: Catalog.Item, b: TextButton)
 		Theme.recolor(b, T.sky)
 		Theme.setEnabled(b, true)
 	elseif item.Unlock then
-		-- Power Ball Mastery: locked until earned, showing the progress
-		local have, need = Catalog.unlockProgress(item, profile.powerKOs)
+		-- Power Ball Mastery or a level title: locked until earned, showing the progress
+		local have, need = Catalog.unlockProgress(item, profile.powerKOs, profile.level)
 		local ball = if item.Unlock.Ball == "All" then "each" else item.Unlock.Ball
-		Theme.setText(b, ("🔒 %d/%d %s KOs"):format(have, need, ball))
+		Theme.setText(
+			b,
+			if item.Unlock.Level
+				then ("🔒 Level %d"):format(need)
+				else ("🔒 %d/%d %s KOs"):format(have, need, ball or "")
+		)
 		Theme.recolor(b, "secondary")
 		Theme.setEnabled(b, false)
 	elseif liveOffer(item) then
@@ -2112,6 +2122,26 @@ local function buildDaily()
 	daily.close.Activated:Connect(function()
 		ShopController.openDaily(false)
 	end)
+	-- see-through sheet: the surface fades from 70% opaque at the left edge to clear at the right. The
+	-- fill is its own frame (a gradient on the CanvasGroup would fade the cards too), and the drop
+	-- shadow goes, since it would show through as a dark slab.
+	local sheetFrame = daily.frame :: CanvasGroup
+	sheetFrame.BackgroundTransparency = 1
+	local fill = new("Frame", {
+		Name = "Fill",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = T.surface,
+		BorderSizePixel = 0,
+		ZIndex = 1,
+	}, sheetFrame)
+	Theme.corner(fill, Theme.Radius.L)
+	new("UIGradient", {
+		Transparency = NumberSequence.new(0.3, 1),
+	}, fill)
+	local shadow = gui:FindFirstChild(sheetFrame.Name .. "_Shadow")
+	if shadow then
+		shadow:Destroy()
+	end
 	local body = daily.body :: Frame
 	-- the day cards, and in their place while a cosmetic pick waits, its choices
 	local function cardRow(name: string, gap: number): Frame

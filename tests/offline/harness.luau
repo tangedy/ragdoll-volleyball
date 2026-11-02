@@ -472,6 +472,7 @@ local SERVICES = {
 	"SpinService",
 	"PurchaseService",
 	"BoostService",
+	"GamePassService",
 	"QuestService",
 	"HalloweenService",
 }

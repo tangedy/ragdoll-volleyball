@@ -1,5 +1,59 @@
 # Implementation status (Oct 24, 2026)
 
+## Nov 2 guided tutorial: playtest and polish (build-path prompt 9)
+
+Built over prompts 2–6 and checked end to end in Studio. All of it ran under Studio's **phone emulation** (750 × 381, touch); there was no mouse or gamepad pass (see "Not checked").
+
+**The flow:** join → your own client-only copy of the court (`PracticeController`) with no daily sheet and no PLAY → 1 Grab → 2 Hit the dummy → 3 the % callouts, then knock it off → 4 the dummy back at 50% and one Heavy ball, which one-shots it → 5 Discover card (4 s) → 6 dodge drill → Done card (+250 coins, confetti) → "Let's play!" takes you to the hub → daily sheet → PLAY → "Waiting for next match · 25" counting down → match → back to the hub.
+
+**Fixed or added this pass** (all small):
+- **"This is YOUR %" callout (step 3):** step 3 opens with two callouts of `Config.Tutorial.CardSeconds` (2.6 s) each. First "Its % went up!", with a pulsing select-blue ring round the dummy's % billboard. Then "This is YOUR %! · Higher % = you fly further", with a ring and a sun "YOU" sticker on the HUD's own %. Then "Knock it off the court!". (`TutorialController.callout` / `updateCallouts`.)
+- **HUD % during the tutorial:** `HUDController.tutorialDamage` (set by TutorialController) shows the HUD "Damage" frame in the hub from step 3 to the end of the drill. The drill's local hits now actually show up there. `HUDController.damageFrame()` returns the frame.
+- **Phone: the HUD % and the held-ball pill covered your character.** On touch there are no legends, so both now sit side by side in the legends row, under your feet (measured: % at y 325–365 and pill at y 339–365 on screen, feet at 289). This also applies in matches. Desktop is unchanged.
+- **Phone: the step card covered the quest panel** at steps 4 and 5, where the ball stickers widen it. The card now slides just right of the panel when they'd overlap (measured: card x 249–523 at step 4 and 249–633 at step 5; the panel ends at 242; the touch controls start below y 72 and the card ends at 59).
+- **Dev reset with the Done card up** left the card stuck over the court. A step going backwards now closes it.
+
+**Verified by eye** (Studio screenshots, phone emulation, touch input):
+- No daily sheet on join; the step card is clear of the quest panel at step 1.
+- Grab: the pickup moved to step 2 in 1.3 s.
+- First hit: the dummy went to 27%; the "This is YOUR %" card, ring and YOU sticker on the HUD %.
+- A second Standard hit from 27% knocked it off (step 3 takes 2 hits from this range).
+- The Heavy step: the 50% dummy, the Heavy ball and sticker, one throw → step 5.
+- The dodge card with the pulsing Dodge button.
+- The Done card (+250, coins chip 250) → hub → daily sheet → close → PLAY (top right, clear of the touch controls).
+- PLAY → "Waiting for next match · 24 … 18" with Cancel.
+- Playtime kept ticking through the tutorial (1:02 → 1:38 → 2:34; it paused while I stood still, the AFK rule); "Dodge 5 balls" stayed 0/5 after the drill.
+
+**Verified numerically:**
+- **The drill:**
+  - Throws every ~3.6 s, and each hit raised the HUD % (78 → 104 → 130, about 26% a hit).
+  - One timed dodge counted (Practice "Dodged" → Done), and the HUD % went back to 0 afterwards.
+- **The match:** it started after the countdown, I won 2–0 and came back to the hub. With Play again on I came back queued, and the next intermission ran.
+- **The step order can't be broken:**
+  - Out-of-order events at step 1 (DummyOut, HeavyOut, Dodged, HitDummy) were ignored.
+  - 30 copies of the whole contract in one frame moved exactly one step at a time (1→2, then 2→3 0.5 s later), and no further.
+- **The reward is paid once:** 250 coins on the first finish; after `TutorialReset` and a full replay the Done message had no reward and coins stayed at 250.
+- **The dummy callout ring** was on during the first callout and both rings were gone afterwards, after the fixes (no screenshot on that run).
+- **The queue gate:** `MatchService.queuedPlayers` (the only way into a match, late joins included via `TeamService`) skips `TutorialDone ~= true`. That's from reading the code plus the existing TestService check; I didn't try to force a queue mid-tutorial in Studio.
+- **Checks:**
+  - `selene src`: 0/0.
+  - `stylua --check` on the touched files passes.
+  - `lune run tests/offline/run`: 66/66.
+  - `luau-lsp`: no errors in the touched files, but **70 errors elsewhere**: Config's quest table, JackOLantern, Theme, QuestService, BallSkinController, PracticeController (2), TestService, the Halloween files, ConfettiPop. The Oct 28 "0 errors" no longer holds; these predate this pass.
+
+**Not checked:**
+- **The mouse pass and gamepad:** Studio stayed in phone emulation all session.
+- **The Discover card by eye:** it went by between screenshots; only its width was measured.
+- **Rejoining mid-tutorial:** Studio can't save. By code: `TutorialService.sync` resends the saved step on join, PracticeController builds the court once the arena streams in, and step 5 restarts its timer.
+- **A migrated returning player in Studio:** the offline migration test passes (step ≥ 6 or Matches ≥ 1 → Done), and `TutorialSkip` showed PLAY at once.
+- **Dying in the void during the drill, or walking away mid-step:** by code, invisible walls hold you on your half, and falling below `VoidY` or respawning puts you back on the court spawn. Not tried.
+- **The level rewards button:** prompt 10 isn't in the repo (no `LevelRewardsController`), so there was nothing to check for overlap.
+- The user also played it through once in Studio and said it looked good.
+
+**Worth a look, not changed:**
+- **Drill hits use the real damage formula:** about 26% a hit from the dummy's range, so a player who keeps getting hit sees 100%+. It resets after the drill.
+- **The dummy's % billboard is small from your spawn on a phone** (about 57 × 26 px at 81 studs).
+
 ## Nov 1 daily quest rework
 
 Not run in Studio yet. `selene` and `stylua` pass; the offline tests were updated but not run here (Lune needs `rokit trust lune-org/lune` first), and `luau-lsp` needs `.luau-lsp/globalTypes.d.luau`.

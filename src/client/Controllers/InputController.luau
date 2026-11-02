@@ -21,6 +21,7 @@ local player = Players.LocalPlayer
 local InputController = {}
 
 InputController.buttons = {} :: { [string]: GuiObject }
+InputController.keyButtons = {} :: { [string]: GuiObject } -- the PC / controller key bar (HUD)
 InputController.changed = Instance.new("BindableEvent")
 
 local function moveDirection(): Vector3
@@ -242,7 +243,7 @@ end
 
 -- Fade a whole button out (0 = full ink, 1 = the glyph melts into the fill). The glyph blends
 -- colour rather than fading, so overlapping strokes stay solid instead of showing their joins; the
--- fill just turns more see-through.
+-- fill just turns more see-through. Key-bar buttons carry their own ink and rest transparency.
 local function setDim(btn: GuiObject, dim: number)
 	if btn:GetAttribute("Dim") == dim then
 		return
@@ -253,9 +254,13 @@ local function setDim(btn: GuiObject, dim: number)
 	if not box or not face then
 		return
 	end
-	face.BackgroundTransparency = FACE_TRANSPARENCY + (1 - FACE_TRANSPARENCY) * dim * 0.6
+	local ink = btn:GetAttribute("Ink")
+	local rest = btn:GetAttribute("FaceRest")
+	local inkColor = if typeof(ink) == "Color3" then ink else INK
+	local faceRest = if type(rest) == "number" then rest else FACE_TRANSPARENCY
+	face.BackgroundTransparency = faceRest + (1 - faceRest) * dim * 0.6
 	-- the exact ink token at rest, so the Halloween swap still recognises it
-	local color = if dim == 0 then INK else INK:Lerp(face.BackgroundColor3, dim)
+	local color = if dim == 0 then inkColor else inkColor:Lerp(face.BackgroundColor3, dim)
 	for _, d in box:GetDescendants() do
 		if d:GetAttribute("Glyph") and d:IsA("GuiObject") then
 			d.BackgroundColor3 = color
@@ -345,6 +350,101 @@ local function setLockGlyph(btn: GuiObject, mode: string)
 	if caption then
 		caption.Text = if mode == "Shift" then "SHIFT" elseif mode == "Aim" then "AIM" else "FREE"
 	end
+end
+
+-- PC / controller key bar: the touch glyphs in one-colour, mostly see-through circles (a dark tint
+-- with a paper glyph and rim), each with its key on a small tag across the bottom edge. The tag
+-- follows the input: keyboard keys, or controller buttons once a gamepad is in use.
+local KEY_FILL = T.outline
+local KEY_INK = T.paper
+local KEY_FACE_TRANSPARENCY = 0.7
+local KEYS: { [string]: { string } } = { -- { keyboard, gamepad }
+	Throw = { "LMB", "RT" },
+	Dodge = { "Q", "X" },
+	Catch = { "E", "LB" },
+	Lock = { "Shift", "R3" },
+}
+
+function InputController.keyButton(parent: Instance, name: string, size: number, props: { [string]: any }?): GuiObject
+	local b = Theme.new("Frame", {
+		Name = name,
+		Size = UDim2.fromOffset(size, size),
+		BackgroundTransparency = 1,
+	}, nil)
+	if props then
+		for k, v in props do
+			(b :: any)[k] = v
+		end
+	end
+	b:SetAttribute("Ink", KEY_INK)
+	b:SetAttribute("FaceRest", KEY_FACE_TRANSPARENCY)
+	local face = Theme.new("Frame", {
+		Name = "Face",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = KEY_FILL,
+		BackgroundTransparency = KEY_FACE_TRANSPARENCY,
+	}, b)
+	Theme.round(face)
+	-- the tutorial pulses this rim (Outline) and restores these Rest values
+	local outline = Theme.stroke(face, KEY_INK, 2, 0.5)
+	outline.Name = "Outline"
+	outline:SetAttribute("RestColor", KEY_INK)
+	outline:SetAttribute("RestThickness", 2)
+	outline:SetAttribute("RestTransparency", 0.5)
+	local cooldown = Theme.new("Frame", {
+		Name = "Cooldown",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		BackgroundColor3 = KEY_INK,
+		BackgroundTransparency = 0.75,
+		Size = UDim2.fromScale(0, 0),
+		BorderSizePixel = 0,
+	}, face)
+	Theme.round(cooldown)
+	local box = Theme.new("Frame", {
+		Name = "Icon",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.46),
+		Size = UDim2.fromScale(ICON, ICON),
+		BackgroundTransparency = 1,
+		ZIndex = 3,
+	}, b)
+	Glyphs[name](box, KEY_FILL) -- seams and keyholes take the fill colour
+	for _, d in box:GetDescendants() do
+		if d:GetAttribute("Glyph") and d:IsA("GuiObject") then
+			d.BackgroundColor3 = KEY_INK
+		end
+	end
+	local tag = Theme.text(b, 14, {
+		Name = "Key",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 1),
+		Size = UDim2.fromOffset(0, 20),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = KEY_FILL,
+		BackgroundTransparency = 0.35,
+		TextColor3 = KEY_INK,
+		ZIndex = 4,
+	})
+	Theme.round(tag)
+	Theme.stroke(tag, KEY_INK, 1, 0.5)
+	Theme.new("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) }, tag)
+	Theme.new("UISizeConstraint", { MinSize = Vector2.new(19, 0) }, tag)
+	local function setKey()
+		local keys = KEYS[name]
+		tag.Text = if AimController.lastInput == "Gamepad" then keys[2] else keys[1]
+	end
+	setKey()
+	InputController.changed.Event:Connect(setKey)
+	if name == "Lock" then
+		setLockGlyph(b, LockController.mode)
+		LockController.changed.Event:Connect(function(mode)
+			setLockGlyph(b, mode)
+		end)
+	end
+	InputController.keyButtons[name] = b
+	b.Parent = parent
+	return b
 end
 
 local function buildMobile()
@@ -519,16 +619,17 @@ function InputController.start()
 		end
 		refresh()
 	end)
-	-- cooldown overlays on mobile buttons
+	-- cooldown overlays on the touch buttons and the PC key bar
 	local cooldownOf: { [GuiObject]: Frame } = setmetatable({}, { __mode = "k" }) :: any
 	local lastFrac: { [GuiObject]: number } = setmetatable({}, { __mode = "k" }) :: any
-	RunService.RenderStepped:Connect(function()
-		local b = InputController.buttons
+	local function paint(b: { [string]: GuiObject }, t: number)
 		if not b.Throw then
 			return
 		end
-		local t = Workspace:GetServerTimeNow()
-		local function fill(btn: GuiObject, readyAt: any, duration: number)
+		local function fill(btn: GuiObject?, readyAt: any, duration: number)
+			if not btn then
+				return
+			end
 			local frac = if type(readyAt) == "number" then math.clamp((readyAt - t) / duration, 0, 1) else 0
 			-- the overlay is found once per button (a recursive search every frame added up)
 			local overlay = cooldownOf[btn]
@@ -549,7 +650,14 @@ function InputController.start()
 		local held = player:GetAttribute("HeldBall")
 		local hasBall = type(held) == "string" and held ~= ""
 		setDim(b.Throw, if hasBall then 0 else 0.45)
-		setDim(b.Catch, if hasBall then 0.45 else 0)
+		if b.Catch then
+			setDim(b.Catch, if hasBall then 0.45 else 0)
+		end
+	end
+	RunService.RenderStepped:Connect(function()
+		local t = Workspace:GetServerTimeNow()
+		paint(InputController.buttons, t)
+		paint(InputController.keyButtons, t)
 	end)
 end
 

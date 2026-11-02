@@ -268,6 +268,13 @@ local Cues: { [string]: { Layer } } = {
 	Pickup = {
 		{ id = S .. "clickfast.wav", volume = 0.35, pitch = 1.3, jitter = 0.05 },
 	},
+	-- a homing throw has locked on to you: a dry snap and two quick high pings, sharper and higher
+	-- than any match-flow ping, so it can't be mistaken for a round cue
+	LockOn = {
+		{ id = S .. "snap.wav", volume = 0.5, pitch = 1.8, stopAfter = 0.15 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 2.4, delay = 0.02, stopAfter = 0.08 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 2.4, delay = 0.1, stopAfter = 0.1 },
+	},
 	-- Eliminations
 	Elimination = {
 		-- the eliminator's sting: big boom + glassy sparkle + rising ping

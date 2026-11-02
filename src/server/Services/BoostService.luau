@@ -18,13 +18,18 @@ function BoostService.init(services: any)
 	S = services
 end
 
+-- Lifetime 2x: the BoostForever product (a profile flag) or the DoubleCoins game pass.
+local function forever(c: any): boolean
+	return c.profile.CoinBoostForever == true or S.GamePassService.owns(c, "DoubleCoins")
+end
+
 -- The coins multiplier for this combatant right now (1 for bots and anyone without a boost).
 function BoostService.multiplier(c: any): number
 	local p = c.profile
 	if not c.player or not p then
 		return 1
 	end
-	if p.CoinBoostForever == true or (tonumber(p.CoinBoostUntil) or 0) > os.time() then
+	if forever(c) or (tonumber(p.CoinBoostUntil) or 0) > os.time() then
 		return CS.BoostMultiplier
 	end
 	return 1
@@ -35,7 +40,7 @@ function BoostService.status(c: any): { untilTime: number, forever: boolean }
 	local p = c.profile
 	return {
 		untilTime = if p then tonumber(p.CoinBoostUntil) or 0 else 0,
-		forever = p ~= nil and p.CoinBoostForever == true,
+		forever = p ~= nil and forever(c),
 	}
 end
 

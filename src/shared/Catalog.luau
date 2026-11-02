@@ -27,10 +27,11 @@ export type Item = {
 	-- a bundle cosmetic: only granted by that Robux bundle (Config.CoinShop.Offers Id), never sold
 	-- for coins, and on the shelf only once owned. Price is just its value.
 	Bundle: string?,
-	-- a Power Ball Mastery cosmetic: granted once the player has this many credited knockouts with
-	-- that power ball (Ball = "All": that many with each type). Never sold, spun or rolled; on the
-	-- shelf locked, with progress, until earned.
-	Unlock: { Ball: string, Knockouts: number }?,
+	-- an earn-only cosmetic, never sold, spun or rolled; on the shelf locked, with progress, until
+	-- earned. Power Ball Mastery: granted once the player has Knockouts credited knockouts with that
+	-- power ball (Ball = "All": that many with each type). Level title: granted on reaching Level
+	-- (Config.Progression.LevelTitles, RewardService.payLevels).
+	Unlock: { Ball: string?, Knockouts: number?, Level: number? }?,
 	-- a Robux-exclusive cosmetic: bought only with its own developer product (RobuxProductId, at
 	-- Config.Economy.RobuxPriceByRarity / ByCategory), never sold for coins, spun or rolled. On the shelf with a
 	-- Robux button and an EXCLUSIVE tag. Price is just its value. Epic or Legendary only.
@@ -740,6 +741,107 @@ local items: { Item } = {
 		Unlock = { Ball = "Pop", Knockouts = 10 },
 		Data = { Text = "Pop Star" },
 	},
+	-- Level titles: one for every 10th level (Unlock.Level), banked on reaching it. Never sold or rolled.
+	{
+		Id = "Title_WarmedUp",
+		Category = "Title",
+		Name = "Warmed Up",
+		Price = Config.Economy.PriceByRarity.Rare,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Unlock = { Level = 10 },
+		Data = { Text = "Warmed Up" },
+	},
+	{
+		Id = "Title_CourtRegular",
+		Category = "Title",
+		Name = "Court Regular",
+		Price = Config.Economy.PriceByRarity.Rare,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Unlock = { Level = 20 },
+		Data = { Text = "Court Regular" },
+	},
+	{
+		Id = "Title_SeasonedPro",
+		Category = "Title",
+		Name = "Seasoned Pro",
+		Price = Config.Economy.PriceByRarity.Rare,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Unlock = { Level = 30 },
+		Data = { Text = "Seasoned Pro" },
+	},
+	{
+		Id = "Title_Veteran",
+		Category = "Title",
+		Name = "Veteran",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Unlock = { Level = 40 },
+		Data = { Text = "Veteran" },
+	},
+	{
+		Id = "Title_HalfCentury",
+		Category = "Title",
+		Name = "Half Century",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Unlock = { Level = 50 },
+		Data = { Text = "Half Century" },
+	},
+	{
+		Id = "Title_BallWhisperer",
+		Category = "Title",
+		Name = "Ball Whisperer",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Unlock = { Level = 60 },
+		Data = { Text = "Ball Whisperer" },
+	},
+	{
+		Id = "Title_Juggernaut",
+		Category = "Title",
+		Name = "Juggernaut",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Unlock = { Level = 70 },
+		Data = { Text = "Juggernaut" },
+	},
+	{
+		Id = "Title_HallOfFamer",
+		Category = "Title",
+		Name = "Hall of Famer",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Unlock = { Level = 80 },
+		Data = { Text = "Hall of Famer" },
+	},
+	{
+		Id = "Title_LivingLegend",
+		Category = "Title",
+		Name = "Living Legend",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Unlock = { Level = 90 },
+		Data = { Text = "Living Legend" },
+	},
+	{
+		Id = "Title_Centurion",
+		Category = "Title",
+		Name = "Centurion",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Unlock = { Level = 100 },
+		Data = { Text = "Centurion" },
+	},
 	{
 		Id = "Title_PumpkinKing",
 		Category = "Title",
@@ -1239,22 +1341,27 @@ function Catalog.offerLive(offer: any, now: number): boolean
 		and now < DateTime.fromIsoDate(offer.End).UnixTimestamp
 end
 
--- Power Ball Mastery progress toward an Unlock item from a PowerKOs map ({ Heavy = n, ... }):
--- (have, need). For Ball = "All", `have` is the lowest count across the power types.
-function Catalog.unlockProgress(item: Item, powerKOs: { [string]: number }?): (number, number)
+-- Progress toward an Unlock item: (have, need). Power Ball Mastery counts from a PowerKOs map
+-- ({ Heavy = n, ... }); for Ball = "All", `have` is the lowest count across the power types. A level
+-- title counts from `level`, which is 0 when left out, so a mastery check never grants one.
+function Catalog.unlockProgress(item: Item, powerKOs: { [string]: number }?, level: number?): (number, number)
 	local u = item.Unlock
 	if not u then
 		return 0, 0
 	end
+	if u.Level then
+		return math.min(u.Level, level or 0), u.Level
+	end
+	local need = u.Knockouts or 0
 	local kos = powerKOs or {}
 	if u.Ball ~= "All" then
-		return math.min(u.Knockouts, tonumber(kos[u.Ball]) or 0), u.Knockouts
+		return math.min(need, tonumber(kos[u.Ball or ""]) or 0), need
 	end
 	local low = math.huge
 	for _, t in BallDefinitions.PowerTypes do
 		low = math.min(low, tonumber(kos[t]) or 0)
 	end
-	return math.min(u.Knockouts, low), u.Knockouts
+	return math.min(need, low), need
 end
 
 -- How a trail draws past its colors: plain trails use the ball's defaults; exclusive ones set

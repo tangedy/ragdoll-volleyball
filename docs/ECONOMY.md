@@ -1,6 +1,6 @@
 # Economy
 
-Audit as of Oct 28, 2026 (save schema v10). **Coins** are the only currency. XP and levels exist, but leveling up grants nothing.
+Audit as of Oct 28, 2026 (save schema v10). **Coins** are the only currency. XP and levels exist, but leveling up grants nothing. (Since Nov 2 every level pays a reward: see §8.)
 
 Already decided (not open for discussion here): the lobby chests are removed, and chests come only from daily quests. Knocking out 3 opponents earns a Title Chest, playing 2 games a Gesture Chest, and winning 1 game a Finisher Chest.
 
@@ -286,3 +286,64 @@ With items in every rarity, each chest rolls its configured weights as they are 
 | Trail: Power Surge | Epic | 25 KOs with each type |
 
 **Featured ball of the day:** one power type per UTC day, rotating Heavy → Rocket → Pop. It drops 3x as often (about 60% of drops) and its knockouts count x2 toward mastery (`Config.PowerUps.Featured`). Both teams still always get the same type.
+
+## 7. Value tags on Robux bundles (Nov 2)
+
+Every value the shop shows is worked out from `Config.CoinShop` and the Catalog by `shared/BundleValue.luau`; nothing is typed in by hand. The offline test "value tags" checks the figures against Config.
+
+- **Coin bundles:** each card shows "+X% BONUS", its coins per Robux over the smallest bundle's, **rounded down** so the tag never claims more than the real bonus. Today that's +36% / +47% / +57% / +71% for the Pouch, Sack, Chest and Vault (the Vault's exact figure is +71.7%). The smallest bundle is the baseline and shows none.
+- **BEST VALUE** goes on whichever bundle has the most coins per Robux (today the Vault). Config's own `Tag = "Best value"` is ignored so the two can't disagree; other tags ("Popular") still show.
+- Once a product's real price loads from the dashboard, the bonus and the ribbon are worked out again from that price, so they always match the Buy button.
+- **Limited offers:** "Worth N coins" is the catalog `Price` of every item plus the bundle's coins. The Haunted Bundle is worth 21,500 (six items at 2,500, Pumpkin King at 1,500, plus 5,000 coins) for 299 R. It shows on the offer strip (Coins sheet, Bundles sheet and Shop shelf), the bundle page's summary and the hub stand's sign.
+- **No crossed-out prices.** None of these Robux prices was ever higher, so a strike-through "was" price would be a made-up discount. Add one only if a product really sold at the higher price first.
+
+## 8. Level rewards (Nov 2)
+
+Every level from 2 to 100 pays one typed reward (`Config.Progression.Rewards`, granted through `RewardService.grant`). Level 1 is where everyone starts, so it pays nothing. Rewards **bank the moment you reach the level** (`RewardService.payLevels`, called at the end of a match and on join); there's nothing to claim. The profile keeps the highest banked level (`LevelRewardsPaid`, an additive field, no schema bump), so a level never pays twice. A save from before level rewards starts at 1 and gets every level it has already passed, once, on its next join. The tutorial's completion reward is a separate grant.
+
+| Levels | Reward |
+| --- | --- |
+| Most levels | Coins: 50 at levels 2–9, then 25 more every ten levels (75 in the teens … 275 in the 90s) |
+| 5, 25, 45, 65, 85 | A Rare+ bonus spin (queued in `BonusSpins`, used from the Spin sheet) |
+| 15, 35, 55, 75, 95 | A quest chest, opened on the spot: Finisher, Gesture, Title, Finisher, Gesture |
+| Every 10th | An earn-only title (`Unlock = { Level = n }`): never sold, spun or rolled |
+
+**Level titles:** Warmed Up (10), Court Regular (20), Seasoned Pro (30) are Rare; Veteran (40), Half Century (50), Ball Whisperer (60), Juggernaut (70) are Epic; Hall of Famer (80), Living Legend (90), Centurion (100) are Legendary (framed in ✦ on the name tag). They sit on the Titles shelf locked, showing "🔒 Level n".
+
+**Against the earn rate.** XP per match isn't measured yet. Estimating about 70 (40 for finishing, 20 for half the wins, plus hits, catches and knockouts at the bot rate) and normal play at 6 matches a day:
+
+| Reach | Total XP | About | Coins banked | Plus (so far) |
+| --- | --- | --- | --- | --- |
+| Level 5 | 650 | 1.5 days | 150 | a Rare+ spin |
+| Level 10 | 2,025 | 5 days | 350 | a Rare+ spin, a Rare title |
+| Level 20 | 6,650 | 16 days | 950 | 1 spin, 1 chest, 2 titles |
+| Level 30 | 13,775 | 33 days | 1,750 | 2 spins, 1 chest, 3 titles |
+| Level 50 | 35,525 | 85 days | 3,950 | 3 spins, 2 chests, 5 titles |
+| Level 100 | 133,650 | about 320 days | 12,950 | 5 spins, 5 chests, 10 titles |
+
+- **Coins barely move the economy:** 12,950 over the whole climb is under 8 days of normal play (about 1,700 a day) spread over most of a year, about 2.4% on top of match coins.
+- **The value is in the spins, chests and titles,** and it's front-loaded on purpose: the first 10 levels (about 5 days) pay a Rare+ spin (about 3,150 in shop value) and a title, roughly two days' earnings, as a new player is deciding whether to stay. Over the first month (to about level 30) it adds about 17% to what matches pay; over the whole climb about 7% (about 36,000 in spins, chests and coins, at §3–4's expected values).
+- **Titles aren't in that total:** they can't be bought, so their tier prices (61,250 for all ten) are only their value. The Legendary three are the long-term chase, like Power Ball Mastery.
+- **If levels turn out faster or slower** than the 70 XP estimate, the coin amounts can be retuned in `LEVEL_COINS` without touching saves; the banked mark only records which levels have paid.
+
+## 9. Starter Pack, VIP and the 2x Coins pass (Nov 2)
+
+The quick wins from the monetization review. Everything is code-complete and covered by offline tests; nothing is on sale until the ids below are filled in.
+
+- **Starter Pack** (`Config.CoinShop.Starter`, a developer product, 99 R): Galaxy ball skin, Neon Ace title, 5,000 coins and 30 minutes of 2x coins. Shown as a strip on the Coins sheet once Robux buttons unlock, gone for good once bought (`profile.StarterBought`, additive, no schema bump). `PurchaseService.grantStarter`. It's worth far more than 99 R on purpose: it exists to turn a player into a payer.
+- **VIP** (`Config.CoinShop.Passes.VIP`, a game pass, 299 R): a gold VIP tag on the name tag and a daily gift the first time a VIP is here each UTC day: a free bonus spin and 150 coins (`GamePassService.dailyGift`, `profile.VipGiftDate`). Nothing that changes a match.
+- **2x Coins Forever** becomes the `DoubleCoins` game pass (199 R). The old BoostForever developer product stays registered so its buyers keep it; once the pass has an id, the lifetime boost card prompts the pass instead.
+- Pass ownership comes from Roblox, not the save: checked on join (`UserOwnsGamePassAsync`) and marked live on purchase. A player owns it this session if `c.passes[id]`; the client sees `Pass_<id>`.
+- The Coins sheet's strip stack shows at most two strips: limited offers first, then the Starter Pack, then VIP. Strips whose product doesn't exist yet are hidden in live servers and show "Soon" in Studio.
+
+### Dashboard checklist
+
+| Create | Where | Price | Then paste the id into |
+| --- | --- | --- | --- |
+| Starter Pack | Monetization > Developer Products | 99 R | `Config.CoinShop.Starter.ProductId` |
+| VIP | Monetization > Passes | 299 R | `Config.CoinShop.Passes.VIP.PassId` |
+| 2x Coins Forever | Monetization > Passes | 199 R | `Config.CoinShop.Passes.DoubleCoins.PassId` |
+| The 19 Robux exclusives | Monetization > Developer Products | 39 / 79 / 99 / 199 R (table in §1) | each item's `RobuxProductId` in `Catalog.luau` |
+| Private servers | Experience settings > Access | 99 R a month | (no code) |
+
+Once the DoubleCoins pass is on sale, take the old "2x Coins Forever" developer product off sale in the dashboard (don't delete it).

@@ -498,6 +498,13 @@ function BallService.launch(c: any, velocity: Vector3, throwId: number): Ball?
 	if look then
 		look.variant = part:GetAttribute("SkinVariant") -- the thrown ball keeps the form it was picked up in
 	end
+	-- Explicit initial-overlap handling (below) and homing both use the current targets; homing is
+	-- picked before the broadcast so the target hears the lock-on (EffectsController) with the throw.
+	local targets = S.CombatService.targetsFor(ball)
+	if not c.isBot then
+		ball.homing = homingTarget(targets, origin, velocity)
+	end
+	local homing = ball.homing
 	S.NetService.broadcast("BallLaunched", {
 		look = look,
 		id = ball.id,
@@ -509,12 +516,10 @@ function BallService.launch(c: any, velocity: Vector3, throwId: number): Ball?
 		team = c.team, -- clients warn about incoming enemy balls
 		throwId = throwId,
 		context = ball.context,
+		target = homing and homing.character, -- the homing target's character (lock-on cue, trail tint)
+		targetTeam = homing and homing.team,
 	})
-	-- Explicit initial-overlap handling: a target already inside the ball's sphere is hit now.
-	local targets = S.CombatService.targetsFor(ball)
-	if not c.isBot then
-		ball.homing = homingTarget(targets, origin, velocity)
-	end
+	-- a target already inside the ball's sphere is hit now
 	if #targets > 0 then
 		local proxies = {}
 		for _, t in targets do
@@ -611,6 +616,8 @@ local function simulate(ball: Ball, dt: number)
 				origin = to,
 				vel = ball.vel,
 				t0 = ball.stateAt + ball.flightT,
+				target = ball.homing and ball.homing.character,
+				targetTeam = ball.homing and ball.homing.team,
 			})
 		end
 	end
