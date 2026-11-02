@@ -47,11 +47,15 @@ local function track(model: Model)
 	if not head or not model.Parent then
 		return
 	end
-	-- sits just above the name tag (CharacterService), shrinking with distance like it does
+	-- stacked on the name tag (CharacterService): same anchor point, then lifted by SizeOffset a bit
+	-- over its own height. That height (1 stud + 22px) is a hair over the name tag's (1 stud + 20px)
+	-- and both shrink with distance the same way, so the two never overlap at any range (a fixed
+	-- studs gap would: the pixel parts don't shrink, so far-off tags would run into each other)
 	local board = Theme.new("BillboardGui", {
 		Name = "DamageTag",
 		Size = UDim2.new(2.4, 48, 1, 22),
-		StudsOffset = Vector3.new(0, 4, 0),
+		StudsOffset = Vector3.new(0, 2.4, 0),
+		SizeOffset = Vector2.new(0, 1.15),
 		MaxDistance = 110,
 		LightInfluence = 0,
 		Enabled = false,

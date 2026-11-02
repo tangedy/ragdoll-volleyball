@@ -70,7 +70,7 @@ local function makeTag(character: Model, c: any)
 	badge.TextColor3 = Color3.fromRGB(255, 230, 120)
 	badge.TextStrokeTransparency = 0.3
 	badge.RichText = true -- the title is colored by its rarity (ShopService.applyCosmetics)
-	badge.Text = if c.isBot then "BOT" elseif c.isDummy then "DUMMY" else ""
+	badge.Text = if c.isDummy then "DUMMY" else ""
 	badge.Parent = bb
 	bb.Parent = head
 end

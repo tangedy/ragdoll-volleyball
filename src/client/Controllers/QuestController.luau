@@ -50,7 +50,8 @@ local ROW_H = 44
 local DISC = 32
 local DONE_H = 26 -- a claimed quest's row, folded down to one slim line
 local DONE_DISC = 20
-local PANEL_FADE = 0.2 -- the panel's surface transparency: the hub shows through it
+-- the panel's surface transparency, left edge to right edge: the hub shows through it, clear at the right
+local PANEL_FADE = NumberSequence.new(0.3, 1)
 local FOLDED_DISC = 48 -- the round chest the panel folds into
 local TEXT_X = 40 -- right of a row's disc
 local RIGHT_W = 64 -- the count, the Claim button or the cooldown, at a row's right
@@ -426,10 +427,10 @@ local function buildPanel()
 		Position = UDim2.new(0, SPACE.M, 0.4, 0),
 		Size = UDim2.fromOffset(PANEL_W, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = PANEL_FADE,
 		Visible = false,
 		ZIndex = 2,
 	}, Theme.Radius.M)
+	new("UIGradient", { Transparency = PANEL_FADE }, panel)
 	panel.Parent = ShopController.gui
 	Theme.stroke(panel, T.line, 2)
 	Theme.padding(panel, SPACE.S + 2)
@@ -1091,8 +1092,11 @@ function QuestController.start()
 		if not inHub() and sheet.Visible then
 			QuestController.open(nil, false)
 		end
-		-- the panel steps aside while any sheet or the opening is up
-		local show = status ~= nil and not ShopController.getBackdrop().Visible and not openGui.Enabled
+		-- the panel steps aside while any sheet or the opening is up, and waits for the tutorial to end
+		local show = status ~= nil
+			and player:GetAttribute("TutorialDone") == true
+			and not ShopController.getBackdrop().Visible
+			and not openGui.Enabled
 		panel.Visible = show and not collapsed
 		foldedButton.Visible = show and collapsed
 		if os.clock() < nextTick then

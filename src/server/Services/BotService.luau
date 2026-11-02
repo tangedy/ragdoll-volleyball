@@ -25,7 +25,7 @@ local B = Config.Bots
 local rng = Random.new()
 local paused = true
 local nameIndex = 0
--- fetched once at startup from Config.Bots.Avatars: { name, desc } per user, in list order
+-- fetched once at startup from Config.Bots.Avatars: { name, desc } per user, shuffled
 local profiles: { { id: number, name: string, desc: HumanoidDescription } } = {}
 
 -- Roblox's default R15 animation pack, for avatars without their own
@@ -62,23 +62,36 @@ local function loadProfiles()
 			names[info.Id] = if info.DisplayName ~= "" then info.DisplayName else info.Username
 		end
 	end
+	-- fetched in parallel: the list is long and each call is a web round trip
 	local loaded = {}
+	local pending = #ids
 	for _, id in ids do
-		local okDesc, desc = pcall(function()
-			return Players:GetHumanoidDescriptionFromUserId(id)
-		end)
-		local name: string? = names[id]
-		if not name then
-			local okName, username = pcall(function()
-				return Players:GetNameFromUserIdAsync(id)
+		task.spawn(function()
+			local okDesc, desc = pcall(function()
+				return Players:GetHumanoidDescriptionFromUserId(id)
 			end)
-			name = if okName then username else nil
-		end
-		if okDesc and desc and name then
-			table.insert(loaded, { id = id, name = name, desc = desc })
-		else
-			warn(("[Bots] couldn't load avatar for user %d"):format(id))
-		end
+			local name: string? = names[id]
+			if not name then
+				local okName, username = pcall(function()
+					return Players:GetNameFromUserIdAsync(id)
+				end)
+				name = if okName then username else nil
+			end
+			if okDesc and desc and name then
+				table.insert(loaded, { id = id, name = name, desc = desc })
+			else
+				warn(("[Bots] couldn't load avatar for user %d"):format(id))
+			end
+			pending -= 1
+		end)
+	end
+	while pending > 0 do
+		task.wait()
+	end
+	-- shuffled so each server shows a different set of faces first
+	for i = #loaded, 2, -1 do
+		local j = rng:NextInteger(1, i)
+		loaded[i], loaded[j] = loaded[j], loaded[i]
 	end
 	profiles = loaded
 end

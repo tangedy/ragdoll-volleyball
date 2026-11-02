@@ -321,10 +321,53 @@ Config.Bots = {
 	PickupAfterThrow = 2, -- after throwing, a bot wanders this long before going for another ball
 	RewardMultiplier = 0.5,
 	ThrowSpeedScale = 0.75, -- bots throw at this share of player speed (about the old 147 studs/s)
-	-- bots wear these Roblox users' avatars and display names (in rotation); Names is the fallback
-	-- when a profile can't be fetched
-	Avatars = { 3568710137, 87247403, 1081151462, 765160767, 749465889, 171080174 },
-	Names = { "Bot Bounce", "Bot Bonk", "Bot Zoom", "Bot Wobble", "Bot Pop", "Bot Flop" },
+	-- bots wear these Roblox users' avatars and display names (shuffled per server, then in rotation);
+	-- Names is the fallback when a profile can't be fetched
+	Avatars = {
+		3568710137,
+		87247403,
+		1081151462,
+		765160767,
+		749465889,
+		171080174,
+		1234567,
+		3456789,
+		5678901,
+		6789012,
+		7890123,
+		8901234,
+		9012345,
+		10234567,
+		23456789,
+		34567890,
+		45678901,
+		56789012,
+		67890123,
+		78901234,
+		89012345,
+		98765432,
+		234567890,
+		345678901,
+		456789012,
+		567890123,
+		678901234,
+		789012345,
+		1012345678,
+		1123456789,
+		1234567890,
+		1345678901,
+		1456789012,
+		1567890123,
+		2012345678,
+		2345678901,
+		3012345678,
+		3123456789,
+		3234567890,
+		4012345678,
+		4123456789,
+		5012345678,
+	},
+	Names = { "Noob_Slayer204", "xXBounceXx", "pixelwobble", "ZoomyKid09", "PopTart_77", "flopmaster3" },
 }
 
 -- Coins: the one in-game currency. Earned from match wins (highest tier only), a small
@@ -641,6 +684,8 @@ Config.Tutorial = {
 		Again = 1.5, -- the next throw after a hit or a pass you didn't dodge
 		DodgeRadius = 4, -- passing this close (to you, or to where you dodged from) counts as dodged...
 		DodgeGrace = 0.4, -- ...if you dodged no more than this long before it went by
+		Homing = 45, -- degrees/s the ball turns toward you in flight...
+		HomingStop = 12, -- ...until it's this close (flat studs), so a late dodge still beats it
 	},
 }
 

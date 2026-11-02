@@ -2,7 +2,9 @@
 -- The tutorial's dodge step (docs/prompts/build-path.md step 6), entirely client-side: on the
 -- tutorial court your practice balls go away, the dummy turns to face you, winds up (a "!" over its
 -- head and a glowing ball in its hand) and throws a practice ball straight at you, slower than a
--- match throw (Config.Tutorial.Drill). Dodging it sends Practice "Dodged", which finishes the step.
+-- match throw (Config.Tutorial.Drill), turning gently toward you in flight. The card asks for the
+-- dodge button, but any throw that misses you (dodged, or just walked out of its way) sends Practice
+-- "Dodged", which finishes the step.
 -- Getting hit gives you a small local knock and raises your HUD % locally (no ragdoll, no server
 -- damage), sends GotHit, and the dummy throws again; after a few misses the throws slow down.
 -- The drill ball is never a server ball, so it can't count toward the daily dodge quest.
@@ -47,7 +49,7 @@ type Shot = {
 }
 
 local running = false
-local misses = 0 -- hits and passes you didn't dodge, this drill
+local misses = 0 -- times you got hit, this drill
 local phase = "Idle" -- "Idle" | "Windup" | "Flight" | "Done"
 local phaseAt = 0 -- when the next phase starts (Idle) or this one started (Windup)
 local shot: Shot? = nil
@@ -252,9 +254,14 @@ local function onHit(s: Shot, root: BasePart)
 	again()
 end
 
-local function onDodged(s: Shot)
+-- `usedButton` is false when the ball just missed you (you walked or jumped out of its way): that
+-- still finishes the step, with a nudge toward the button.
+local function onDodged(s: Shot, usedButton: boolean)
 	SoundController.play("BallWhoosh", s.pos)
 	HUDController.banner("NICE DODGE!", T.leaf, 1.3, "UISuccess")
+	if not usedButton then
+		HUDController.hint("In a match, the DODGE button gets you out of close calls!", 2.5)
+	end
 	Net.request(Net.Actions.Practice, { event = "Dodged" })
 	doneSentAt = os.clock()
 	clearShot()
@@ -269,8 +276,28 @@ local function segmentDistance(a: Vector3, b: Vector3, point: Vector3): number
 	return (a + ab * t - point).Magnitude
 end
 
+-- Turn the ball's flat velocity toward you, at most D.Homing degrees/s, until it's D.HomingStop away.
+local function home(s: Shot, me: Vector3, dt: number)
+	local flatVel = Vector3.new(s.vel.X, 0, s.vel.Z)
+	local toMe = Vector3.new(me.X - s.pos.X, 0, me.Z - s.pos.Z)
+	if flatVel.Magnitude < 0.1 or toMe.Magnitude <= D.HomingStop or toMe:Dot(flatVel) <= 0 then
+		return
+	end
+	local dir, want = flatVel.Unit, toMe.Unit
+	local angle = math.acos(math.clamp(dir:Dot(want), -1, 1))
+	if angle < 1e-3 then
+		return
+	end
+	local turn = math.min(angle, math.rad(D.Homing) * dt)
+	local sign = if dir:Cross(want).Y >= 0 then 1 else -1
+	local newDir = CFrame.Angles(0, sign * turn, 0):VectorToWorldSpace(dir)
+	local flat = newDir * flatVel.Magnitude
+	s.vel = Vector3.new(flat.X, s.vel.Y, flat.Z)
+end
+
 local function stepShot(s: Shot, root: BasePart, dt: number)
 	local g = ProjectileMath.gravity(BALL_TYPE)
+	home(s, root.Position, dt)
 	local from = s.pos
 	local nextVel = s.vel + Vector3.new(0, -g * dt, 0)
 	local to = from + (s.vel + nextVel) * 0.5 * dt
@@ -297,13 +324,8 @@ local function stepShot(s: Shot, root: BasePart, dt: number)
 	-- gone past you (or down / too long in the air): decide
 	local passed = (me - to):Dot(Vector3.new(s.vel.X, 0, s.vel.Z)) < -2
 	if passed or to.Y < Config.Arena.Origin.Y - 4 or s.t > Config.Ball.MaxFlightTime then
-		if s.near then
-			onDodged(s)
-		else
-			clearShot()
-			HUDController.hint("Dodge it as it comes!", 1.4)
-			again()
-		end
+		-- it missed you: dodged with the button (near) or just out of its way, either finishes the step
+		onDodged(s, s.near)
 	end
 end
 

@@ -102,11 +102,11 @@ local function copy(): (string, string, string?)
 	elseif step == 5 then
 		return "More special balls to find!", "Grab them in matches", nil
 	elseif step == 6 then
-		return "Dodge it!",
+		return "Dodge a close call!",
 			if touch
-				then "Tap DODGE as the ball comes"
-				elseif pad then "Press X as the ball comes"
-				else "Press Q as the ball comes",
+				then "Tap DODGE just before the ball hits you"
+				elseif pad then "Press X just before the ball hits you"
+				else "Press Q just before the ball hits you",
 			"Dodge"
 	end
 	return "", "", nil
@@ -124,12 +124,15 @@ end
 
 -- Step card ---------------------------------------------------------------------------------------
 
+-- the card hugs the top edge (the phase pill and quest panel are hidden until the tutorial is done)
+local CARD_TOP = Theme.Space.S
+
 local function buildCard(parent: ScreenGui): Card
-	-- top centre, under the phase pill: clear of the quest panel (left) and the hub icons (right)
+	-- top centre: clear of the hub icons (right)
 	local holder = Theme.panel(parent, {
 		Name = "StepCard",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 62),
+		Position = UDim2.new(0.5, 0, 0, CARD_TOP),
 		AutomaticSize = Enum.AutomaticSize.X,
 		Size = UDim2.fromOffset(0, 88),
 		Visible = false,
@@ -226,7 +229,7 @@ local function placeCard()
 	end
 	local x = math.max(width / 2, left + w / 2)
 	x = math.min(x, math.max(left + w / 2, width - Theme.Space.M - w / 2))
-	holder.Position = UDim2.fromOffset(math.floor(x + 0.5), 62)
+	holder.Position = UDim2.fromOffset(math.floor(x + 0.5), CARD_TOP)
 end
 
 -- A ball type as a sticker: its colour in a toy disc, a mark on it ("✓" found, "?" still to find),
