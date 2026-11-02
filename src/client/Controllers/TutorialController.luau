@@ -111,10 +111,8 @@ function TutorialController.start()
 	RunService.RenderStepped:Connect(function()
 		BallGuideController.enabled = step == 1
 		local t, pointer = text()
-		cardHolder.Visible = t ~= nil
-		cardHolder.Position = if AimController.lastInput == "Touch"
-			then UDim2.new(1, -12, 1, -320)
-			else UDim2.new(1, -Theme.Space.L, 1, -76)
+		-- no tip card on phones: no room for it (the pulsing button outlines still guide)
+		cardHolder.Visible = t ~= nil and AimController.lastInput ~= "Touch"
 		if t then
 			card.Text = t
 			if t ~= shownText then

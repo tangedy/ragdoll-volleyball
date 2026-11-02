@@ -361,23 +361,28 @@ function Theme.isCompact(): boolean
 	return vp.X < 900 or vp.Y < 520
 end
 
+local floors: { [UIScale]: number } = {}
 local function rescaleAll()
 	local s = Theme.uiScale()
 	for sc, factor in scaled do
 		if sc.Parent then
-			sc:SetAttribute("Base", s * factor)
-			sc.Scale = s * factor
+			local base = math.max(s * factor, floors[sc] or 0)
+			sc:SetAttribute("Base", base)
+			sc.Scale = base
 		else
 			scaled[sc] = nil
+			floors[sc] = nil
 		end
 	end
 end
 
--- Keep `inst` scaled to the screen (factor lets an element shrink a bit more or less than the rest).
-function Theme.autoScale(inst: GuiObject, factor: number?): UIScale
+-- Keep `inst` scaled to the screen (factor lets an element shrink a bit more or less than the rest;
+-- floor keeps it from shrinking below that scale on small screens, so its text stays readable).
+function Theme.autoScale(inst: GuiObject, factor: number?, floor: number?): UIScale
 	local sc = scaleOf(inst)
 	scaled[sc] = factor or 1
-	sc:SetAttribute("Base", Theme.uiScale() * (factor or 1))
+	floors[sc] = floor
+	sc:SetAttribute("Base", math.max(Theme.uiScale() * (factor or 1), floor or 0))
 	sc.Scale = baseOf(sc)
 	return sc
 end
@@ -829,7 +834,7 @@ end
 
 -- Glyphs ---------------------------------------------------------------------------------------------
 -- Simple, neutral glyphs (round caps, solid shapes). Text glyphs for the shapes a font draws well;
--- frames for the rest (bag, gear, gift, clock, tag, hand, burst, pumpkin).
+-- frames for the rest (bag, gear, gift, clock, eye, tag, hand, burst, pumpkin).
 
 local TEXT_GLYPHS = {
 	star = "★",
@@ -990,6 +995,25 @@ function Theme.glyph(parent: Instance, name: string, color: Color3, props: { [st
 			}, holder)
 			Theme.round(hand)
 		end
+	elseif name == "eye" then
+		-- an eye (spectate): a wide rounded outline with a solid pupil
+		local lid = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.95, 0.6),
+			BackgroundTransparency = 1,
+			ZIndex = z,
+		}, holder)
+		Theme.round(lid)
+		new("UIStroke", { Color = color, Thickness = 2.5 }, lid)
+		local pupil = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.34, 0.34),
+			BackgroundColor3 = color,
+			ZIndex = z,
+		}, holder)
+		Theme.round(pupil)
 	elseif name == "tag" then
 		-- a name tag (titles): a rounded card with a punched hole and two lines of "text"
 		local mark = Theme.textOn(color)

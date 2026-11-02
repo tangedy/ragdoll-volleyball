@@ -6,15 +6,9 @@ local BallDefinitions = require(script.Parent.BallDefinitions)
 
 local ProjectileMath = {}
 
--- Charge in [0, 1] from server-recorded hold time. Holding past full charge gives no extra benefit.
-function ProjectileMath.chargeFromHold(holdSeconds: number): number
-	return math.clamp(holdSeconds / Config.Player.FullChargeTime, 0, 1)
-end
-
-function ProjectileMath.throwSpeed(charge: number, ballType: string): number
-	local def = BallDefinitions.get(ballType)
-	local p = Config.Player
-	return (p.MinThrowSpeed + (p.MaxThrowSpeed - p.MinThrowSpeed) * charge) * def.SpeedScale
+-- Every throw is instant and full power: there is no charging.
+function ProjectileMath.throwSpeed(ballType: string): number
+	return Config.Player.ThrowSpeed * BallDefinitions.get(ballType).SpeedScale
 end
 
 function ProjectileMath.gravity(ballType: string): number
@@ -73,10 +67,38 @@ function ProjectileMath.randomInCone(dir: Vector3, halfAngleDeg: number, rng: Ra
 	return (cf * offset).LookVector
 end
 
--- Knockback scale after `hitsTaken` earlier hits: small at first, then 1.25× the last every hit.
-function ProjectileMath.escalation(hitsTaken: number): number
+-- Knockback scale at `damage` % (before this hit): tiny at first, growing with every hit.
+function ProjectileMath.escalation(damage: number): number
 	local e = Config.Knockback.Escalation
-	return math.min(e.First * e.Growth ^ math.max(hitsTaken, 0), e.Max)
+	return math.min(e.First + e.PerPercent * math.max(damage, 0), e.Max)
+end
+
+-- Horizontal distance between two points (throw origin -> hit point).
+function ProjectileMath.flatDistance(a: Vector3, b: Vector3): number
+	return Vector3.new(b.X - a.X, 0, b.Z - a.Z).Magnitude
+end
+
+-- Damage % a hit adds, by ball type (power balls hit harder) and, when known, how far the ball
+-- travelled: point blank hits deal Config.Damage.CloseMultiplier×, falling off to 1× at FarRange.
+function ProjectileMath.damageFor(ballType: string, distance: number?): number
+	local d = Config.Damage
+	local base = d.PerHit * BallDefinitions.get(ballType).DamageScale
+	local mult = 1
+	if distance then
+		local t = math.clamp((distance - d.CloseRange) / (d.FarRange - d.CloseRange), 0, 1)
+		mult = d.CloseMultiplier + (1 - d.CloseMultiplier) * t
+	end
+	return math.floor(base * mult + 0.5)
+end
+
+-- HUD / billboard color for a damage %: white -> yellow -> red (Toybox paper, sun, joyRed).
+function ProjectileMath.damageColor(damage: number): Color3
+	local d = Config.Damage
+	local white, yellow, red = Color3.fromHex("#fffcf2"), Color3.fromHex("#f7cd46"), Color3.fromHex("#ff4b3a")
+	if damage <= d.YellowAt then
+		return white:Lerp(yellow, math.clamp(damage / d.YellowAt, 0, 1))
+	end
+	return yellow:Lerp(red, math.clamp((damage - d.YellowAt) / (d.RedAt - d.YellowAt), 0, 1))
 end
 
 -- Speed cap for a launch at this escalation (big late-game launches go past the base cap).
@@ -91,15 +113,13 @@ end
 
 -- Knockback velocity change for a hit (spec §7 "Knockback"). Bounded and mass-independent.
 -- `scale` is the escalation from ProjectileMath.escalation (1 when left out).
-function ProjectileMath.knockback(ballVelocity: Vector3, charge: number, ballType: string, scale: number?): Vector3
+function ProjectileMath.knockback(ballVelocity: Vector3, ballType: string, scale: number?): Vector3
 	local def = BallDefinitions.get(ballType)
 	local kb = Config.Knockback
 	local k = scale or 1
 	local flat = Vector3.new(ballVelocity.X, 0, ballVelocity.Z)
 	local dir = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, 1)
-	local horizontal = (kb.HorizontalMin + (kb.HorizontalMax - kb.HorizontalMin) * charge)
-		* def.HorizontalKnockbackScale
-		* k
+	local horizontal = kb.Horizontal * def.HorizontalKnockbackScale * k
 	-- the hop grows more gently than the push, so big hits fly far rather than straight up
 	local up = kb.Upward * def.UpwardKnockbackScale * math.clamp(k, 0.5, kb.Escalation.UpMax)
 	local v = dir * horizontal + Vector3.new(0, up, 0)

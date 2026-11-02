@@ -194,11 +194,8 @@ local function onPlayerAdded(player: Player)
 	end)
 	task.spawn(S.ComplianceService.load, c)
 	local spawn = ArenaLayout.lobbySpawn(rng)
-	S.CharacterService.spawnPlayer(
-		c,
-		CFrame.lookAt(spawn, Vector3.new(ArenaLayout.CourtFocus.X, spawn.Y, ArenaLayout.CourtFocus.Z))
-	)
-	S.CharacterService.faceCamera(c, ArenaLayout.CourtFocus)
+	S.CharacterService.spawnPlayer(c, ArenaLayout.faceFlat(spawn, ArenaLayout.DummyHome))
+	S.CharacterService.faceCamera(c, ArenaLayout.DummyHome, spawn)
 	while loading and player.Parent == Players do
 		task.wait()
 	end
@@ -246,13 +243,9 @@ function LobbyService.start()
 		if c then
 			c.autoQueue = p.value
 			player:SetAttribute("AutoQueue", p.value)
-		end
-	end)
-	S.NetService.on(NetSchema.Actions.SetBusy, function(player, p)
-		local c = S.PlayerStateService.get(player)
-		if c then
-			c.busy = p.value
-			player:SetAttribute("Busy", p.value)
+			if not p.value then
+				S.MatchService.setReady(c, false) -- out of the queue, so not ready either
+			end
 		end
 	end)
 	-- Player.DevTouchCameraMode can only be set from the server (LockController asks for Shift lock)
@@ -354,14 +347,19 @@ function LobbyService.tick()
 		if c.spawning then
 			continue -- a character is already being built (avatar download in flight)
 		elseif not S.PlayerStateService.isAlive(c) then
-			local pos = S.MatchService.onCharacterLost(c) or ArenaLayout.lobbySpawn(rng)
+			-- back in a match (court or jail) faces the court; back in the hub faces the practice dummy
+			local pos = S.MatchService.onCharacterLost(c)
 			local focus = ArenaLayout.CourtFocus
-			S.CharacterService.spawnPlayer(c, CFrame.lookAt(pos, Vector3.new(focus.X, pos.Y, focus.Z)))
-			S.CharacterService.faceCamera(c, focus)
+			if not pos then
+				pos = ArenaLayout.lobbySpawn(rng)
+				focus = ArenaLayout.DummyHome
+			end
+			S.CharacterService.spawnPlayer(c, ArenaLayout.faceFlat(pos, focus))
+			S.CharacterService.faceCamera(c, focus, pos)
 		elseif (c.status == "Lobby" or c.status == "Spectating") and c.root.Position.Y < ArenaLayout.LobbyVoidY then
 			-- only falls from the hub deck (spectators following the court fall with the court rules)
 			if ArenaLayout.inLobby(c.root.Position, 60) then
-				S.CharacterService.placeFacing(c, ArenaLayout.lobbySpawn(rng), ArenaLayout.CourtFocus)
+				S.CharacterService.placeFacing(c, ArenaLayout.lobbySpawn(rng), ArenaLayout.DummyHome)
 			end
 		end
 	end

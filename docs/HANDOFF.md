@@ -27,7 +27,7 @@ This doc covers how to work on the project, what the user likes, what changed in
 - **Screenshots can be stale.** If the Studio window isn't focused, `screen_capture` returns an old frame. Verify numerically when it matters: positions, `WorldToViewportPoint`, attributes.
 - `SendMouseButtonEvent` isn't allowed from MCP code. Use `user_mouse_input`. Its `mouseButtonClick` often doesn't register: send `mouseButtonDown`, an 80 ms `wait`, then `mouseButtonUp`. Hub and HUD guis ignore the inset, so `AbsolutePosition + AbsoluteSize/2` is the click point. Throws from MCP are still unreliable (about 1 in 3 fired).
 - Network lag for tests: `settings().Network.IncomingReplicationLag = 0.3` works from the Client context. Set it back to 0 afterwards.
-- `RD_Gallery` `Preview…` leaves the shop open (and `Busy` true) until you close it.
+- `RD_Gallery` `Preview…` leaves the shop open until you close it (or a match starts and closes it).
 - Local parts more than about 1,000 studs from your character aren't simulated on the client, and change signals are deferred (a "writing" flag can't guard your own writes).
 - Studio blocks DataStores ("API access is not enabled"). The game plays unsaved; that's expected.
 - The daily rewards sheet auto-opens on join and blocks matchmaking until you close it. With Play again on, a 3v3 bot match starts about 7 s after the hub is clear.

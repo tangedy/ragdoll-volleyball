@@ -2,7 +2,7 @@
 -- Fill-in bots (Amendment A2). They act only through CombatService's do* functions, so they follow
 -- the same rules, projectile pipeline and knockback as players. Each bot has a difficulty profile
 -- (Config.Bots.Profiles): it picks targets (edge-standers, players who just got up), times its
--- charge and release, sidesteps while aiming, dodges after a human-ish reaction time (bots never
+-- release, sidesteps while aiming, dodges after a human-ish reaction time (bots never
 -- catch), shares balls with teammates and backs away from edges. Every profile misses and
 -- mistimes, so bots stay beatable, and a held ball is always thrown within
 -- StallThrow seconds so a round can never stall on a bot.
@@ -443,13 +443,16 @@ function BotService.targetScore(c: any, o: any, smart: boolean): number
 	return score
 end
 
--- Best enemy to throw at: active, hittable (not immune), and in sight unless `anySight`.
-function BotService.pickTarget(c: any, smart: boolean, anySight: boolean?): any?
+-- Best enemy to throw at: active, hittable (not immune), and in sight unless `anySight`. Bots go
+-- for other bots first; real players are only in the running when `allowPlayers` (rolled once per
+-- held ball against PlayerTargetChance) or when no bot is hittable.
+local function bestTarget(c: any, smart: boolean, anySight: boolean?, botsOnly: boolean): any?
 	local best, bestScore = nil, math.huge
 	local t = now()
 	for _, o in S.MatchService.roster() do
 		if
 			o.team ~= c.team
+			and (o.isBot or not botsOnly)
 			and o.status == "Active"
 			and o.root
 			and o.root.Parent
@@ -463,6 +466,16 @@ function BotService.pickTarget(c: any, smart: boolean, anySight: boolean?): any?
 		end
 	end
 	return best
+end
+
+function BotService.pickTarget(c: any, smart: boolean, anySight: boolean?, allowPlayers: boolean?): any?
+	if not allowPlayers then
+		local bot = bestTarget(c, smart, anySight, true)
+		if bot then
+			return bot
+		end
+	end
+	return bestTarget(c, smart, anySight, false)
 end
 
 -- Inside the bot's safe zone: away from void edges (never deliberately within VoidAvoid).
@@ -505,15 +518,14 @@ local function setStrafePace(c: any, pace: number?)
 	end
 end
 
-local function aimDirection(c: any, target: any, chargeHold: number): Vector3
+local function aimDirection(c: any, target: any): Vector3
 	local root = c.root :: BasePart
 	local ballType = if c.heldBall then c.heldBall.type else "Standard"
 	local tp = target.root.Position + target.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1) * 0.25
 	local flatTo = Vector3.new(tp.X - root.Position.X, 0, tp.Z - root.Position.Z)
 	local forward = if flatTo.Magnitude > 0.1 then flatTo.Unit else root.CFrame.LookVector
 	local origin = root.Position + Vector3.new(0, Config.Ball.SpawnUp, 0) + forward * Config.Ball.SpawnForward
-	local speed = ProjectileMath.throwSpeed(ProjectileMath.chargeFromHold(chargeHold), ballType)
-		* Config.Bots.ThrowSpeedScale
+	local speed = ProjectileMath.throwSpeed(ballType) * Config.Bots.ThrowSpeedScale
 	local g = ProjectileMath.gravity(ballType)
 	local dir = (tp - origin).Unit
 	for _ = 1, 2 do
@@ -523,7 +535,7 @@ local function aimDirection(c: any, target: any, chargeHold: number): Vector3
 	return ProjectileMath.randomInCone(dir, profileOf(c).AimErrorDeg, rng)
 end
 
--- Holding a ball: pick a target, aim (strafing a little), charge for a chosen time, release.
+-- Holding a ball: pick a target, aim (strafing a little), then throw instantly at full power.
 -- A bot never sits on a ball: with no clear shot it throws at the nearest enemy after StallThrow.
 local function thinkHolding(c: any, t: number)
 	local brain = c.bot
@@ -533,24 +545,22 @@ local function thinkHolding(c: any, t: number)
 		local haste = if S.MatchService.isOvertime() then 1 - B.SuddenDeathHaste else 1
 		local quick = rng:NextNumber() < prof.QuickThrowChance
 		local aim = if quick then rng:NextNumber(0.15, 0.3) else between(prof.AimDelay) * haste
-		local hold = math.min(between(prof.ChargeHold), aim)
 		brain.plan = {
 			heldAt = t,
 			releaseAt = t + aim,
-			chargeAt = t + aim - hold,
-			hold = hold,
 			strafeDir = if rng:NextNumber() < 0.5 then 1 else -1,
 			target = nil,
 			retargetAt = 0,
+			allowPlayers = rng:NextNumber() < B.PlayerTargetChance,
 		}
 	end
 	local plan = brain.plan
 	if t >= plan.retargetAt or not (plan.target and plan.target.status == "Active") then
 		plan.retargetAt = t + 0.4
-		plan.target = BotService.pickTarget(c, rng:NextNumber() < prof.TargetSmarts, false)
+		plan.target = BotService.pickTarget(c, rng:NextNumber() < prof.TargetSmarts, false, plan.allowPlayers)
 	end
 	local stalled = t - plan.heldAt > B.StallThrow
-	local target = plan.target or (if stalled then BotService.pickTarget(c, false, true) else nil)
+	local target = plan.target or (if stalled then BotService.pickTarget(c, false, true, plan.allowPlayers) else nil)
 	if not target then
 		setStrafePace(c, nil)
 		-- nobody in sight: drift toward the middle of our half for a better angle
@@ -585,12 +595,8 @@ local function thinkHolding(c: any, t: number)
 	else
 		humanoid:MoveTo(c.root.Position)
 	end
-	if t >= plan.chargeAt and c.action == "Idle" and not c.chargeStart then
-		S.CombatService.doChargeStart(c)
-	end
 	if t >= plan.releaseAt or stalled then
-		local hold = if c.chargeStart then now() - c.chargeStart else 0
-		S.CombatService.doThrow(c, aimDirection(c, target, hold), 0)
+		S.CombatService.doThrow(c, aimDirection(c, target), 0)
 		brain.plan = nil
 		brain.thrownAt = t
 		setStrafePace(c, nil)

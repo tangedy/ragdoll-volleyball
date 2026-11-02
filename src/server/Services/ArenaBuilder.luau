@@ -484,19 +484,23 @@ function ArenaBuilder.build(): Folder
 		label(sign, Config.Teams[team].Name .. " JAIL", col)
 	end
 
-	-- Mirrored power-up dispensers (point-symmetric so both teams have identical access).
+	-- Mirrored power-up dispensers, two per side (point-symmetric so both teams have identical
+	-- access). Slot 1 on one side mirrors slot 1 on the other; MatchService labels each pad.
 	for _, team in { "Red", "Blue" } do
 		local sign = ArenaLayout.teamSign(team)
-		local pad = decor({
-			Name = "Dispenser_" .. team,
-			Shape = Enum.PartType.Cylinder,
-			Size = Vector3.new(0.4, 6, 6),
-			CFrame = CFrame.new(o.X + sign * 30, o.Y + 0.2, o.Z + sign * 30) * CFrame.Angles(0, 0, math.rad(90)),
-			Color = Color3.fromRGB(255, 215, 60),
-			Material = Enum.Material.Neon,
-		}, decorFolder)
-		pad:SetAttribute("Team", team)
-		label(pad, "?", Color3.fromRGB(255, 230, 90))
+		for slot, xSign in { sign, -sign } do
+			local pad = decor({
+				Name = ("Dispenser_%s_%d"):format(team, slot),
+				Shape = Enum.PartType.Cylinder,
+				Size = Vector3.new(0.4, 6, 6),
+				CFrame = CFrame.new(o.X + xSign * 30, o.Y + 0.2, o.Z + sign * 30) * CFrame.Angles(0, 0, math.rad(90)),
+				Color = Color3.fromRGB(255, 215, 60),
+				Material = Enum.Material.Neon,
+			}, decorFolder)
+			pad:SetAttribute("Team", team)
+			pad:SetAttribute("Slot", slot)
+			label(pad, "?", Color3.fromRGB(255, 230, 90))
+		end
 	end
 
 	-- Open sky far below the court (decorative only, nowhere near the playable surface).

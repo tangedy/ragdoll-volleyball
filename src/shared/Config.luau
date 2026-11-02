@@ -13,7 +13,9 @@ Config.Debug = {
 Config.Match = {
 	MinPlayers = 1, -- Amendment A2: a solo player gets a bot-filled 3v3
 	MaxPlayers = 12,
-	Intermission = 15, -- hub time between matches: talk, practice, shop, change cosmetics
+	-- hub time between matches (talk, practice, shop, spin): the match starts after this many
+	-- seconds, or sooner once every queued player has pressed Ready
+	LobbyMaxWait = 25,
 	IntermissionSkipWhenFull = true,
 	RoundCountdown = 3,
 	RoundTime = 75,
@@ -43,7 +45,7 @@ Config.Arena = {
 	VoidDepth = 25, -- elimination plane below the court surface
 	SpawnSetback = 36, -- spawn distance from the center line (36 from the back edge too)
 	SpawnEdgeMargin = 21,
-	OpeningBallSpots = 6,
+	OpeningBallSpots = 8,
 	OpeningBallOffset = 9, -- studs from the center line
 	BarrierHeight = 40,
 	-- Overtime: outer strips retract symmetrically.
@@ -116,10 +118,8 @@ Config.Player = {
 	JumpPower = 42,
 	PickupRadius = 6, -- horizontal distance from the player to the ball
 	MaxHeldBalls = 1,
-	FullChargeTime = 0.65,
-	-- Every throw is full power (tap to fire), so both ends are the same speed.
-	MinThrowSpeed = 195,
-	MaxThrowSpeed = 195,
+	-- Every throw is instant and full power (tap to fire): there is no charging.
+	ThrowSpeed = 195,
 	ThrowRecovery = 0.25,
 	RagdollDuration = 1.1,
 	PostHitImmunity = 0.75,
@@ -140,8 +140,7 @@ Config.Player = {
 }
 
 Config.Knockback = {
-	HorizontalMin = 28, -- quick throws: v0.1 strength
-	HorizontalMax = 44, -- full charge: +10% over v0.1 (40) for a harder fling
+	Horizontal = 50, -- every throw is full power
 	Upward = 26, -- more hang time = bigger-looking launch without much extra distance
 	MaxSpeed = 80, -- clamp on resulting limb velocity
 	-- Exaggeration: the whole body tumbles about a random axis while each limb windmills on its
@@ -150,11 +149,29 @@ Config.Knockback = {
 	LimbSpin = 9, -- rad/s random per-limb spin
 	LimbFlail = 10, -- studs/s random per-limb velocity (averages out across the body)
 	-- Each hit you take launches you harder (Smash-style). The knockback above is scaled by
-	-- First × Growth^(hits already taken), up to Max, so every hit is 1.25× the last; the ragdoll
-	-- lasts a little longer too, and the hop grows up to UpMax. Hits thrown from jail land at your
-	-- current level without raising it. The count resets each round and when you get back on court
-	-- from jail.
-	Escalation = { First = 1.125, Growth = 1.25, Max = 12, UpMax = 2.5 },
+	-- First + PerPercent × (your damage % before the hit), up to Max; the ragdoll lasts a little
+	-- longer too, and the hop grows up to UpMax. A long-range Standard hit (24%) adds ~0.48, so Max
+	-- is reached around 105%.
+	Escalation = { First = 0.3, PerPercent = 0.02, Max = 2.4, UpMax = 1.4 },
+}
+
+-- Damage % (Smash-style, shown on the HUD and over opponents' heads). Each hit adds PerHit × the
+-- ball's DamageScale (BallDefinitions), scaled up for close-range hits; it only drives knockback
+-- (Config.Knockback.Escalation): you're out when you're knocked off the court. Hits thrown from jail
+-- land at your current % without raising it. It resets each round (not when you escape jail).
+Config.Damage = {
+	PerHit = 24, -- a Standard ball
+	-- distance bonus (horizontal studs from where the ball was thrown): CloseMultiplier× at
+	-- CloseRange or nearer, easing down to 1× at FarRange and beyond
+	CloseRange = 15,
+	FarRange = 70,
+	CloseMultiplier = 1.6,
+	Cap = 999,
+	-- HUD / billboard color: white at 0%, yellow at YellowAt, red from RedAt
+	YellowAt = 50,
+	RedAt = 100,
+	-- "Hit them off the court!" shows at match start for a player's first HintMatches matches
+	HintMatches = 3,
 }
 
 Config.Ball = {
@@ -169,7 +186,7 @@ Config.Ball = {
 	SettleTimeout = 2.5,
 	OutOfBoundsReturnDelay = 2,
 	ConservationInterval = 3,
-	BallsPerCourt = 6,
+	BallsPerCourt = 8,
 	SpawnForward = 2.5,
 	SpawnUp = 1.5,
 }
@@ -204,16 +221,16 @@ Config.Practice = {
 	TemplateName = "PracticeDummyTemplate", -- the dummy rig the server parks in ReplicatedStorage
 	Balls = 2,
 	BallSpread = 4, -- studs between practice balls along the lane
-	DummyRespawn = 2, -- seconds after the dummy falls off before a new one stands up
-	BallRespawn = 1.5, -- seconds after a ball falls off before it's back at its spot
+	DummyRespawn = 0.75, -- seconds after the dummy falls off before a new one stands up
+	BallRespawn = 0.5, -- seconds after a ball falls off before it's back at its spot
 	RecoverAfter = 2.2, -- a launched dummy still on the deck stands back up after this long
 	ThrowerLockout = 0.6, -- can't re-grab your own throw for this long
 }
 
 Config.PowerUps = {
 	Enabled = true,
-	DispenserInterval = 12,
-	MaxPowerBallsPerSide = 1,
+	DispenserInterval = 12, -- per dispenser; each side's second dispenser runs half an interval behind
+	MaxPowerBallsPerSide = 2,
 	Weights = { Heavy = 1, Rocket = 1, Pop = 1 },
 	-- Featured ball of the day: one power type a UTC day, in BallDefinitions.PowerTypes order. It
 	-- drops WeightBoost times as often, and its knockouts count MasteryBonus times toward Power Ball
@@ -234,7 +251,7 @@ Config.Bots = {
 	-- good throws, and none of them ever catch; Hard is sharper, never perfect.
 	--   AimErrorDeg: random cone around a perfect throw · ReactionTime: seconds before reacting to
 	--   an incoming ball · DodgeChance: how often it dodges once it has reacted · AimDelay: aim
-	--   time before release · ChargeHold: how long it charges (FullChargeTime = full power) · QuickThrowChance: snap
+	--   time before release · QuickThrowChance: snap
 	--   throws with no aim time · EdgeCaution: studs from the edge where it starts backing off ·
 	--   TargetSmarts: chance it picks the best target (near an edge, just got up, can't catch)
 	--   instead of simply the nearest · Strafe: sidestep speed factor while aiming
@@ -244,7 +261,6 @@ Config.Bots = {
 			ReactionTime = { 0.34, 0.55 },
 			DodgeChance = 0.25,
 			AimDelay = { 1.2, 2.1 },
-			ChargeHold = { 0, 0.4 },
 			QuickThrowChance = 0.03,
 			EdgeCaution = 11,
 			TargetSmarts = 0.25,
@@ -255,7 +271,6 @@ Config.Bots = {
 			ReactionTime = { 0.24, 0.4 },
 			DodgeChance = 0.4,
 			AimDelay = { 0.9, 1.7 },
-			ChargeHold = { 0.1, 0.65 },
 			QuickThrowChance = 0.08,
 			EdgeCaution = 13,
 			TargetSmarts = 0.6,
@@ -266,7 +281,6 @@ Config.Bots = {
 			ReactionTime = { 0.17, 0.3 },
 			DodgeChance = 0.5,
 			AimDelay = { 0.7, 1.3 },
-			ChargeHold = { 0.25, 0.65 },
 			QuickThrowChance = 0.12,
 			EdgeCaution = 15,
 			TargetSmarts = 0.85,
@@ -284,6 +298,7 @@ Config.Bots = {
 	EdgeBonusRange = 14,
 	TargetGotUpBonus = 14, -- just recovered from a hit (wobbly, can't dodge yet)
 	TargetCatchPenalty = 10, -- empty-handed and facing us: could catch the throw
+	PlayerTargetChance = 0.3, -- per target pick: chance real players are considered; otherwise bots go for other bots first (players only if no bot is hittable)
 	StallThrow = 4, -- holding a ball this long with no clear shot: throw at the nearest enemy anyway
 	SuddenDeathHaste = 0.4, -- aim times shrink by this fraction in sudden death (rounds must end)
 	ReactRange = 34,

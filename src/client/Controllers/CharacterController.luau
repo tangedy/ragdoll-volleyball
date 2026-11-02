@@ -34,6 +34,12 @@ local function onCharacter(character: Model)
 	local camera = workspace.CurrentCamera
 	camera.CameraSubject = h
 	camera.CameraType = Enum.CameraType.Custom
+	-- the server builds the body already facing the right way; put the camera straight in behind it
+	-- so the first frame isn't the old camera angle swinging round a moment later
+	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if root then
+		CharacterController.faceCameraAt(root, root.Position + root.CFrame.LookVector * 20)
+	end
 	-- your own name tag sits right in the middle of your view; everyone else still sees it
 	local head = character:WaitForChild("Head", 5)
 	local tag = head and head:WaitForChild("NameTag", 5)
@@ -155,11 +161,16 @@ function CharacterController.start()
 		-- let the server's teleport replicate first. It travels apart from this message, so when we
 		-- know the spot, wait for the body to actually get there: aiming from where it fell (out in
 		-- the void past the other end) would point the camera the wrong way down the court
+		-- Already there (a fresh build lands in place): turn now, not a beat later.
 		local waited = 0
-		repeat
+		while
+			not (root and from and (root.Position - from).Magnitude < 8)
+			and waited < 1
+			and (from or waited < 0.15)
+		do
 			task.wait(0.05)
 			waited += 0.05
-		until waited >= 0.15 and (not from or not root or (root.Position - from).Magnitude < 8 or waited >= 1)
+		end
 		if not root or token ~= faceToken or player.Character ~= character then
 			return
 		end
