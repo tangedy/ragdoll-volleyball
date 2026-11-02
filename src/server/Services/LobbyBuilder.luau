@@ -928,8 +928,8 @@ local function groupKiosk(parent: Folder)
 	for _, sx in { -4.4, 4.4 } do
 		solid({
 			Name = "Post",
-			Size = Vector3.new(0.6, 12.8, 0.6),
-			CFrame = base * CFrame.new(sx, 6.4, 3.8),
+			Size = Vector3.new(0.6, 15.3, 0.6),
+			CFrame = base * CFrame.new(sx, 7.65, 3.8),
 			Color = PAL.Metal,
 			Material = Enum.Material.Metal,
 		}, model)
@@ -937,24 +937,24 @@ local function groupKiosk(parent: Folder)
 	local sign = decor({
 		Name = "TitleSign",
 		Size = Vector3.new(9.6, 2.4, 0.5),
-		CFrame = base * CFrame.new(0, 11.6, 3.2),
+		CFrame = base * CFrame.new(0, 14.1, 3.2),
 		Color = INK,
 	}, model)
 	for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
 		screenText(sign, face, { { text = "GROUP REWARD", size = 0.85, color = col:Lerp(Color3.new(1, 1, 1), 0.35) } })
 	end
-	outline(base * CFrame.new(0, 11.6, 2.9), 9.7, 2.5, col, model)
+	outline(base * CFrame.new(0, 14.1, 2.9), 9.7, 2.5, col, model)
 	local screen = decor({
 		Name = "Screen",
 		Size = Vector3.new(8.2, 3, 0.2),
-		CFrame = base * CFrame.new(0, 8, 3.35),
+		CFrame = base * CFrame.new(0, 11, 3.35),
 		Color = Color3.fromRGB(20, 16, 40),
 	}, model)
 	screenText(screen, Enum.NormalId.Front, {
 		{ text = "JOIN THE GROUP", size = 0.4, color = Color3.new(1, 1, 1) },
 		{ text = "FREE " .. rewardText(cfg.Reward), size = 0.36, color = GOLD },
 	})
-	outline(base * CFrame.new(0, 8, 3.2), 8.4, 3.2, col, model)
+	outline(base * CFrame.new(0, 11, 3.2), 8.4, 3.2, col, model)
 	-- pedestal with a glowing front strip
 	solid({
 		Name = "Pedestal",

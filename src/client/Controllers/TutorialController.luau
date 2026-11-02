@@ -599,6 +599,10 @@ function TutorialController.init()
 end
 
 function TutorialController.start()
+	-- the court's practice balls come out as the card gets to them
+	PracticeController.cardStep = function(): number
+		return if os.clock() < cheerUntil or callout() ~= nil then step - 1 else step
+	end
 	Net.on("Tutorial", function(d)
 		if type(d) ~= "table" or type(d.step) ~= "number" then
 			return

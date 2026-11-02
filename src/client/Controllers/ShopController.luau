@@ -2148,22 +2148,20 @@ local function buildDaily()
 	daily.close.Activated:Connect(function()
 		ShopController.openDaily(false)
 	end)
-	-- see-through sheet: the surface fades from 70% opaque at the left edge to clear at the right. The
-	-- fill is its own frame (a gradient on the CanvasGroup would fade the cards too), and the drop
-	-- shadow goes, since it would show through as a dark slab.
+	-- see-through sheet: the surface is 50% transparent all over. The fill is its own frame (fading the
+	-- CanvasGroup would fade the cards too), and the drop shadow goes, since it would show through as
+	-- a dark slab.
 	local sheetFrame = daily.frame :: CanvasGroup
 	sheetFrame.BackgroundTransparency = 1
 	local fill = new("Frame", {
 		Name = "Fill",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = T.surface,
+		BackgroundTransparency = 0.5,
 		BorderSizePixel = 0,
 		ZIndex = 1,
 	}, sheetFrame)
 	Theme.corner(fill, Theme.Radius.L)
-	new("UIGradient", {
-		Transparency = NumberSequence.new(0.3, 1),
-	}, fill)
 	local shadow = gui:FindFirstChild(sheetFrame.Name .. "_Shadow")
 	if shadow then
 		shadow:Destroy()

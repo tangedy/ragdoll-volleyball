@@ -39,6 +39,7 @@ export type Profile = {
 		progress: { [string]: number },
 		claimed: { [string]: boolean },
 		backAt: { [string]: number }?,
+		repeatClaims: { [string]: number }?,
 	},
 	LoginStreak: { day: number, lastDate: string, claimedDate: string },
 	IndexOwned: { [string]: boolean },

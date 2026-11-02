@@ -579,6 +579,57 @@ local Cues: { [string]: { Layer } } = {
 		},
 		{ id = S .. "swordlunge.wav", volume = 0.6, pitch = 0.4, delay = 0.45, reverb = true },
 	},
+	-- Supernova finisher
+	SupernovaPoint = {
+		-- a low drone and a far, glassy shimmer as the winner points at the sun
+		{
+			id = S .. "bass.wav",
+			volume = 0.7,
+			pitch = 0.3,
+			eq = { low = 8, mid = -4, high = -10 },
+			reverb = true,
+			stopAfter = 1.3,
+		},
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 1.6, delay = 0.1, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.25, pitch = 2.1, delay = 0.35, reverb = true },
+	},
+	SupernovaSunOut = {
+		-- the sun sucked down to a point, then a deep thud as the light goes out
+		{ id = S .. "swordlunge.wav", volume = 0.8, pitch = 0.28, reverb = true },
+		{
+			id = S .. "bass.wav",
+			volume = 1.0,
+			pitch = 0.3,
+			delay = 0.2,
+			eq = { low = 12, mid = -4, high = -10 },
+			distortion = 0.4,
+			reverb = true,
+			stopAfter = 1.1,
+		},
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 0.4, delay = 0.22, reverb = true },
+	},
+	SupernovaCatch = {
+		-- the star whistling down out of the sky and slapping into the winner's palm
+		{ id = S .. "swordlunge.wav", volume = 0.7, pitch = 1.3 },
+		{ id = S .. "snap.wav", volume = 0.9, pitch = 0.7, delay = 0.28 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 1.2, delay = 0.3, reverb = true },
+	},
+	SupernovaBurn = {
+		-- the hit, then a climbing whine as everything burns to white
+		{ id = S .. "bass.wav", volume = 1.0, pitch = 0.5, distortion = 0.7, eq = { low = 12, mid = 2, high = -6 } },
+		{ id = S .. "glassbreak.wav", volume = 0.6, pitch = 0.6 },
+		{ id = S .. "electronicpingshort.wav", volume = 0.3, pitch = 0.8, delay = 0.1, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.35, pitch = 1.4, delay = 0.4, reverb = true },
+		{ id = S .. "electronicpingshort.wav", volume = 0.4, pitch = 2.4, delay = 0.7, reverb = true },
+		{
+			id = S .. "impact_water.mp3",
+			volume = 0.5,
+			pitch = 2.6,
+			eq = { low = -10, mid = 0, high = 6 },
+			delay = 0.15,
+			stopAfter = 1.2,
+		},
+	},
 	-- Slow-Mo Replay finisher (the time stop)
 	TimeTick = {
 		-- a clock ticking, heard just before it stops

@@ -109,6 +109,24 @@ local function heavyStep(): boolean
 	return tutorialStep == HEAVY_STEP
 end
 
+-- The tutorial step whose card you're reading (TutorialController sets this): behind the server's
+-- step during the "Nice!" beat and step 3's callouts.
+PracticeController.cardStep = function(): number
+	return tutorialStep
+end
+
+-- On the tutorial court the ball comes back to its spot (or changes type) only once the card has
+-- caught up with the step: a thrown ball stays where it landed through the "Nice!" beat and the
+-- callouts. The hub deck doesn't wait.
+local function cardReady(): boolean
+	return not (place and place.spawn) or tutorialStep >= TU.Done or PracticeController.cardStep() >= tutorialStep
+end
+
+-- The ball turns Heavy once the Heavy card is up, not during the "Nice!" beat before it.
+local function heavyShown(): boolean
+	return heavyStep() and cardReady()
+end
+
 -- Your skin while a Standard ball is yours (held or in flight), the plain look of its type otherwise.
 local function applySkin(b: PBall)
 	local def = BallDefinitions.get(b.ballType)
@@ -217,7 +235,7 @@ end
 
 -- The type a ball should be right now: Heavy for the tutorial's Heavy ball, else Standard.
 local function wantedType(b: PBall): string
-	return if heavyStep() and b == heavyBall then "Heavy" else "Standard"
+	return if heavyShown() and b == heavyBall then "Heavy" else "Standard"
 end
 
 local function hide(b: PBall, backAt: number)
@@ -602,6 +620,18 @@ local function step(dt: number)
 		and root ~= nil
 		and (action == "Idle" or action == "Dodging" or action == "Recovering" or action == nil)
 	local t = os.clock()
+	local ready = cardReady()
+	if heavyShown() and not heavyBall then
+		-- one ball turns Heavy: the first one you're not throwing. A ball whose type is wrong goes
+		-- back to its spot as the new type once it's at rest or in your hand (below)
+		for _, b in balls do
+			if b.state ~= "InFlight" then
+				heavyBall = b
+				break
+			end
+		end
+		heavyBall = heavyBall or balls[1]
+	end
 	for _, b in balls do
 		if b.state == "InFlight" then
 			local remaining = dt
@@ -620,7 +650,7 @@ local function step(dt: number)
 			end
 			if p.Position.Y < at.voidY then
 				hide(b, t + PR.BallRespawn)
-			elseif (b.homeAt > 0 and t >= b.homeAt) or b.ballType ~= wantedType(b) then
+			elseif ready and ((b.homeAt > 0 and t >= b.homeAt) or b.ballType ~= wantedType(b)) then
 				returnHome(b)
 			else
 				if b.state == "Loose" and p.AssemblyLinearVelocity.Magnitude < Config.Ball.SettleSpeed then
@@ -635,7 +665,11 @@ local function step(dt: number)
 					end
 				end
 			end
-		elseif b.state == "Gone" and ballsEnabled and t >= b.backAt then
+		elseif
+			(b.state == "Gone" and ballsEnabled and t >= b.backAt and ready)
+			-- the Heavy card is up: no Standard ball left in your hand
+			or (b.state == "Held" and wantedType(b) == "Heavy" and b.ballType ~= "Heavy")
+		then
 			returnHome(b)
 		end
 	end
@@ -643,20 +677,11 @@ local function step(dt: number)
 end
 
 -- Bring the balls and dummy in line with the tutorial step. Safe to repeat: it runs on every
--- Tutorial message and once the practice area is built (the message can arrive first).
+-- Tutorial message and once the practice area is built (the message can arrive first). The Heavy
+-- ball is picked in step, once its card is up.
 local function applyStep()
 	if not heavyStep() then
 		heavyBall = nil
-	elseif not heavyBall then
-		-- one ball turns Heavy: the first one you're not holding or throwing. A ball whose type
-		-- is wrong goes back to its spot as the new type once it's at rest (step)
-		for _, b in balls do
-			if b.state ~= "Held" and b.state ~= "InFlight" then
-				heavyBall = b
-				break
-			end
-		end
-		heavyBall = heavyBall or balls[1]
 	end
 	-- a dummy nobody has hit yet takes the step's starting % (it may have stood up before the step
 	-- message arrived)
@@ -778,10 +803,7 @@ local function courtPlace(): Place?
 		geometry = function(): { Instance }
 			return if collidable then { collidable } else {}
 		end,
-		ballSpots = {
-			o + Vector3.new(-C.BallSpread / 2, 2, -C.BallZ),
-			o + Vector3.new(C.BallSpread / 2, 2, -C.BallZ),
-		},
+		ballSpots = { o + Vector3.new(0, 2, -C.BallZ) }, -- one ball: Standard, then Heavy at the Heavy step
 		dummyAt = o + Vector3.new(0, 4, C.DummyZ),
 		facing = o + Vector3.new(0, 4, -hl),
 		voidY = ArenaLayout.VoidY,

@@ -72,7 +72,7 @@ Every product id is still the placeholder 0, so none is registered or on sale ye
 The placeholder Prism skin these replace was never on sale, so no one owns it.
 
 **Finishers and gestures moved to Robux (Oct 29).** The two showiest Epic finishers (Meteor Strike, Black Hole), both Legendary finishers (Destiny Arrives, Out of the Park!), two Epic gestures (Robot, Dab) and the only Legendary gesture (Trophy Lift) are now Robux exclusives, so there's one Legendary gesture, not two. Players who already own them keep them. They're no longer sold for coins, spun or rolled, and bots don't use the finishers. New coin items refill the quest chests, so each one again has every rarity and rolls its configured weights:
-- **Supernova** (Legendary finisher, 12,000 coins). The world goes dark, sparks spiral into a star over the winner's raised hands, and the star bursts on the victim as a white-gold supernova. It's the Finisher Chest's Legendary (11 items).
+- **Supernova** (Legendary finisher, 12,000 coins). The winner turns, points at a distant sun and snuffs it out, so night falls; the sun drops into their hand, condensed, and they hurl it into the victim's face. The world burns white until only the victim's silhouette is left, and that fades away too. It's one of the Finisher Chest's two Legendaries (with Purple Flash since Nov 2; 11 items).
 - **Power Up** (Legendary gesture, 12,000 coins). The winner crouches and charges, then throws their arms wide as a golden aura flares (IntroPoses `Fx = "Aura"`). It's the Gesture Chest's Legendary.
 - **The Floss** and **Heart Hands** (Epic gestures, 5,000 coins each) bring the Gesture Chest back to 3 Epics and 12 items.
 
@@ -149,8 +149,8 @@ The ball skin rows are the Oct 29 lineup at the flat `Config.Economy.PriceByRari
 | --- | --- |
 | Common | Orange, Yellow, Green, Blue, Purple, Dark Gray, White, Bubblegum, Lime, Sparkle, Flame, Rookie, Big Wave |
 | Rare | Ice, Zebra, Rainbow skin, Silver, Gold, Rainbow trail, Dodge Master, Sky Launcher, Spotlight, Flex, You're Next |
-| Epic | Basketball, Soccer Ball, Tennis Ball, Eight Ball, Meteor, Disco Ball, Planet, Bomb, Untouchable, Meteor Strike, Purple Flash, Black Hole, Dodgeball Rush, Take a Bow, Dab, The Floss, Heart Hands, (Pumpkin Reaper) |
-| Legendary | Oracle, Masquerade, Heartbreaker, Maw, Supernova, Power Up (Destiny Arrives and Out of the Park! are Robux exclusives now) |
+| Epic | Basketball, Soccer Ball, Tennis Ball, Eight Ball, Meteor, Disco Ball, Planet, Bomb, Untouchable, Meteor Strike, Black Hole, Dodgeball Rush, Take a Bow, Dab, The Floss, Heart Hands, (Pumpkin Reaper) |
+| Legendary | Oracle, Masquerade, Heartbreaker, Maw, Supernova, Purple Flash (Legendary since Nov 2), Power Up (Destiny Arrives and Out of the Park! are Robux exclusives now) |
 
 Legendary should stay rare, so only the two showpiece finishers stay there. The catalog becomes 79,250 coins (before the starter sets), about 45 days of normal play.
 
@@ -272,7 +272,7 @@ The §4 starter sets are in the Catalog, plus a few extras so every rarity has i
 | --- | --- | --- | --- | --- |
 | Title (19) | Rookie, Bonk, Wobbly, Benchwarmer, Butterfingers, Ball Hog, Noodle Arms | Dodge Master, Sky Launcher, Catch King, Jailbreaker, Bullseye, Comeback Kid | Untouchable, Void Walker, Showstopper, Iron Wall | Ragdoll Royalty, The Final Boss |
 | Gesture (12) | Big Wave, Thumbs Up, Shrug, Clap | Flex, You're Next, Salute, Air Guitar | Take a Bow, The Floss, Heart Hands | Power Up (golden aura) |
-| Finisher (11) | Confetti Pop, Air Horn, Sad Trombone, BONK! | Spotlight, Slow-Mo Replay, Paparazzi | Purple Flash, Dodgeball Rush, Bubble Trouble | Supernova |
+| Finisher (11) | Confetti Pop, Air Horn, Sad Trombone, BONK! | Spotlight, Slow-Mo Replay, Paparazzi | Dodgeball Rush, Bubble Trouble | Supernova, Purple Flash |
 
 With items in every rarity, each chest rolls its configured weights as they are (no renormalizing). Robux-exclusive items are never in the chests. Supernova, Power Up, The Floss and Heart Hands keep the chests full after the Oct 29 exclusives.
 

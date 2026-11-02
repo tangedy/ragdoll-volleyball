@@ -55,7 +55,7 @@ return function(H)
 			end
 		end
 		eq(Catalog.rarity(Catalog.get("Finisher_DestinyArrives")), "Legendary", "Destiny Arrives")
-		eq(Catalog.rarity(Catalog.get("Finisher_PurpleFlash")), "Epic", "Purple Flash re-tiered")
+		eq(Catalog.rarity(Catalog.get("Finisher_PurpleFlash")), "Legendary", "Purple Flash re-tiered")
 		eq(Catalog.get("Title_Rookie").Price, 500, "Rookie at the Common price")
 	end)
 
@@ -598,7 +598,7 @@ return function(H)
 		check(not S.QuestService.claim(early, "Hits"), "claimed before the profile loaded")
 	end)
 
-	test("quests: playtime pays coins every time it fills, starts again and survives midnight", function()
+	test("quests: playtime pays 1st then repeat coins, caps per day, survives midnight", function()
 		local day = 20000 * 86400
 		H.now = day + 86400 - 2
 		local c = H.combatant()
@@ -609,21 +609,30 @@ return function(H)
 		eq(quest(c, "Playtime").progress, goal - 1, "playtime reset at midnight")
 		S.QuestService.record(c, "Playtime", 5)
 		check(quest(c, "Playtime").ready, "playtime not ready at the goal")
-		local coins = c.profile.Coins
-		local reward = 0
+		local def
 		for _, q in Config.Quests.List do
 			if q.Id == "Playtime" then
-				reward = q.Reward.Amount
+				def = q
 			end
 		end
-		for round = 1, 3 do
+		for round = 1, def.MaxClaims do
+			local before = c.profile.Coins
 			local r = S.QuestService.claim(c, "Playtime")
 			check(r and r.ok and r.kind == "Coins", "playtime claim refused on round " .. round)
-			eq(c.profile.Coins, coins + reward * round, "playtime coins")
+			local pay = if round == 1 then def.Reward.Amount else def.RepeatAmount
+			eq(c.profile.Coins - before, pay, "playtime coins on round " .. round)
 			local q = quest(c, "Playtime")
-			check(q.progress == 0 and not q.claimed and not q.ready, "playtime didn't start again")
+			check(q.progress == 0 and not q.ready, "playtime didn't start again")
+			eq(q.claimed, round == def.MaxClaims, "playtime claimed-out state on round " .. round)
 			S.QuestService.record(c, "Playtime", goal)
 		end
+		check(not S.QuestService.claim(c, "Playtime"), "playtime claimed past the daily cap")
+		H.now = day + 2 * 86400 -- the next day: claimable again, first claim pays the full amount
+		check(not quest(c, "Playtime").claimed, "playtime still claimed after the reset")
+		S.QuestService.record(c, "Playtime", goal)
+		local before = c.profile.Coins
+		check(S.QuestService.claim(c, "Playtime"), "playtime refused after the reset")
+		eq(c.profile.Coins - before, def.Reward.Amount, "first claim after the reset")
 	end)
 
 	test("quests: a claim survives a save and reload, and stays claimed", function()

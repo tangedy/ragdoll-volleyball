@@ -149,10 +149,16 @@ local function sticker(parent: Instance, name: string, text: string, className: 
 	return f
 end
 
--- Put the point on the side the sticker aims at.
+-- Put the point on the side the sticker aims at. The point is laid out inside the sticker's
+-- padding, so push it back out onto the edge, and pad that side wider so its inner half (about
+-- 13px with the stroke) clears the text.
 local function aim(f: GuiObject, side: number)
 	local point = f:FindFirstChild("Point") :: Frame
-	point.Position = UDim2.fromScale(if side < 0 then 0 else 1, 0.5)
+	local pad = f:FindFirstChildOfClass("UIPadding") :: UIPadding
+	local near, far = 24, 14
+	pad.PaddingLeft = UDim.new(0, if side < 0 then near else far)
+	pad.PaddingRight = UDim.new(0, if side < 0 then far else near)
+	point.Position = UDim2.new(if side < 0 then 0 else 1, if side < 0 then -near else near, 0.5, 0)
 	f.AnchorPoint = Vector2.new(if side < 0 then 0 else 1, 0.5)
 end
 
@@ -227,7 +233,7 @@ local function drawArrow(t: number)
 	local right = width - inset
 	local blocker = if side > 0 then rightEdgeAt(origin.Y + y, arrow.AbsoluteSize.Y / 2 + 6) else nil
 	if blocker then
-		right = math.min(right, blocker - origin.X - 12)
+		right = math.min(right, blocker - origin.X - 24)
 	end
 	arrow.Position = UDim2.fromOffset(if side < 0 then inset + bob else right - bob, y)
 	arrow.Visible = true
@@ -252,7 +258,7 @@ local function drawQuests(t: number)
 		stroke.Thickness = if Theme.settings.reducedMotion then 4 else 4 + 2 * math.sin(t * 8)
 	end
 	local bob = if Theme.settings.reducedMotion then 0 else math.sin(t * 6) * 4
-	callout.Position = UDim2.fromOffset(at.X + size.X + 22 + bob, at.Y + math.min(size.Y / 2, 60))
+	callout.Position = UDim2.fromOffset(at.X + size.X + 30 + bob, at.Y + math.min(size.Y / 2, 60))
 	if not callout.Visible then
 		callout.Visible = true
 		ring.Visible = true

@@ -14,7 +14,8 @@
 --  * Claim a daily quest: a full-screen opening plays the treasure chest rattling while the server
 --    rolls the prize, then bursting open in the prize's rarity colour; then the shared prize card
 --    (SpinController.drawReveal) shows what you won in the middle of the screen. Claiming the
---    playtime quest pops its coins into the counter (HUDController.coinPop) and it starts again.
+--    playtime quest pops its coins into the counter (HUDController.coinPop) and it starts again,
+--    until its last claim of the day (Config MaxClaims) folds it to the slim line until the reset.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -192,7 +193,7 @@ local function renderPanel()
 		local goal = math.max(1, tonumber(q.goal) or 1)
 		local progress = math.min(goal, liveProgress(q))
 		if q.repeats then
-			q.ready = progress >= goal
+			q.ready = progress >= goal and not q.claimed
 		end
 		row.live.Visible = not q.claimed
 		row.done.Visible = q.claimed == true
@@ -345,8 +346,19 @@ local function buildRow(q: any, order: number): Row
 	})
 	icon.Activated:Connect(function()
 		if q.repeats then
-			local minutes = (tonumber(q.goal) or 0) // 60
-			HUDController.hint(("%d coins for every %d minutes you play"):format(q.coins or 0, minutes), 2)
+			-- the row was built from the first status; read the quest as it stands now
+			local now = questOf(q.id) or q
+			local minutes = (tonumber(now.goal) or 0) // 60
+			HUDController.hint(
+				("%d coins for your first %d minutes today, then %d, up to %d times a day (%d left)"):format(
+					now.firstCoins or now.coins or 0,
+					minutes,
+					now.repeatCoins or now.coins or 0,
+					now.maxClaims or 0,
+					math.max(0, (now.maxClaims or 0) - (now.claims or 0))
+				),
+				3
+			)
 		else
 			QuestController.open(q.id, true)
 		end

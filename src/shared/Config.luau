@@ -598,7 +598,8 @@ Config.Economy = {
 -- on an enemy (bots included), a dodge an enemy ball flew past (Dodge below), and a won match (the
 -- anti-AFK rule the match coins use).
 --   Event: "Knockout" | "Hit" | "Dodge" | "Won" | "Playtime"
--- A Repeats quest never resets or runs out: claiming it pays Reward and starts it again from 0.
+-- A Repeats quest's progress never resets: claiming it pays Reward (RepeatAmount instead after the
+-- day's first claim) and starts it again from 0, up to MaxClaims times per UTC day.
 -- Playtime counts a second at a time while you're active (moved in the last ActiveWindow seconds).
 -- Quest chests are free, so they're allowed where paid random items are restricted.
 -- The very first time a player claims a quest, it comes back FirstCooldown seconds later (fresh
@@ -621,7 +622,9 @@ Config.Quests = {
 			Event = "Playtime",
 			Goal = 12 * 60, -- seconds
 			Repeats = true,
-			Reward = { Kind = "Coins", Amount = 100 },
+			Reward = { Kind = "Coins", Amount = 1000 }, -- the day's first claim
+			RepeatAmount = 500, -- every claim after it
+			MaxClaims = 4, -- per UTC day
 		},
 	},
 	-- Each chest rolls one item of its Catalog category: a rarity by RarityWeights (rarities the
@@ -670,8 +673,7 @@ Config.Tutorial = {
 	Court = {
 		Offset = Vector3.new(0, 0, -800), -- clear of the real court's VoidGlow and the +800 Z shop preview
 		SpawnZ = 40, -- where you stand (Red half)
-		BallZ = 12, -- your two practice balls, near the centre line
-		BallSpread = 8,
+		BallZ = 12, -- your one practice ball, near the centre line
 		DummyZ = 50, -- the dummy on the far half, 22 studs from its back edge
 		AwayReturn = 1, -- a ball resting where you can't reach it (the far half) comes back after this
 	},

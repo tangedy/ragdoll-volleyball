@@ -51,6 +51,12 @@ local POSES: { [string]: PoseDef } = {
 		Right = { upper = Vector3.new(0.12, -0.05, -1), fore = Vector3.new(0.02, 0.04, -1) },
 		Left = REST_L,
 	},
+	-- right arm raised up and out ahead, finger on something low in the sky (Supernova's sun)
+	PointSky = {
+		Right = { upper = Vector3.new(0.15, 0.5, -0.85), fore = Vector3.new(0.08, 0.58, -0.81) },
+		Left = REST_L,
+		neck = 18,
+	},
 	BowHead = { Right = REST_R, Left = REST_L, neck = -60 },
 	-- right arm straight out in front, palm toward something arriving
 	ReachOut = {

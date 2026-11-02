@@ -119,8 +119,9 @@ CombatService.creditDodges, and the Config.Quests block.
 - The playtime count (m:ss) climbs about once a second while you move, and pauses about 30 s
   after you stand still (the QuestPlaytime player attribute).
 - To test the playtime claim quickly, set the progress from the server command bar
-  (QuestService.daily(c).progress.Playtime = 715). Claim appears; claiming pops +100 coins into
-  the counter and the count restarts at 0:00.
+  (QuestService.daily(c).progress.Playtime = 715). Claim appears; claiming pops +1000 coins into
+  the counter (+500 on the 2nd-4th claims that day) and the count restarts at 0:00. After the
+  4th claim the row folds to the slim line with a timer to the UTC reset.
 - In a bot match: hits raise "Hit 10 players"; pressing dodge as an enemy ball flies past
   raises "Dodge 5 balls"; dodging with no ball nearby doesn't. If neither quest was picked
   today, set its picks/progress the same way.

@@ -17,7 +17,9 @@
 -- Claiming is hub-only. A daily quest is claimed once per day, except a player's very first claim
 -- of each quest: that quest comes back with fresh progress Config.Quests.FirstCooldown later. Its
 -- chest opens through RewardService.grant (Kind = "Chest"), which rolls the prize on the server. A
--- Repeats quest pays its Reward and starts again from 0. The claim is marked in the same step as the
+-- Repeats quest pays its Reward (RepeatAmount after the day's first claim) and starts again from 0,
+-- up to MaxClaims times a UTC day; then it's claimed until the reset and its clock stops. The claim
+-- is marked in the same step as the
 -- grant, so a repeated request never pays twice, and the profile saves right after. Quest chests
 -- are free, so they're allowed where paid random items are restricted.
 
@@ -40,6 +42,7 @@ export type Daily = {
 	claimed: { [string]: boolean },
 	backAt: { [string]: number }?, -- quests on their first-claim cooldown: when they come back
 	picks: { string }?, -- today's daily quests, in panel order
+	repeatClaims: { [string]: number }?, -- Repeats quests: times claimed today
 }
 
 function QuestService.init(services: any)
@@ -100,6 +103,7 @@ function QuestService.daily(c: any): Daily
 		d.claimed = {}
 		d.backAt = nil
 		d.picks = nil
+		d.repeatClaims = nil
 	end
 	if type(d.picks) ~= "table" then
 		d.picks = QuestService.pickDaily()
@@ -151,6 +155,15 @@ local function firstClaims(c: any): { [string]: number }
 	return p.QuestFirstClaims
 end
 
+-- How many times Repeats quest `q` has been claimed today, and the coins its next claim pays.
+local function repeatClaims(d: Daily, q: any): number
+	return tonumber(d.repeatClaims and d.repeatClaims[q.Id]) or 0
+end
+
+local function repeatPay(d: Daily, q: any): number
+	return if repeatClaims(d, q) == 0 then q.Reward.Amount else q.RepeatAmount or q.Reward.Amount
+end
+
 -- Count `amount` (default 1) of `event` ("Knockout" | "Hit" | "Dodge" | "Won" | "Playtime") toward
 -- today's quests, up to each goal. Real, loaded players only; the caller pushes the profile.
 function QuestService.record(c: any, event: string, amount: number?)
@@ -187,7 +200,11 @@ function QuestService.status(c: any): any
 		}
 		if q.Repeats then
 			entry.repeats = true
-			entry.coins = q.Reward.Amount
+			entry.coins = repeatPay(d, q) -- what the next claim pays
+			entry.firstCoins = q.Reward.Amount
+			entry.repeatCoins = q.RepeatAmount or q.Reward.Amount
+			entry.claims = repeatClaims(d, q)
+			entry.maxClaims = q.MaxClaims
 		else
 			local drops: { [string]: { string } } = {}
 			for rarity, items in S.RewardService.chestPool(q.Chest) do
@@ -240,13 +257,22 @@ function QuestService.claim(c: any, id: string): ({ [string]: any }?, string?)
 	if progress < q.Goal then
 		return nil, "Not done yet"
 	end
-	local reward = if q.Repeats then q.Reward else { Kind = "Chest", Chest = q.Chest }
+	local reward = if q.Repeats
+		then { Kind = "Coins", Amount = repeatPay(d, q) }
+		else { Kind = "Chest", Chest = q.Chest }
 	local result, why = S.RewardService.grant(c, reward, "Quest" .. q.Id)
 	if not result then
 		return nil, why
 	end
 	if q.Repeats then
 		d.progress[q.Id] = 0
+		local counts = d.repeatClaims or {}
+		d.repeatClaims = counts
+		local claims = (tonumber(counts[q.Id]) or 0) + 1
+		counts[q.Id] = claims
+		if q.MaxClaims and claims >= q.MaxClaims then
+			d.claimed[q.Id] = true -- done for today; back at the reset
+		end
 		if c.player then
 			c.player:SetAttribute("QuestPlaytime", 0)
 		end
@@ -292,7 +318,12 @@ local function playClock()
 				end
 				local d = QuestService.daily(c)
 				local before = tonumber(d.progress[q.Id]) or 0
-				if before < q.Goal and t - (c.questActiveAt or -math.huge) <= Q.ActiveWindow then
+				-- a quest claimed out for today doesn't tick until the reset
+				if
+					before < q.Goal
+					and not d.claimed[q.Id]
+					and t - (c.questActiveAt or -math.huge) <= Q.ActiveWindow
+				then
 					QuestService.record(c, "Playtime")
 					if (tonumber(d.progress[q.Id]) or 0) >= q.Goal then
 						S.DataService.push(c)
