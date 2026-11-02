@@ -245,6 +245,14 @@ local function renderTimers()
 	end
 end
 
+-- Light letters in a dark outline: the panel is see-through, so its text has to read over any part
+-- of the hub.
+local function outlined(label: TextLabel, thickness: number?): TextLabel
+	label.TextColor3 = T.paper
+	Theme.textStroke(label, thickness or 2)
+	return label
+end
+
 -- A round disc in the toy outline holding `glyph`.
 local function disc(
 	parent: Instance,
@@ -299,14 +307,14 @@ local function buildRow(q: any, order: number): Row
 	local icon = if q.repeats
 		then disc(live, T.sun, "coin", T.onFill, true)
 		else disc(live, CHEST_TONE[q.chest] or T.sun, CHEST_GLYPH[q.chest] or "gift", T.onFill, true)
-	local name = Theme.text(live, SIZE.Body, {
+	local name = outlined(Theme.text(live, SIZE.Body, {
 		Name = "Name",
 		Position = UDim2.fromOffset(TEXT_X, 4),
 		Size = UDim2.new(1, textW, 0, 20),
 		Text = q.name,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
-	})
+	}))
 	local track = new("Frame", {
 		Name = "Progress",
 		Position = UDim2.fromOffset(TEXT_X, 30),
@@ -318,7 +326,7 @@ local function buildRow(q: any, order: number): Row
 	local fill =
 		new("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.sky, ZIndex = 5 }, track)
 	Theme.round(fill)
-	local count = Theme.text(live, SIZE.Body, {
+	local count = outlined(Theme.text(live, SIZE.Body, {
 		Name = "Count",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.fromScale(1, 0.5),
@@ -326,7 +334,7 @@ local function buildRow(q: any, order: number): Row
 		FontFace = Theme.DisplayFace,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		ZIndex = 4,
-	})
+	}))
 	local claim = Theme.button(live, "Claim", "primary", {
 		Name = "Claim",
 		AnchorPoint = Vector2.new(1, 0.5),
@@ -351,26 +359,24 @@ local function buildRow(q: any, order: number): Row
 	local done = layer("Done")
 	done.Visible = false
 	disc(done, T.leaf, "check", T.onFill, false, DONE_DISC)
-	local doneName = Theme.text(done, SIZE.Label, {
+	local doneName = outlined(Theme.text(done, SIZE.Label, {
 		Name = "Name",
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, TEXT_X, 0.5, 0),
 		Size = UDim2.new(1, textW, 0, 20),
 		Text = q.name,
-		TextColor3 = T.inkMuted,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 4,
-	})
-	local doneTime = Theme.text(done, SIZE.Label, {
+	}))
+	local doneTime = outlined(Theme.text(done, SIZE.Label, {
 		Name = "Time",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.fromScale(1, 0.5),
 		Size = UDim2.fromOffset(RIGHT_W, 20),
 		FontFace = Theme.DisplayFace,
-		TextColor3 = T.inkMuted,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		ZIndex = 4,
-	})
+	}))
 	return {
 		frame = frame,
 		live = live,
@@ -445,14 +451,17 @@ local function buildPanel()
 		BackgroundTransparency = 1,
 		ZIndex = 3,
 	}, panel)
-	Theme.text(header, SIZE.Heading, {
-		Name = "Title",
-		Size = UDim2.fromScale(0.6, 1),
-		FontFace = Theme.DisplayFace,
-		Text = "Daily quests",
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 4,
-	})
+	outlined(
+		Theme.text(header, SIZE.Heading, {
+			Name = "Title",
+			Size = UDim2.fromScale(0.6, 1),
+			FontFace = Theme.DisplayFace,
+			Text = "Daily quests",
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 4,
+		}),
+		2.5
+	)
 	local collapseButton = Theme.iconButton(header, "back", "secondary", 24, {
 		Name = "Collapse",
 		AnchorPoint = Vector2.new(1, 0.5),
@@ -462,16 +471,15 @@ local function buildPanel()
 	collapseButton.Activated:Connect(function()
 		QuestController.setCollapsed(true)
 	end)
-	resetLabel = Theme.text(header, SIZE.Label, {
+	resetLabel = outlined(Theme.text(header, SIZE.Label, {
 		Name = "Reset",
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -(24 + SPACE.S), 0, 0),
 		Size = UDim2.new(0.4, -(24 + SPACE.S), 1, 0),
 		Text = untilReset(),
-		TextColor3 = T.inkMuted,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		ZIndex = 4,
-	})
+	}))
 	list = new("Frame", {
 		Name = "List",
 		LayoutOrder = 1,

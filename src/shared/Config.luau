@@ -440,7 +440,7 @@ Config.CoinShop = {
 	},
 	-- The Starter Pack: a one-time developer product shown on the Coins sheet once Robux buttons
 	-- unlock, until bought (profile.StarterBought). It grants Items (Robux exclusives that are also sold
-	-- on their own), Coins and a free Boost. ProductId 0 until created: Studio shows it as "Soon".
+	-- on their own), Coins and a free Boost.
 	Starter = {
 		Id = "Starter",
 		Name = "Starter Pack",
@@ -448,7 +448,7 @@ Config.CoinShop = {
 		Coins = 5000,
 		Boost = "Boost30",
 		Robux = 99,
-		ProductId = 0, -- PLACEHOLDER: developer product "Starter Pack"
+		ProductId = 3727439082, -- developer product "Starter Pack"
 		Image = 0, -- PLACEHOLDER: card art image id (optional)
 		Glyph = "🎁",
 		Tag = "One time",

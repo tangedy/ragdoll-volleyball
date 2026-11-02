@@ -18,7 +18,7 @@ export type Item = {
 	-- the item's tier (docs/ECONOMY.md §2): it sets the shop tag, the wheel and chest odds and the
 	-- duplicate coins. Every non-default item has one; price no longer decides it.
 	Rarity: Rarity?,
-	RobuxProductId: number, -- placeholder until products exist (Amendment A5)
+	RobuxProductId: number, -- a Robux exclusive's developer product (0 for everything else)
 	Default: boolean?,
 	-- an event cosmetic (e.g. "Halloween"): sold only while that event is on, never on the spin or
 	-- chest wheels, and kept forever once owned. Limited items show a LIMITED tag.
@@ -256,64 +256,65 @@ local items: { Item } = {
 		RobuxProductId = 0,
 		Data = { Color = Color3.fromRGB(32, 32, 38), Material = Enum.Material.SmoothPlastic, Model = "Bomb" },
 	},
-	-- The Legendary set (Verity, Falsity, Lovity, Cruelty): model skins with Data.Variants, the forms
+	-- The Legendary set (Oracle, Masquerade, Heartbreaker, Maw; their ids keep the set's first names
+	-- so owners keep them): model skins with Data.Variants, the forms
 	-- one of which shows on each pickup (never the same twice in a row; ShopService.pickForm). Every
 	-- skin has the same three forms, each in its own colors (BallModels).
 	{
 		Id = "Skin_Verity",
 		Category = "BallSkin",
-		Name = "Verity",
+		Name = "Oracle",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
 		RobuxProductId = 0,
 		Data = {
-			Color = Color3.fromRGB(246, 242, 230),
+			Color = Color3.fromRGB(240, 236, 226),
 			Material = Enum.Material.SmoothPlastic,
-			Model = "Verity",
+			Model = "Oracle",
 			Variants = FORMS,
-		}, -- pearl white and gold
+		}, -- a pearl eye in gold hoops
 	},
 	{
 		Id = "Skin_Falsity",
 		Category = "BallSkin",
-		Name = "Falsity",
+		Name = "Masquerade",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
 		RobuxProductId = 0,
 		Data = {
-			Color = Color3.fromRGB(112, 62, 172),
+			Color = Color3.fromRGB(96, 46, 160),
 			Material = Enum.Material.SmoothPlastic,
-			Model = "Falsity",
+			Model = "Masquerade",
 			Variants = FORMS,
-		}, -- purple, with a smiling and a frowning mask
+		}, -- a two-faced violet and ivory mask
 	},
 	{
 		Id = "Skin_Lovity",
 		Category = "BallSkin",
-		Name = "Lovity",
+		Name = "Heartbreaker",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
 		RobuxProductId = 0,
 		Data = {
-			Color = Color3.fromRGB(255, 150, 196),
+			Color = Color3.fromRGB(255, 120, 172),
 			Material = Enum.Material.SmoothPlastic,
-			Model = "Lovity",
+			Model = "Heartbreaker",
 			Variants = FORMS,
-		}, -- pink, scattered with hearts
+		}, -- a cracked heart in a ring of hearts
 	},
 	{
 		Id = "Skin_Cruelty",
 		Category = "BallSkin",
-		Name = "Cruelty",
+		Name = "Maw",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
 		RobuxProductId = 0,
 		Data = {
-			Color = Color3.fromRGB(184, 22, 34),
+			Color = Color3.fromRGB(196, 24, 40),
 			Material = Enum.Material.SmoothPlastic,
-			Model = "Cruelty",
+			Model = "Maw",
 			Variants = FORMS,
-		}, -- crimson, with a jagged black bite
+		}, -- a fanged mouth with horns
 	},
 	-- Robux exclusives (Item.Exclusive): model skins with their own light and particles; the two
 	-- Legendaries also shift between the Legendary forms on every pickup (Data.Variants)
@@ -323,7 +324,7 @@ local items: { Item } = {
 		Name = "Galaxy",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438143,
 		Exclusive = true,
 		Data = {
 			Color = Color3.fromRGB(14, 12, 40),
@@ -337,7 +338,7 @@ local items: { Item } = {
 		Name = "Storm Core",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438250,
 		Exclusive = true,
 		Data = {
 			Color = Color3.fromRGB(120, 220, 255),
@@ -351,7 +352,7 @@ local items: { Item } = {
 		Name = "Sovereign",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438260,
 		Exclusive = true,
 		Data = {
 			Color = Color3.fromRGB(240, 190, 60),
@@ -366,7 +367,7 @@ local items: { Item } = {
 		Name = "Phoenix",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438268,
 		Exclusive = true,
 		Data = {
 			Color = Color3.fromRGB(255, 120, 30),
@@ -467,7 +468,7 @@ local items: { Item } = {
 		Name = "Aurora",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438275,
 		Exclusive = true,
 		Data = {
 			Colors = { Color3.fromRGB(90, 255, 170), Color3.fromRGB(60, 200, 255), Color3.fromRGB(170, 90, 255) },
@@ -484,7 +485,7 @@ local items: { Item } = {
 		Name = "Neon Pulse",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438285,
 		Exclusive = true,
 		Data = {
 			Colors = { Color3.fromRGB(255, 60, 200), Color3.fromRGB(255, 255, 255), Color3.fromRGB(40, 230, 255) },
@@ -501,7 +502,7 @@ local items: { Item } = {
 		Name = "Stardust",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438290,
 		Exclusive = true,
 		Data = {
 			Colors = { Color3.fromRGB(255, 236, 150), Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 190, 70) },
@@ -518,7 +519,7 @@ local items: { Item } = {
 		Name = "Void Rift",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438299,
 		Exclusive = true,
 		Data = {
 			Colors = { Color3.fromRGB(170, 80, 255), Color3.fromRGB(40, 10, 70), Color3.fromRGB(10, 0, 20) },
@@ -875,7 +876,7 @@ local items: { Item } = {
 		Name = "Neon Ace",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438308,
 		Exclusive = true,
 		Data = {
 			Text = "Neon Ace",
@@ -888,7 +889,7 @@ local items: { Item } = {
 		Name = "Midnight Menace",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438319,
 		Exclusive = true,
 		Data = {
 			Text = "Midnight Menace",
@@ -901,7 +902,7 @@ local items: { Item } = {
 		Name = "The Chosen One",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438327,
 		Exclusive = true,
 		Data = {
 			Text = "The Chosen One",
@@ -915,7 +916,7 @@ local items: { Item } = {
 		Name = "Main Character",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438333,
 		Exclusive = true,
 		Data = {
 			Text = "Main Character",
@@ -1009,7 +1010,7 @@ local items: { Item } = {
 		Name = "Meteor Strike",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438342,
 		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Module = "Meteor", Icon = "☄️" },
 	},
@@ -1031,7 +1032,7 @@ local items: { Item } = {
 		Name = "Destiny Arrives",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438349,
 		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Module = "DestinyArrives", Icon = "🌀" },
 	},
@@ -1059,7 +1060,7 @@ local items: { Item } = {
 		Name = "Black Hole",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438356,
 		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Module = "BlackHole", Icon = "🕳️" },
 	},
@@ -1087,7 +1088,7 @@ local items: { Item } = {
 		Name = "Out of the Park!",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438364,
 		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Module = "OutOfThePark", Icon = "⚾" },
 	},
@@ -1189,7 +1190,7 @@ local items: { Item } = {
 		Name = "Dab",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438373,
 		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Pose = "Dab", Icon = "😎" },
 	},
@@ -1199,7 +1200,7 @@ local items: { Item } = {
 		Name = "Robot",
 		Price = Config.Economy.PriceByRarity.Epic,
 		Rarity = "Epic",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438385,
 		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Pose = "Robot", Icon = "🤖" },
 	},
@@ -1236,7 +1237,7 @@ local items: { Item } = {
 		Name = "Trophy Lift",
 		Price = Config.Economy.PriceByRarity.Legendary,
 		Rarity = "Legendary",
-		RobuxProductId = 0, -- placeholder: set once the developer product exists (0 = not registered)
+		RobuxProductId = 3727438395,
 		Exclusive = true, -- Robux exclusive since Oct 29 (was a coin item: owners keep it)
 		Data = { Pose = "TrophyLift", Icon = "🏆" }, -- its pose plays a confetti burst (IntroPoses Fx)
 	},

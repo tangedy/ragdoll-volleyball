@@ -62,7 +62,8 @@ local function spot(
 	dir: Vector3,
 	rho: number,
 	bulge: number,
-	color: Color3
+	color: Color3,
+	material: Enum.Material?
 ): (Vector3, number)
 	local x = math.sqrt(math.max(r * r - rho * rho, 0)) -- the rim's plane, from the center
 	local top = r + bulge
@@ -74,6 +75,7 @@ local function spot(
 		Shape = Enum.PartType.Ball,
 		Size = Vector3.one * a * 2,
 		Color = color,
+		Material = material or Enum.Material.SmoothPlastic,
 		CFrame = CFrame.new(at),
 	}, model)
 	return at, a
@@ -481,7 +483,7 @@ builders.StormCore = function(cf, r)
 	return model
 end
 
--- Legendary set: Verity, Falsity, Lovity, Cruelty ----------------------------------------------------
+-- Legendary set: Oracle, Masquerade, Heartbreaker, Maw ---------------------------------------------
 -- Each has its own base look and colors, and every pickup shows it in one of three forms (Catalog
 -- Data.Variants, picked by the server; BallModels.Forms). The forms share one style across the set
 -- so they read the same on every skin:
@@ -491,6 +493,8 @@ end
 --   Glitched - the skin's colors with red/cyan channel-split copies, stray "pixels" and a scanline.
 --              Those parts are welded with Welds tagged "Glitch" (their rest offset in GlitchBase),
 --              which BallSkinController jitters a few times a second: nothing is created per frame.
+-- The bases are bold shapes that read at ball size: an eye in gold hoops, a split two-faced mask, a
+-- cracked heart in a ring of floating hearts, a fanged mouth.
 
 BallModels.Forms = { "Nice", "Evil", "Glitched" }
 
@@ -509,7 +513,7 @@ local function onSurface(cf: CFrame, dir: Vector3, u: number, v: number): Vector
 	return cf:VectorToWorldSpace((dir + f.RightVector * u + f.UpVector * v).Unit)
 end
 
--- A flat tile hugging the surface at `dir` (hearts' points), turned `spin` degrees about the normal.
+-- A flat tile hugging the surface at `dir`, turned `spin` degrees about the normal.
 local function tile(model: Model, cf: CFrame, r: number, dir: Vector3, size: number, spin: number, color: Color3)
 	local at = cf.Position + dir * r
 	piece({
@@ -520,6 +524,7 @@ local function tile(model: Model, cf: CFrame, r: number, dir: Vector3, size: num
 	}, model)
 end
 
+-- A heart patch on the surface at `dir`: two round lobes over a diamond point.
 local function heart(model: Model, cf: CFrame, r: number, dir: Vector3, size: number, color: Color3)
 	for _, u in { -0.09, 0.09 } do
 		spot(model, cf.Position, r, onSurface(cf, dir, u * size, 0.05 * size), r * 0.11 * size, r * 0.03, color)
@@ -527,128 +532,276 @@ local function heart(model: Model, cf: CFrame, r: number, dir: Vector3, size: nu
 	tile(model, cf, r, onSurface(cf, dir, 0, -0.05 * size), r * 0.17 * size, 45, color)
 end
 
--- Cruelty's jagged band: a zigzag of short segments around the equator.
-local function zigzag(model: Model, cf: CFrame, r: number, teeth: number, height: number, w: number, color: Color3)
-	local function at(i: number): Vector3
-		local a = i / (teeth * 2) * 2 * math.pi
-		local y = if i % 2 == 0 then height else -height
-		return cf:PointToWorldSpace(Vector3.new(math.cos(a), y, math.sin(a)).Unit * r * 1.01)
+-- A small solid neon heart standing free at `at` (facing its LookVector), `s` studs tall: two lobes
+-- over a diamond, the lobes centered on the diamond's upper edges.
+local function charm(model: Model, at: CFrame, s: number, color: Color3)
+	local t = s * 0.5 -- the diamond's side and the lobes' diameter
+	local k = t / (2 * math.sqrt(2))
+	for _, x in { -1, 1 } do
+		piece({
+			Name = "Charm",
+			Shape = Enum.PartType.Ball,
+			Size = Vector3.one * t,
+			Color = color,
+			Material = Enum.Material.Neon,
+			CFrame = at * CFrame.new(x * k, k, 0),
+		}, model)
 	end
-	for i = 0, teeth * 2 - 1 do
+	piece({
+		Name = "Charm",
+		Size = Vector3.new(t, t, t * 0.7),
+		Color = color,
+		Material = Enum.Material.Neon,
+		CFrame = at * CFrame.Angles(0, 0, math.rad(45)),
+	}, model)
+end
+
+-- A hoop of short segments: a circle of `radius` in `frame`'s XZ plane.
+local function hoop(model: Model, frame: CFrame, radius: number, segs: number, thick: number, color: Color3)
+	local function at(i: number): Vector3
+		local a = i / segs * 2 * math.pi
+		return frame:PointToWorldSpace(Vector3.new(math.cos(a) * radius, 0, math.sin(a) * radius))
+	end
+	for i = 0, segs - 1 do
 		local p0, p1 = at(i), at(i + 1)
 		piece({
-			Name = "Zig",
-			Size = Vector3.new(w, w, (p1 - p0).Magnitude + w * 0.6),
+			Name = "Hoop",
+			Size = Vector3.new(thick, thick, (p1 - p0).Magnitude + thick * 0.4),
 			Color = color,
+			Material = Enum.Material.Foil,
+			Reflectance = 0.25,
 			CFrame = CFrame.lookAt((p0 + p1) / 2, p1),
 		}, model)
 	end
 end
 
+-- A jagged line over the surface through `points` (u, v around `dir`), as thin segments.
+local function crack(model: Model, cf: CFrame, r: number, dir: Vector3, points: { Vector2 }, w: number, color: Color3)
+	for i = 1, #points - 1 do
+		local a, b = points[i], points[i + 1]
+		local p0 = cf.Position + onSurface(cf, dir, a.X, a.Y) * r * 1.015
+		local p1 = cf.Position + onSurface(cf, dir, b.X, b.Y) * r * 1.015
+		piece({
+			Name = "Crack",
+			Size = Vector3.new(w, w, (p1 - p0).Magnitude + w * 0.5),
+			Color = color,
+			Material = Enum.Material.Neon,
+			CFrame = CFrame.lookAt((p0 + p1) / 2, p1),
+		}, model)
+	end
+end
+
+-- A WedgePart built like piece().
+local function wedge(props: { [string]: any }, parent: Instance): WedgePart
+	local p = Instance.new("WedgePart")
+	p.Anchored = false
+	p.Massless = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.Material = Enum.Material.SmoothPlastic
+	for k, v in props do
+		(p :: any)[k] = v
+	end
+	p.Parent = parent
+	return p
+end
+
+-- A saw tooth standing on the ball's surface around its equator at angle `a`, its long edge on the
+-- lip at height `lip` (x r) and its point toward the middle of the mouth (`up` false: it hangs down).
+local function tooth(model: Model, cf: CFrame, r: number, a: number, lip: number, up: boolean, color: Color3)
+	local h, w = r * 0.24, r * 0.17
+	local y = if up then lip + 0.12 else lip - 0.12 -- the tooth's center height (x r)
+	local out = cf:VectorToWorldSpace(Vector3.new(math.cos(a), y, math.sin(a)).Unit)
+	local upv = (cf.UpVector - out * out:Dot(cf.UpVector)).Unit
+	local frame = CFrame.fromMatrix(cf.Position + out * r * 1.005, out, upv)
+	wedge({
+		Name = "Tooth",
+		Size = Vector3.new(r * 0.06, h, w),
+		Color = color,
+		CFrame = if up then frame else frame * CFrame.Angles(math.pi, 0, 0),
+	}, model)
+end
+
 local themes: { [string]: Theme } = {
-	-- truth: pearl white crossed by gold bands, a gold sun on its face
-	Verity = {
+	-- the all-seeing eye: a pearl eyeball with a glowing iris, ringed by two crossed gold hoops
+	Oracle = {
 		colors = {
-			body = Color3.fromRGB(246, 242, 230),
+			body = Color3.fromRGB(240, 236, 226),
 			accent = Color3.fromRGB(232, 182, 58),
-			detail = Color3.fromRGB(255, 252, 240),
-			glow = Color3.fromRGB(255, 226, 140),
+			detail = Color3.fromRGB(18, 14, 30),
+			glow = Color3.fromRGB(90, 220, 255),
 		},
 		evil = {
-			body = Color3.fromRGB(40, 36, 44),
-			accent = Color3.fromRGB(140, 20, 30),
-			detail = Color3.fromRGB(90, 16, 22),
-			glow = Color3.fromRGB(200, 20, 30),
+			body = Color3.fromRGB(44, 38, 46),
+			accent = Color3.fromRGB(120, 24, 30),
+			detail = Color3.fromRGB(10, 6, 8),
+			glow = Color3.fromRGB(255, 40, 30),
 		},
 		base = function(model, cf, r, pal)
-			local w = r * 0.08
-			band(model, cf, r, 0, w, pal.accent)
-			band(model, cf * CFrame.Angles(0, math.rad(90), 0), r, 0, w, pal.accent)
-			band(model, cf * CFrame.Angles(0, 0, math.rad(90)), r, 0, w, pal.accent)
-			local c, a = spot(model, cf.Position, r, cf.LookVector, r * 0.3, r * 0.04, pal.accent)
-			spot(model, c, a, cf.LookVector, r * 0.15, r * 0.02, pal.detail)
-		end,
-	},
-	-- deceit: a smiling mask on the front and a frowning one on the back
-	Falsity = {
-		colors = {
-			body = Color3.fromRGB(112, 62, 172),
-			accent = Color3.fromRGB(40, 190, 170),
-			detail = Color3.fromRGB(250, 248, 240),
-			glow = Color3.fromRGB(190, 150, 255),
-		},
-		evil = {
-			body = Color3.fromRGB(30, 20, 40),
-			accent = Color3.fromRGB(70, 60, 70),
-			detail = Color3.fromRGB(150, 140, 140),
-			glow = Color3.fromRGB(200, 20, 30),
-		},
-		base = function(model, cf, r, pal, evil)
-			local holes = if evil then Color3.fromRGB(200, 20, 30) else Color3.fromRGB(28, 22, 36)
-			for side, smile in { [1] = true, [-1] = false } do
-				local face = cf.LookVector * side
-				local c, a =
-					spot(model, cf.Position, r, face, r * 0.58, r * 0.035, if smile then pal.detail else pal.accent)
-				for _, u in { -0.22, 0.22 } do -- eyes
-					spot(model, c, a, onSurface(cf, face, u, 0.14), r * 0.1, r * 0.02, holes)
-				end
-				for i = -2, 2 do -- the mouth, curving up or down
-					local v = -0.22 + (if smile then 1 else -1) * (0.05 - math.abs(i) * 0.025)
-					spot(model, c, a, onSurface(cf, face, i * 0.08, v), r * 0.05, r * 0.02, holes)
-				end
+			local look = cf.LookVector
+			local c, a = spot(model, cf.Position, r, look, r * 0.5, r * 0.035, pal.accent) -- gold rim
+			local c2, a2 = spot(model, c, a, look, r * 0.4, r * 0.015, pal.glow, Enum.Material.Neon) -- iris
+			spot(model, c2, a2, look, r * 0.17, r * 0.02, pal.detail) -- pupil
+			-- a glint in the pupil
+			spot(model, cf.Position, r * 1.06, onSurface(cf, look, 0.09, 0.1), r * 0.05, r * 0.01, WHITE)
+			-- an outer gold ring around the eye
+			band(model, cf * CFrame.Angles(0, math.rad(90), 0), r, r * 0.55, r * 0.05, pal.accent)
+			hoop(model, cf * CFrame.Angles(math.rad(62), 0, math.rad(20)), r * 1.32, 18, r * 0.07, pal.accent)
+			hoop(model, cf * CFrame.Angles(math.rad(-62), 0, math.rad(-20)), r * 1.32, 18, r * 0.07, pal.accent)
+			for _, d in { Vector3.new(0, 1, 0), Vector3.new(0, -1, 0) } do -- glowing studs at the poles
+				piece({
+					Name = "Pivot",
+					Shape = Enum.PartType.Ball,
+					Size = Vector3.one * r * 0.18,
+					Color = pal.glow,
+					Material = Enum.Material.Neon,
+					CFrame = CFrame.new(cf:PointToWorldSpace(d * r * 1.05)),
+				}, model)
 			end
 		end,
 	},
-	-- love: bubblegum pink scattered with hearts
-	Lovity = {
+	-- two faces in one: ivory and violet halves split by a gold seam, a domino mask with glowing
+	-- eyes, the mouth smiling on the ivory side and frowning on the violet, harlequin diamonds behind
+	Masquerade = {
 		colors = {
-			body = Color3.fromRGB(255, 150, 196),
-			accent = Color3.fromRGB(232, 40, 92),
-			detail = Color3.fromRGB(255, 240, 246),
-			glow = Color3.fromRGB(255, 170, 210),
+			body = Color3.fromRGB(96, 46, 160),
+			accent = Color3.fromRGB(236, 190, 70),
+			detail = Color3.fromRGB(246, 240, 228),
+			glow = Color3.fromRGB(120, 255, 220),
 		},
 		evil = {
-			body = Color3.fromRGB(60, 10, 30),
-			accent = Color3.fromRGB(20, 10, 16),
-			detail = Color3.fromRGB(110, 20, 40),
-			glow = Color3.fromRGB(200, 20, 30),
+			body = Color3.fromRGB(26, 16, 34),
+			accent = Color3.fromRGB(110, 20, 28),
+			detail = Color3.fromRGB(70, 64, 70),
+			glow = Color3.fromRGB(255, 40, 30),
 		},
 		base = function(model, cf, r, pal)
-			for _, h in
-				{
-					{ dir = Vector3.new(0, 0.1, -1), size = 1.6, c = pal.accent },
-					{ dir = Vector3.new(0.9, 0.3, 0.3), size = 1.1, c = pal.detail },
-					{ dir = Vector3.new(-0.8, -0.2, 0.4), size = 1.2, c = pal.accent },
-					{ dir = Vector3.new(0.1, 0.4, 1), size = 1, c = pal.detail },
-				}
-			do
-				heart(model, cf, r, cf:VectorToWorldSpace(h.dir.Unit), h.size, h.c)
+			local look = cf.LookVector
+			spot(model, cf.Position, r, cf.RightVector, r, r * 0.012, pal.detail) -- the ivory half
+			band(model, cf, r, 0, r * 0.09, pal.accent) -- the seam
+			local ink = Color3.fromRGB(20, 14, 26)
+			for _, u in { -0.3, 0.3 } do -- the mask's eyes
+				tile(model, cf, r * 1.01, onSurface(cf, look, u, 0.16), r * 0.34, 45, ink)
+				spot(
+					model,
+					cf.Position,
+					r * 1.05,
+					onSurface(cf, look, u, 0.16),
+					r * 0.1,
+					r * 0.02,
+					pal.glow,
+					Enum.Material.Neon
+				)
+			end
+			for i = -3, 3 do -- the mouth: up at the ivory end, down at the violet
+				local u = i * 0.1
+				local v = -0.3 + 1.3 * u * math.abs(u)
+				spot(model, cf.Position, r, onSurface(cf, look, u, v), r * 0.055, r * 0.025, ink)
+			end
+			for i = -2, 2 do -- harlequin diamonds down the back seam
+				local dir = onSurface(cf, -look, 0, i * 0.32)
+				tile(model, cf, r * 1.01, dir, r * 0.2, 45, if i % 2 == 0 then pal.accent else pal.glow)
 			end
 		end,
 	},
-	-- cruelty: crimson with a black jagged bite around it
-	Cruelty = {
+	-- a big heart cracked down the middle, glowing through the break, in a tilted ring of floating
+	-- neon hearts
+	Heartbreaker = {
 		colors = {
-			body = Color3.fromRGB(184, 22, 34),
-			accent = Color3.fromRGB(24, 16, 18),
-			detail = Color3.fromRGB(255, 90, 80),
-			glow = Color3.fromRGB(255, 120, 100),
+			body = Color3.fromRGB(255, 120, 172),
+			accent = Color3.fromRGB(214, 22, 74),
+			detail = Color3.fromRGB(255, 236, 246),
+			glow = Color3.fromRGB(255, 160, 210),
 		},
 		evil = {
-			body = Color3.fromRGB(26, 10, 12),
-			accent = Color3.fromRGB(255, 40, 40),
-			detail = Color3.fromRGB(120, 10, 16),
-			glow = Color3.fromRGB(200, 20, 30),
+			body = Color3.fromRGB(40, 8, 22),
+			accent = Color3.fromRGB(16, 8, 12),
+			detail = Color3.fromRGB(255, 40, 40),
+			glow = Color3.fromRGB(255, 40, 30),
+		},
+		base = function(model, cf, r, pal)
+			local look = cf.LookVector
+			heart(model, cf, r, look, 2.7, pal.accent)
+			heart(model, cf, r, -look, 1.4, pal.detail)
+			-- the break: a jagged glowing line through the front heart
+			crack(model, cf, r * 1.03, look, {
+				Vector2.new(0, 0.28),
+				Vector2.new(0.06, 0.16),
+				Vector2.new(-0.05, 0.04),
+				Vector2.new(0.05, -0.08),
+				Vector2.new(-0.03, -0.2),
+				Vector2.new(0, -0.34),
+			}, r * 0.05, pal.detail)
+			-- the ring of hearts, each turned to face out from the ball
+			local ring = cf * CFrame.Angles(math.rad(18), 0, math.rad(-14))
+			for i = 0, 4 do
+				local a = i / 5 * 2 * math.pi
+				local at = ring:PointToWorldSpace(Vector3.new(math.cos(a), 0, math.sin(a)) * r * 1.42)
+				charm(model, CFrame.lookAt(at, at + (at - cf.Position), ring.UpVector), r * 0.36, pal.glow)
+			end
+		end,
+	},
+	-- a fanged mouth all the way round: a dark gap lined with saw teeth, angry glowing eyes above it
+	-- and two curved horns
+	Maw = {
+		colors = {
+			body = Color3.fromRGB(196, 24, 40),
+			accent = Color3.fromRGB(26, 8, 14),
+			detail = Color3.fromRGB(250, 244, 226),
+			glow = Color3.fromRGB(255, 214, 60),
+		},
+		evil = {
+			body = Color3.fromRGB(30, 10, 14),
+			accent = Color3.fromRGB(255, 40, 30),
+			detail = Color3.fromRGB(150, 140, 130),
+			glow = Color3.fromRGB(255, 40, 30),
 		},
 		base = function(model, cf, r, pal, evil)
-			zigzag(model, cf, r, 8, 0.28, r * 0.1, pal.accent)
-			zigzag(model, cf * CFrame.Angles(0, math.rad(22.5), 0), r, 8, 0.12, r * 0.05, pal.detail)
-			if evil then
+			local look = cf.LookVector
+			local lip = 0.15 -- half the mouth's height (x r)
+			band(model, cf * CFrame.Angles(0, 0, math.rad(90)), r, 0, r * lip * 2, pal.accent)
+			if evil then -- the mouth glows like a furnace
 				for _, p in model:GetChildren() do
-					if p.Name == "Zig" and (p :: Part).Color == pal.accent then
-						(p :: Part).Material = Enum.Material.Neon -- the bite glows red
+					if p.Name == "Band" then
+						(p :: Part).Material = Enum.Material.Neon
 					end
 				end
+			end
+			local teeth = 14
+			for i = 0, teeth - 1 do
+				local a = i / teeth * 2 * math.pi
+				tooth(model, cf, r, a, lip, false, pal.detail) -- top row, hanging down
+				tooth(model, cf, r, a + math.pi / teeth, -lip, true, pal.detail) -- bottom row
+			end
+			local ink = Color3.fromRGB(16, 8, 10)
+			for _, side in { -1, 1 } do
+				local eye = onSurface(cf, look, side * 0.3, 0.44)
+				spot(model, cf.Position, r, eye, r * 0.15, r * 0.03, pal.glow, Enum.Material.Neon)
+				local at = cf.Position + eye * r * 1.04
+				piece({ -- a slit pupil
+					Name = "Pupil",
+					Size = Vector3.new(r * 0.05, r * 0.22, r * 0.04),
+					Color = ink,
+					CFrame = CFrame.lookAt(at, at + eye, cf.UpVector),
+				}, model)
+				local brow = cf.Position + onSurface(cf, look, side * 0.3, 0.68) * r * 1.02
+				piece({ -- an angry brow, slanting down to the middle
+					Name = "Brow",
+					Size = Vector3.new(r * 0.36, r * 0.08, r * 0.08),
+					Color = ink,
+					CFrame = CFrame.lookAt(brow, brow + (brow - cf.Position), cf.UpVector)
+						* CFrame.Angles(0, 0, math.rad(-side * 22)),
+				}, model)
+				-- a horn: two wedges, sweeping up and out from the crown
+				local base = cf * CFrame.Angles(0, 0, math.rad(-side * 32)) * CFrame.new(0, r * 0.92, 0)
+				wedge({
+					Name = "Horn",
+					Size = Vector3.new(r * 0.16, r * 0.5, r * 0.28),
+					Color = pal.detail:Lerp(ink, 0.25),
+					CFrame = base * CFrame.new(0, r * 0.22, 0) * CFrame.Angles(0, if side < 0 then math.pi else 0, 0),
+				}, model)
 			end
 		end,
 	},

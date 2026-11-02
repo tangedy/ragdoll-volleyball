@@ -924,12 +924,12 @@ local function groupKiosk(parent: Folder)
 		Color = PAL.Metal:Lerp(PAL.Deck, 0.5),
 		Material = Enum.Material.DiamondPlate,
 	}, model)
-	-- sign on two posts behind the chest: the title, and a screen saying what it pays
+	-- sign hung in front of two posts behind the chest: the title up top, and a screen saying what it pays
 	for _, sx in { -4.4, 4.4 } do
 		solid({
 			Name = "Post",
-			Size = Vector3.new(0.6, 10.4, 0.6),
-			CFrame = base * CFrame.new(sx, 5.2, 3.8),
+			Size = Vector3.new(0.6, 12.8, 0.6),
+			CFrame = base * CFrame.new(sx, 6.4, 3.8),
 			Color = PAL.Metal,
 			Material = Enum.Material.Metal,
 		}, model)
@@ -937,24 +937,24 @@ local function groupKiosk(parent: Folder)
 	local sign = decor({
 		Name = "TitleSign",
 		Size = Vector3.new(9.6, 2.4, 0.5),
-		CFrame = base * CFrame.new(0, 9.4, 3.8),
+		CFrame = base * CFrame.new(0, 11.6, 3.2),
 		Color = INK,
 	}, model)
 	for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
 		screenText(sign, face, { { text = "GROUP REWARD", size = 0.85, color = col:Lerp(Color3.new(1, 1, 1), 0.35) } })
 	end
-	outline(base * CFrame.new(0, 9.4, 3.5), 9.7, 2.5, col, model)
+	outline(base * CFrame.new(0, 11.6, 2.9), 9.7, 2.5, col, model)
 	local screen = decor({
 		Name = "Screen",
 		Size = Vector3.new(8.2, 3, 0.2),
-		CFrame = base * CFrame.new(0, 6.4, 3.8),
+		CFrame = base * CFrame.new(0, 8, 3.35),
 		Color = Color3.fromRGB(20, 16, 40),
 	}, model)
 	screenText(screen, Enum.NormalId.Front, {
 		{ text = "JOIN THE GROUP", size = 0.4, color = Color3.new(1, 1, 1) },
 		{ text = "FREE " .. rewardText(cfg.Reward), size = 0.36, color = GOLD },
 	})
-	outline(base * CFrame.new(0, 6.4, 3.65), 8.4, 3.2, col, model)
+	outline(base * CFrame.new(0, 8, 3.2), 8.4, 3.2, col, model)
 	-- pedestal with a glowing front strip
 	solid({
 		Name = "Pedestal",
@@ -1022,7 +1022,7 @@ local function groupKiosk(parent: Folder)
 	}, coin)
 	coin.PrimaryPart = pivot
 	local discs: { { any } } =
-		{ { 0.3, 2.4, GOLD, Enum.Material.Neon }, { 0.36, 1.5, GOLD:Lerp(INK, 0.25), Enum.Material.Metal } }
+		{ { 0.24, 1.9, GOLD, Enum.Material.Neon }, { 0.3, 1.2, GOLD:Lerp(INK, 0.25), Enum.Material.Metal } }
 	for _, disc in discs do
 		decor({
 			Name = "Disc",
@@ -1034,7 +1034,7 @@ local function groupKiosk(parent: Folder)
 			CastShadow = false,
 		}, coin)
 	end
-	make("PointLight", { Color = GOLD, Range = 12, Brightness = 1.4, Shadows = false }, pivot)
+	make("PointLight", { Color = GOLD, Range = 10, Brightness = 1.4, Shadows = false }, pivot)
 	coin:SetAttribute("SpinRate", 1.5)
 	coin:AddTag("HubWheel")
 	coin.Parent = model

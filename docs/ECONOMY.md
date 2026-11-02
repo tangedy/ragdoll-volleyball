@@ -39,7 +39,7 @@ Bundle-only items (`Item.Bundle`) are never sold for coins and never appear on t
 | Robux-exclusive cosmetic (`Item.Exclusive`) | 1 cosmetic | Ball skins and trails 79 R (Epic) or 199 R (Legendary), `Config.Economy.RobuxPriceByRarity`; titles and gestures 39 R or 99 R, `RobuxPriceByCategory`. One developer product per item (`Item.RobuxProductId`). |
 
 Robux-exclusive items are also never sold for coins and never appear on the wheels or in the chest pools (`Catalog.isOffered`, `SpinService.pool`). Unlike bundle items, they're always on the shelf, with an EXCLUSIVE tag and a Robux button that prompts the item's own product, once Robux buttons are unlocked (the same `RobuxOk` rule as the Coins sheet). `PurchaseService` registers one handler per exclusive, which adds the item to `OwnedCosmetics` the same way bundles do. Exclusives are Epic or Legendary only. Their `Price` is only their value. The F9 suite checks that no exclusive can come out of a spin or chest. Each exclusive is a clear step above the coin items of its tier:
-- **Ball skins** have their own light and particles. The two Legendaries also shift between the Nice, Evil and Glitched forms on every pickup, like the Verity set.
+- **Ball skins** have their own light and particles. The two Legendaries also shift between the Nice, Evil and Glitched forms on every pickup, like the Legendary set (Oracle, Masquerade, Heartbreaker, Maw).
 - **Trails** last longer, draw wider and glow (`Data.Lifetime`, `Width`, `Glow`), and shed sparkles along the throw (`Data.Sparkle`, client only, fewer in performance mode).
 - **Titles** color each letter along a gradient on the name tag (`Data.Gradient`, `TitleStyle`). The Legendary ones shimmer: each client re-draws them about 10 times a second (`TitleFxController`), skipping tags too far away to be seen.
 
@@ -97,7 +97,7 @@ Rarity is **derived from price** (`Config.Spin.RarityByPrice`): Legendary is ≥
 | Ball Skin | Ice, Zebra (black bands), Rainbow (cycles through the hues), Silver (shiny metal), Gold (shiny metal) | 1,750 | Rare |
 | Ball Skin | Basketball, Soccer Ball, Tennis Ball, Eight Ball (model skins) | 5,000 | Epic |
 | Ball Skin | Meteor (lava seams, embers), Disco Ball (mirror tiles, sparkles), Planet (glowing ring), Bomb (sparking fuse) (effect skins) | 5,000 | Epic |
-| Ball Skin | Verity (white and gold), Falsity (masks), Lovity (pink hearts), Cruelty (jagged red): the Legendary set, a new form each pickup | 12,000 | Legendary |
+| Ball Skin | Oracle (an eye in gold hoops), Masquerade (a two-faced mask), Heartbreaker (a cracked heart), Maw (a fanged mouth): the Legendary set, a new form each pickup | 12,000 | Legendary |
 | Trail | Sparkle | 400 | Common |
 | Trail | Flame | 800 | Common |
 | Trail | Rainbow | 1,500 | Rare |
@@ -150,7 +150,7 @@ The ball skin rows are the Oct 29 lineup at the flat `Config.Economy.PriceByRari
 | Common | Orange, Yellow, Green, Blue, Purple, Dark Gray, White, Bubblegum, Lime, Sparkle, Flame, Rookie, Big Wave |
 | Rare | Ice, Zebra, Rainbow skin, Silver, Gold, Rainbow trail, Dodge Master, Sky Launcher, Spotlight, Flex, You're Next |
 | Epic | Basketball, Soccer Ball, Tennis Ball, Eight Ball, Meteor, Disco Ball, Planet, Bomb, Untouchable, Meteor Strike, Purple Flash, Black Hole, Dodgeball Rush, Take a Bow, Dab, The Floss, Heart Hands, (Pumpkin Reaper) |
-| Legendary | Verity, Falsity, Lovity, Cruelty, Supernova, Power Up (Destiny Arrives and Out of the Park! are Robux exclusives now) |
+| Legendary | Oracle, Masquerade, Heartbreaker, Maw, Supernova, Power Up (Destiny Arrives and Out of the Park! are Robux exclusives now) |
 
 Legendary should stay rare, so only the two showpiece finishers stay there. The catalog becomes 79,250 coins (before the starter sets), about 45 days of normal play.
 

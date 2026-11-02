@@ -161,8 +161,8 @@ function PurchaseService.start()
 		end)
 	end
 	PurchaseService.register(Config.CoinShop.Starter.ProductId, PurchaseService.grantStarter)
-	-- Robux-exclusive cosmetics: one product per item, granted like a one-item bundle with no coins.
-	-- Their RobuxProductIds are still the placeholder 0, so none is registered until the products exist.
+	-- Robux-exclusive cosmetics: one product per item (Catalog RobuxProductId), granted like a
+	-- one-item bundle with no coins.
 	for _, item in Catalog.Items do
 		if item.Exclusive then
 			local grant = { Id = item.Id, Items = { item.Id }, Coins = 0 }
