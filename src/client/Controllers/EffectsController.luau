@@ -2,8 +2,8 @@
 -- Game feel: hit impacts (white flash on the target, spark burst, shockwave ring, comic pop text,
 -- layered hit sound, camera kick), eliminations (screen flash + "ELIMINATED <name>" for the
 -- eliminator; white rim flash, KO light beam and void splash for everyone) and the ambient match
--- sounds. Respects the
--- reduced-motion and camera-shake settings. All visuals are original placeholder geometry.
+-- sounds. Phone buzz (HapticEffect) when you land or take a hit, a longer one for an elimination.
+-- Respects the reduced-motion and camera-shake settings. All visuals are original placeholder geometry.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -31,6 +31,8 @@ local EffectsController = {}
 local shake = 0
 local fovKick = 0
 local fxFolder: Folder
+local hitHaptic: HapticEffect
+local elimHaptic: HapticEffect
 local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
 local POPS = { "POW!", "BAM!", "WHAM!", "BONK!", "SMACK!", "BOOM!" }
 
@@ -43,6 +45,13 @@ function EffectsController.addShake(amount: number)
 		return
 	end
 	shake = math.min(Config.Camera.MaxShake, shake + amount)
+end
+
+-- a quick tap for a hit, the longer explosion rumble for an elimination; no-op where unsupported
+local function buzz(effect: HapticEffect?)
+	if effect then
+		pcall(effect.Play, effect)
+	end
 end
 
 local function tween(inst: Instance, t: number, props: { [string]: any }, style: Enum.EasingStyle?)
@@ -381,9 +390,13 @@ local function onImpact(d: any)
 		if d.target == player then
 			EffectsController.addShake(0.6)
 			HUDController.vignette(0.55, 0.45)
+			-- dip to ~80% brightness, then ease back
+			HUDController.flash(Color3.new(0, 0, 0), 0.2, 0.6)
+			buzz(hitHaptic)
 			fovKick = 6
 		elseif d.thrower == player then
 			HUDController.hitmarker()
+			buzz(hitHaptic)
 			EffectsController.addShake(0.15)
 			fovKick = 3
 		else
@@ -432,6 +445,7 @@ local function onElimination(d: any)
 	end
 	-- the eliminator: ELIMINATION! + screen flash + every rim flares
 	if d.killer == player then
+		buzz(elimHaptic)
 		local teamColor = if d.killerTeam and Config.Teams[d.killerTeam]
 			then Config.Teams[d.killerTeam].Color
 			else Color3.new(1, 1, 1)
@@ -621,6 +635,12 @@ function EffectsController.init()
 	fxFolder = Instance.new("Folder")
 	fxFolder.Name = "FX"
 	fxFolder.Parent = Workspace
+	hitHaptic = Instance.new("HapticEffect")
+	hitHaptic.Type = Enum.HapticEffectType.GameplayCollision
+	hitHaptic.Parent = fxFolder
+	elimHaptic = Instance.new("HapticEffect")
+	elimHaptic.Type = Enum.HapticEffectType.GameplayExplosion
+	elimHaptic.Parent = fxFolder
 end
 
 function EffectsController.start()

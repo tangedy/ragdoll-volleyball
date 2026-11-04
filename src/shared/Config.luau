@@ -433,10 +433,10 @@ Config.CoinShop = {
 	-- until the real price loads from the pass.
 	Passes = {
 		-- lifetime 2x coins, the same perk as the BoostForever product above
-		DoubleCoins = { Name = "2x Coins Forever", Robux = 199, PassId = 0 },
+		DoubleCoins = { Name = "2x Coins Forever", Robux = 199, PassId = 2071540360 },
 		-- a gold VIP tag on the name tag, and a daily gift the first time you're here each UTC day: a
 		-- free bonus spin on DailyWheel and DailyCoins coins. Nothing that changes a match.
-		VIP = { Name = "VIP", Robux = 299, PassId = 0, Image = 0, DailyCoins = 150, DailyWheel = "Standard" },
+		VIP = { Name = "VIP", Robux = 299, PassId = 2066960299, Image = 0, DailyCoins = 150, DailyWheel = "Standard" },
 	},
 	-- The Starter Pack: a one-time developer product shown on the Coins sheet once Robux buttons
 	-- unlock, until bought (profile.StarterBought). It grants Items (Robux exclusives that are also sold

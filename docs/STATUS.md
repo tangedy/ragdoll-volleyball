@@ -149,7 +149,7 @@ None of this has been run in Studio yet. `selene` has 0 errors and 0 warnings, a
   - They double match payouts and elimination coins, not bundles, dailies or wheel refunds.
   - The 30-minute boost runs in real time; buying it again adds 30 minutes. The lifetime one is a profile flag. They don't stack past 2x.
   - The Coins sheet has a boosts row (time left, or Owned), and the HUD coin chip shows a "2x COINS" sticker while one runs.
-  - The lifetime boost is a developer product, not a game pass, because no API key could create game passes. Its button hides once owned.
+  - The lifetime boost was a developer product because no API key could create game passes. Since Nov 4 it is also the DoubleCoins game pass (2071540360), next to VIP (2066960299); the card prompts the pass. Its button hides once owned.
 - **Robux placement rules** (`PurchaseService.robuxUnlocked`, `Config.CoinShop.RobuxAfterMatches` / `AutoOpenAfterFails`):
   - Every Robux button (the Coins hub icon, the shop's "+", the Robux spin, the Haunted Bundle and its hub stand) stays hidden until the player has finished 1 match (`Matches`, saved; aborted matches don't count).
   - A Buy you can't afford only says how many coins you need; the 3rd one opens the Coins sheet, once a session.

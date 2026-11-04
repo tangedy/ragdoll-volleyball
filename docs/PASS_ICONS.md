@@ -1,8 +1,11 @@
 # Robux product icons
 
-The game has no gamepasses: every Robux item is a **developer product**. That includes the lifetime
-2x boost, which works like a pass but is sold as a product. Each one has an optional `Image` field
-(an Image asset id) that swaps the card's drawn art for an uploaded icon:
+Most Robux items are **developer products**. There are two game passes, made through Open Cloud on
+Nov 4: 2x Coins Forever (`Config.CoinShop.Passes.DoubleCoins`, 2071540360) and VIP
+(`Config.CoinShop.Passes.VIP`, 2066960299). The lifetime 2x boost card now prompts the pass; its old
+product stays registered for past receipts. Each item has an optional `Image` field (an Image asset
+id) that swaps the card's drawn art for an uploaded icon. A pass's store icon is set on the pass
+itself in Creator Dashboard > Monetization > Passes:
 
 | Product | Config field | Where it shows |
 | --- | --- | --- |
