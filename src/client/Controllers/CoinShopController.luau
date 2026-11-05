@@ -18,9 +18,7 @@
 -- it and scales down so it takes no more of the screen than without it. The same strip also sits at
 -- the top of the Shop's shelf while you don't own it yet (its items are on the shelf too).
 --
--- While an offer is live, a pumpkin "Bundles" button tops the action column and opens a sheet of
--- just those limited-time bundles, so they're one tap away instead of tucked inside Coins. The
--- Coins button sits right under it, above Shop.
+-- The Coins button sits at the top of the action column, above Shop.
 --
 -- Clicking a bundle's strip (anywhere but Buy), or any of its items on the Shop's shelf, opens the
 -- bundle's own page: every item in it as a card, plus its coins, with Buy and a Back button.
@@ -89,8 +87,6 @@ local offerRow: Frame
 local bundleRow: Frame
 local boostRow: Frame
 local bundlesSheet: any -- Theme.Sheet: the limited-time bundles on their own
-local bundlesAction: TextButton
-local gateBundles: () -> ()
 -- a bundle's page: every item in it as a card, plus its coins, with Buy at the bottom
 local PREVIEW_SIZE = Vector2.new(880, 612)
 local previewSheet: any -- Theme.Sheet
@@ -834,7 +830,7 @@ local function vipCard(parent: Instance, order: number)
 	vipStrip = { root = root, buy = button }
 end
 
--- The pumpkin button shows only while an offer is on sale (and Robux buttons are unlocked).
+-- Whether any limited-time offer is on sale right now.
 local function anyOfferLive(): boolean
 	local now = Workspace:GetServerTimeNow()
 	for _, offer in CS.Offers do
@@ -843,11 +839,6 @@ local function anyOfferLive(): boolean
 		end
 	end
 	return false
-end
-function gateBundles()
-	if bundlesAction then
-		bundlesAction.Visible = CoinShopController.unlocked() and anyOfferLive()
-	end
 end
 
 -- Bundle page ----------------------------------------------------------------------------------------
@@ -1188,11 +1179,6 @@ local function build()
 	for i, offer in CS.Offers do
 		offerCard(list, offer, i, "Bundles")
 	end
-	bundlesAction = ShopController.addAction("Bundles", T.sun, "pumpkin", -1, function()
-		CoinShopController.openBundles(not ShopController.isOpen(bundlesSheet.frame))
-	end)
-	player:GetAttributeChangedSignal("RobuxOk"):Connect(gateBundles)
-	gateBundles()
 	ShopController.onCloseAll(function()
 		CoinShopController.openBundles(false)
 	end)
@@ -1426,8 +1412,6 @@ function CoinShopController.start()
 			return
 		end
 		nextTick = os.clock() + 1
-		-- the pumpkin button comes and goes with the offers' windows
-		gateBundles()
 		-- the timed boost's and the offers' countdowns while this sheet, the bundles or the shop is up
 		if sheet.frame.Visible or bundlesSheet.frame.Visible or ShopController.isShopOpen() then
 			renderBoosts()

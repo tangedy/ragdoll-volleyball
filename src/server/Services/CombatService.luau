@@ -119,7 +119,6 @@ function CombatService.canPickup(c: any, ball: any, pos: Vector3): boolean
 end
 
 function CombatService.onPickup(c: any, _ball: any)
-	S.AnalyticsService.funnel(c, "PickedUpFirstBall")
 	S.TutorialService.onEvent(c, "Pickup")
 end
 
@@ -343,7 +342,7 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 		send(thrower, "Hint", { text = "HIT!", duration = 0.6 })
 		if target.isDummy then
 			S.TutorialService.onEvent(thrower, "HitDummy")
-			S.AnalyticsService.funnel(thrower, "LandedFirstHit")
+			S.AnalyticsService.first(thrower, "Hit")
 			return
 		end
 		if target.isBot then
@@ -352,7 +351,7 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 			thrower.stats.hits += 1
 		end
 		S.QuestService.record(thrower, "Hit") -- the daily hit quest, bots included
-		S.AnalyticsService.funnel(thrower, "LandedFirstHit")
+		S.AnalyticsService.first(thrower, "Hit")
 		S.TutorialService.onEvent(thrower, "Hit")
 		S.MatchService.recordHit(thrower, target)
 		if target.inMatch and target.team and target.root then
@@ -423,7 +422,7 @@ function CombatService.doThrow(c: any, dir: Vector3, throwId: number): boolean
 	S.PlayerStateService.setAction(c, "Recovering", P.ThrowRecovery)
 	c.stats.throws += 1
 	send(c, "ThrowResult", { throwId = throwId, ok = true })
-	S.AnalyticsService.funnel(c, "ThrewFirstBall")
+	S.AnalyticsService.first(c, "Throw")
 	S.TutorialService.onEvent(c, "Throw")
 	return true
 end
@@ -497,6 +496,14 @@ function CombatService.creditDodges(ball: any, from: Vector3, to: Vector3)
 		if not ball.dodgedBy[c] then
 			ball.dodgedBy[c] = true
 			S.QuestService.record(c, "Dodge")
+			-- the instant dodge bonus: "NICE DODGE!" and its coins on the dodger's screen
+			if c.player and c.profile then
+				local reward = Config.Coins.Dodge * S.BoostService.multiplier(c)
+				c.profile.Coins += reward
+				c.stats.eliminationCoins += reward
+				S.DataService.push(c)
+				S.NetService.send(c.player, "Dodged", { coins = reward })
+			end
 		end
 	end
 end

@@ -6,6 +6,7 @@
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
@@ -76,6 +77,10 @@ export type Profile = {
 	-- the first-visit hub guidance (HubGuideController: the walk to the Shop, then the quest panel)
 	-- has played; it plays once per account
 	HubGuideSeen: boolean,
+	-- analytics (AnalyticsService): when this account first joined (unix seconds; 0 until its first
+	-- load, 1 for a save from before this was kept), and its coin purchases so far
+	FirstJoinAt: number,
+	CoinPurchases: number,
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -112,6 +117,8 @@ local function default(): Profile
 		StarterBought = false,
 		VipGiftDate = "",
 		HubGuideSeen = false,
+		FirstJoinAt = 0,
+		CoinPurchases = 0,
 		Lock = nil,
 	}
 end
@@ -241,6 +248,10 @@ function DataService.migrate(old: any): Profile
 	else
 		data.HubGuideSeen = (tonumber(data.Matches) or 0) >= 1
 	end
+	-- a save from before the first join was kept: not a new account, and its earlier coin purchases
+	-- weren't counted (AnalyticsService only logs the purchase funnel for accounts created since)
+	data.FirstJoinAt = if type(old.FirstJoinAt) == "number" then old.FirstJoinAt else 1
+	data.CoinPurchases = math.max(0, math.floor(tonumber(data.CoinPurchases) or 0))
 	data.SchemaVersion = D.SchemaVersion
 	return data
 end
@@ -405,6 +416,12 @@ function DataService.load(c: any)
 		c.persistent = true
 	end
 	c.profileLoaded = true
+	-- a brand-new account's first session (AnalyticsService's onboarding funnel). Only a save that
+	-- really loaded can say so (or Studio, which never saves), never one played unsaved after an error.
+	if c.profile.FirstJoinAt == 0 and (c.persistent or RunService:IsStudio()) then
+		c.firstSession = true
+		c.profile.FirstJoinAt = os.time()
+	end
 	-- left while the save was loading: PlayerRemoving's release save ran before this server held the
 	-- lock, so release it now or the next server would wait out SessionLockTimeout
 	if c.released or player.Parent ~= Players then

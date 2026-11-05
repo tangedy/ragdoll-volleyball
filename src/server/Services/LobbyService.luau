@@ -204,7 +204,6 @@ local function onPlayerAdded(player: Player)
 	end
 	-- the save may have landed before the character existed: push again so its name tag gets the badge
 	S.DataService.push(c)
-	c.funnelEligible = c.profile.Matches == 0
 	S.AnalyticsService.funnel(c, "Joined")
 	S.TutorialService.sync(c)
 end
@@ -262,18 +261,16 @@ function LobbyService.start()
 		end
 	end)
 	-- Practice (client-side dummy, balls and dodge drill): only advances the tutorial and the
-	-- onboarding funnel. Nothing pays but the tutorial's one-time completion reward. Hub only.
+	-- session-first timings. Nothing pays but the tutorial's one-time completion reward. Hub only.
 	S.NetService.on(NetSchema.Actions.Practice, function(player, p)
 		local c = S.PlayerStateService.get(player)
 		if not c or c.inMatch or c.status ~= "Lobby" then
 			return
 		end
-		if p.event == "Pickup" then
-			S.AnalyticsService.funnel(c, "PickedUpFirstBall")
-		elseif p.event == "Throw" then
-			S.AnalyticsService.funnel(c, "ThrewFirstBall")
+		if p.event == "Throw" then
+			S.AnalyticsService.first(c, "Throw")
 		elseif p.event == "HitDummy" then
-			S.AnalyticsService.funnel(c, "LandedFirstHit")
+			S.AnalyticsService.first(c, "Hit")
 		end
 		S.TutorialService.onEvent(c, p.event)
 	end)

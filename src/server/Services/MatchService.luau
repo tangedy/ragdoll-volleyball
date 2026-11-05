@@ -1046,9 +1046,6 @@ local function runMatch(queued: { any })
 			aborted = true
 			break
 		end
-		for _, c in roster do
-			S.AnalyticsService.funnel(c, "EnteredFirstRound")
-		end
 		if roundNumber == 1 then
 			announceFeatured()
 			-- new players: how you actually win a fight (damage % only sets how far you fly)
@@ -1103,9 +1100,7 @@ local function runMatch(queued: { any })
 				resultBanner(("%s WINS THE ROUND!"):format(Config.Teams[result].Name), result, 2.2)
 			end
 		end
-		for _, c in roster do
-			S.AnalyticsService.funnel(c, "CompletedFirstRound")
-		end
+		S.AnalyticsService.roundEnded(roster)
 		S.AnalyticsService.event(nil, "RoundDuration", now() - matchStart)
 		if not waitPhase(M.RoundResolution, nil) then
 			break
@@ -1144,7 +1139,10 @@ local function runMatch(queued: { any })
 		duration = now() - matchStart,
 		finalEliminator = finalEliminator,
 	})
-	S.AnalyticsService.matchEnded(roster, { aborted = aborted, bots = bots, duration = now() - matchStart })
+	S.AnalyticsService.matchEnded(
+		roster,
+		{ aborted = aborted, bots = bots, duration = now() - matchStart, winner = winner }
+	)
 	S.ArenaService.resetCourt()
 	S.BallService.clearContext("Match")
 	S.BotService.clear()

@@ -653,6 +653,16 @@ function InputController.start()
 		if b.Catch then
 			setDim(b.Catch, if hasBall then 0.45 else 0)
 		end
+		-- in the hub (tutorial done, not on a team) the combat buttons are hidden: only Throw shows,
+		-- and only while you hold a ball. Jump stays, it's movement.
+		local hub = (player:GetAttribute("Team") or "") == "" and player:GetAttribute("TutorialDone") == true
+		b.Throw.Visible = not hub or hasBall
+		for _, name in { "Dodge", "Catch", "Lock" } do
+			local btn = b[name]
+			if btn then
+				btn.Visible = not hub
+			end
+		end
 	end
 	RunService.RenderStepped:Connect(function()
 		local t = Workspace:GetServerTimeNow()

@@ -91,6 +91,7 @@ function setStep(c: any, step: number)
 		message.reward = complete(c)
 	end
 	S.AnalyticsService.event(c, "TutorialStep" .. step)
+	S.AnalyticsService.tutorialStep(c, step, T.Done)
 	if c.player then
 		S.NetService.send(c.player, "Tutorial", message)
 	end

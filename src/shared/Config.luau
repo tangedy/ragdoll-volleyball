@@ -133,7 +133,7 @@ Config.Player = {
 	PickupRadius = 6, -- horizontal distance from the player to the ball
 	MaxHeldBalls = 1,
 	-- Every throw is instant and full power (tap to fire): there is no charging.
-	ThrowSpeed = 195,
+	ThrowSpeed = 170,
 	ThrowRecovery = 0.25,
 	RagdollDuration = 1.1,
 	PostHitImmunity = 0.75,
@@ -219,8 +219,9 @@ Config.AimAssist = {
 	WarnLookahead = 1.2, -- seconds of the arc checked ahead
 	-- Midair homing (players only, not bots): a thrown ball bends gently toward the enemy closest
 	-- to its line, within ConeDeg of the throw, turning at most TurnDegPerSec and MaxTurnDeg in all.
-	-- It stops bending once it has passed them or they can't be hit.
-	Homing = { ConeDeg = 20, TurnDegPerSec = 45, MaxTurnDeg = 14 },
+	-- It stops bending once it has passed them or they can't be hit, and for good once they dodge
+	-- while it's in the air: walking won't shake it, a well-timed dodge will.
+	Homing = { ConeDeg = 20, TurnDegPerSec = 75, MaxTurnDeg = 24 },
 }
 
 -- Camera lock modes (the lock button, or Shift / R3): Free is normal Roblox movement, Shift lock
@@ -323,7 +324,7 @@ Config.Bots = {
 	JailPickupDelay = 3, -- a jailed bot waits this long after a ball shows up before going for it
 	PickupAfterThrow = 2, -- after throwing, a bot wanders this long before going for another ball
 	RewardMultiplier = 0.5,
-	ThrowSpeedScale = 0.75, -- bots throw at this share of player speed (about the old 147 studs/s)
+	ThrowSpeedScale = 0.75, -- bots throw at this share of player speed (about 128 studs/s)
 	-- bots wear these Roblox users' avatars and display names (shuffled per server, then in rotation);
 	-- Names is the fallback when a profile can't be fetched
 	Avatars = {
@@ -377,6 +378,7 @@ Config.Bots = {
 -- participation payout for the losing team, eliminations, and daily login rewards.
 Config.Coins = {
 	Elimination = 25, -- paid instantly to whoever is credited with knocking someone off
+	Dodge = 5, -- paid instantly for dodging an enemy ball (CombatService.creditDodges), once per ball
 	Win = 200, -- your team won the match
 	WinAlive = 300, -- ...and you were on the court (not jailed/spectating) when it was won
 	WinFlawless = 500, -- ...and you were never eliminated during the whole match
@@ -679,7 +681,7 @@ Config.Tutorial = {
 	},
 	CardSeconds = 2.6, -- step 3's "their % went up" callout shows this long before the next card
 	-- Dodge step (TutorialDrillController): the dummy winds up and throws a client-side ball at you,
-	-- much slower than a match throw (Config.Player.ThrowSpeed 195), slower again after SlowAfter misses
+	-- much slower than a match throw (Config.Player.ThrowSpeed 170), slower again after SlowAfter misses
 	Drill = {
 		Speed = 70, -- studs/s across the ground: about 1.3 s from the dummy to you
 		SlowSpeed = 50,

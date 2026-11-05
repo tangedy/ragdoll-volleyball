@@ -1503,7 +1503,7 @@ end
 -- While it moves the row also clips at the disc's centre, a line the hamburger's own disc covers, so
 -- nothing can ever show on the hamburger's left.
 local ACTION_W, ACTION_H = 84, 56 + Theme.Ledge + 26 -- one Theme.roundAction button
-local ACTIONS = 7 -- Spectate, Bundles, Coins, Shop, Spin, Daily, Settings
+local ACTIONS = 6 -- Spectate, Coins, Shop, Spin, Daily, Settings
 local ROW_W = ACTIONS * ACTION_W + (ACTIONS - 1) * Theme.Space.L
 local TOUCH_W = ROW_W + ACTION_W + Theme.Space.L -- the row plus the menu button
 local TOUCH_SCALE = 1.25 -- relative to the rest of the HUD

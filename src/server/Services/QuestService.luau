@@ -327,6 +327,7 @@ local function playClock()
 					QuestService.record(c, "Playtime")
 					if (tonumber(d.progress[q.Id]) or 0) >= q.Goal then
 						S.DataService.push(c)
+						S.AnalyticsService.played12Minutes(c)
 					end
 				end
 				c.player:SetAttribute("QuestPlaytime", tonumber(d.progress[q.Id]) or 0)

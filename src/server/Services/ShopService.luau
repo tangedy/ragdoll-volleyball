@@ -112,6 +112,7 @@ function ShopService.buy(c: any, id: string): (boolean, string?)
 	c.profile.OwnedCosmetics[id] = true
 	c.profile.Equipped[item.Category] = id -- equip on purchase
 	S.AnalyticsService.event(c, "ShopBuy_" .. id, item.Price)
+	S.AnalyticsService.coinPurchase(c)
 	ShopService.applyCosmetics(c)
 	S.DataService.push(c)
 	task.spawn(S.DataService.save, c, false)

@@ -22,7 +22,7 @@ export type Stats = {
 	dodges: number,
 	jailEscapes: number,
 	streakEnds: number,
-	eliminationCoins: number,
+	eliminationCoins: number, -- instant coins this match: eliminations and dodges
 	banked: boolean, -- RewardService has added these to the profile's lifetime totals
 }
 

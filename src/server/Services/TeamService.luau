@@ -76,6 +76,7 @@ function TeamService.admitWaiting(roster: { any }, _teamSize: number)
 				S.BotService.remove(roster, bot)
 				enter(c, roster, team)
 				c.lateJoin = true -- joined mid-match: can win, but not "flawless"
+				S.AnalyticsService.matchStarted(c)
 				placed = true
 				break
 			end
@@ -86,6 +87,7 @@ function TeamService.admitWaiting(roster: { any }, _teamSize: number)
 			if count(roster, team, false) < maxPerTeam then
 				enter(c, roster, team)
 				c.lateJoin = true
+				S.AnalyticsService.matchStarted(c)
 			end
 		end
 	end

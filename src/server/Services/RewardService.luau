@@ -144,7 +144,7 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 				aborted = ctx.aborted,
 				won = won,
 				casual = ctx.casual,
-				-- everything earned this match: the tier payout plus the instant elimination coins
+				-- everything earned this match: the tier payout plus the instant elimination and dodge coins
 				coins = coins + (c.stats.eliminationCoins or 0),
 				tier = tier,
 				boost = boost,

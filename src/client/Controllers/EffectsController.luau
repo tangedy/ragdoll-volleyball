@@ -477,7 +477,7 @@ end
 -- throw, then fades. The "!" over the ball (BallVisualController) still says where it's coming from.
 local LOCK_SIZE = 12 -- studs across the floor canvas
 local LOCK_PPS = 25 -- canvas pixels per stud
-local LOCK_HOLD = 0.55 -- seconds at full strength (a full-speed throw crosses the court in ~0.7 s)
+local LOCK_HOLD = 0.63 -- seconds at full strength (a full-speed throw crosses the court in ~0.8 s)
 local LOCK_FADE = 0.25
 type LockRing = { part: BasePart, conn: RBXScriptConnection }
 local lockRing: LockRing? = nil
@@ -646,6 +646,15 @@ end
 function EffectsController.start()
 	Net.on("Impact", onImpact)
 	Net.on("Elimination", onElimination)
+	-- a credited dodge in a match: the tutorial's NICE DODGE! banner and its coins
+	Net.on("Dodged", function(d)
+		HUDController.banner("NICE DODGE!", Theme.Toybox.leaf, 1.3, "UISuccess")
+		if type(d.coins) == "number" and d.coins > 0 then
+			task.delay(0.25, function()
+				HUDController.coinPop(d.coins)
+			end)
+		end
+	end)
 	Net.on("Sound", function(d)
 		if type(d.cue) == "string" then
 			SoundController.play(d.cue, if typeof(d.position) == "Vector3" then d.position else nil)

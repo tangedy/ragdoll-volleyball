@@ -407,6 +407,34 @@ local function load(path: string)
 	return result
 end
 
+-- A fresh copy of a module's real source, even one the services use a stub for (AnalyticsService).
+function H.loadReal(path: string)
+	local file = fileFor(path)
+	local moduleEnv = table.clone(env)
+	moduleEnv.script = ref(path)
+	return luau.load(luau.compile(fs.readFile(file)), { debugName = file, environment = moduleEnv })()
+end
+
+-- Roblox AnalyticsService calls, recorded: { kind = "Onboarding" | "Funnel", ... }
+H.analytics = {}
+do
+	local Analytics = services.AnalyticsService
+	Analytics.LogOnboardingFunnelStepEvent = function(_self, player, step, name)
+		table.insert(H.analytics, { kind = "Onboarding", player = player, step = step, name = name })
+	end
+	Analytics.LogFunnelStepEvent = function(_self, player, funnel, sessionId, step, name)
+		table.insert(H.analytics, {
+			kind = "Funnel",
+			player = player,
+			funnel = funnel,
+			session = sessionId,
+			step = step,
+			name = name,
+		})
+	end
+	Analytics.LogCustomEvent = function() end
+end
+
 local function fakeRequire(target)
 	if type(target) == "table" and rawget(target, "__path") then
 		return load(target.__path)
@@ -542,6 +570,7 @@ end
 
 function H.reset()
 	H.events = {}
+	H.analytics = {}
 	H.realPlayers = {}
 	H.policy = {}
 	H.storeError = nil

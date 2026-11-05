@@ -426,6 +426,7 @@ local function steer(ball: Ball, dt: number)
 		or target.status ~= "Active" and ball.context == "Match"
 		or now() < target.immuneUntil
 		or ball.turned >= HOMING_MAX
+		or now() - (target.dodgedAt or -math.huge) < ball.flightT -- they dodged since the throw
 	then
 		ball.homing = nil
 		return

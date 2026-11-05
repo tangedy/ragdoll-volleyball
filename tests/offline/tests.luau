@@ -1766,4 +1766,124 @@ return function(H)
 		eq(#again.profile.BonusSpins, 1, "spins after a reload")
 		Config.GroupReward.GroupId = saved
 	end)
+
+	-- Analytics funnels --------------------------------------------------------------------------
+
+	local function analytics()
+		local A = H.loadReal("server/Services/AnalyticsService")
+		A.init(S)
+		return A
+	end
+	local function logged(kind: string, funnel: string?)
+		local out = {}
+		for _, e in H.analytics do
+			if e.kind == kind and (funnel == nil or e.funnel == funnel) then
+				table.insert(out, e)
+			end
+		end
+		return out
+	end
+
+	test("onboarding funnel: all 14 steps once, in order, with 12 minutes waiting for the 2nd game", function()
+		local A = analytics()
+		local c = H.combatant()
+		c.firstSession = true
+		c.team = "Red"
+		A.funnel(c, "Joined")
+		A.funnel(c, "Joined")
+		for step = 2, Config.Tutorial.Done do
+			A.tutorialStep(c, step, Config.Tutorial.Done)
+		end
+		-- an aborted match doesn't count: the next one is still the 1st
+		A.matchStarted(c)
+		A.matchEnded({ c }, { aborted = true, bots = 0, duration = 1 })
+		A.matchStarted(c)
+		A.roundEnded({ c })
+		A.roundEnded({ c })
+		A.played12Minutes(c) -- early: waits for "Finished 2nd game"
+		A.matchEnded({ c }, { aborted = false, bots = 0, duration = 1, winner = "Red" })
+		A.matchStarted(c)
+		A.roundEnded({ c })
+		A.matchEnded({ c }, { aborted = false, bots = 0, duration = 1, winner = "Blue" })
+		A.matchStarted(c) -- a 3rd match logs nothing more
+		A.roundEnded({ c })
+		local steps = logged("Onboarding")
+		eq(#steps, #A.Onboarding, "one log per step")
+		for i, e in steps do
+			eq(e.step, i, "step order")
+			eq(e.name, A.Onboarding[i].name, "step name " .. i)
+		end
+		eq(steps[2].name, "Tutorial 1/6 · Grab a ball", "objective 1")
+		eq(steps[7].name, "Tutorial 6/6 · Finished tutorial", "finished tutorial")
+		eq(steps[14].name, "Played 12 minutes", "12 minutes last")
+	end)
+
+	test("onboarding funnel: only a first session logs it", function()
+		local A = analytics()
+		local c = H.combatant()
+		A.funnel(c, "Joined")
+		A.tutorialStep(c, 2, Config.Tutorial.Done)
+		A.matchStarted(c)
+		eq(#logged("Onboarding"), 0, "a returning player")
+	end)
+
+	test("onboarding funnel: DataService marks a brand-new account's first session only", function()
+		local D = S.DataService
+		eq(D.migrate(nil).FirstJoinAt, 0, "new profile")
+		eq(D.migrate({ SchemaVersion = 13 }).FirstJoinAt, 1, "a save from before")
+		eq(D.migrate({ SchemaVersion = 13, FirstJoinAt = 1750000000 }).FirstJoinAt, 1750000000, "kept")
+		local c = H.combatant()
+		D.load(c)
+		check(c.firstSession == true, "first load is the first session")
+		check(c.profile.FirstJoinAt > 1, "first join stamped")
+		check(D.save(c, true), "release save")
+		local again = H.combatant(false)
+		again.player = c.player
+		D.load(again)
+		check(again.firstSession ~= true, "a second session isn't")
+	end)
+
+	test("coin purchase funnel: 1st to 8th for new accounts, counted for everyone", function()
+		local A = analytics()
+		local c = H.combatant()
+		c.profile.FirstJoinAt = os.time()
+		for _ = 1, 9 do
+			A.coinPurchase(c)
+		end
+		local steps = logged("Funnel", "CoinPurchases")
+		eq(#steps, 8, "stops at the 8th")
+		for i, e in steps do
+			eq(e.step, i, "step " .. i)
+		end
+		eq(steps[1].name, "1st coin purchase", "name")
+		eq(steps[8].name, "8th coin purchase", "name")
+		eq(c.profile.CoinPurchases, 9, "count")
+		local old = H.combatant()
+		old.profile = S.DataService.migrate({ SchemaVersion = 13 })
+		A.coinPurchase(old)
+		eq(#logged("Funnel", "CoinPurchases"), 8, "an older account isn't logged")
+		eq(old.profile.CoinPurchases, 1, "but is counted")
+	end)
+
+	test("loss funnel: each loss opens a run, the next match completes it", function()
+		local A = analytics()
+		local c = H.combatant()
+		c.team = "Red"
+		A.matchStarted(c)
+		A.matchEnded({ c }, { aborted = false, bots = 0, duration = 1, winner = "Red" })
+		eq(#logged("Funnel", "PlayAfterLoss"), 0, "a win opens nothing")
+		A.matchStarted(c)
+		A.matchEnded({ c }, { aborted = false, bots = 0, duration = 1, winner = "Blue" })
+		A.matchStarted(c)
+		A.matchEnded({ c }, { aborted = false, bots = 0, duration = 1, winner = "Blue" })
+		local runs = logged("Funnel", "PlayAfterLoss")
+		eq(#runs, 3, "lost, played again, lost")
+		eq(runs[1].step, 1, "lost")
+		eq(runs[2].step, 2, "played again")
+		eq(runs[2].session, runs[1].session, "same run")
+		eq(runs[3].step, 1, "a new loss")
+		check(runs[3].session ~= runs[1].session, "a new run")
+		A.matchEnded({ c }, { aborted = true, bots = 0, duration = 1 })
+		eq(#logged("Funnel", "PlayAfterLoss"), 3, "an aborted match is no loss")
+	end)
 end

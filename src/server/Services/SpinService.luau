@@ -214,6 +214,7 @@ function SpinService.spin(c: any, how: string): (any?, string?)
 	-- pay first, then advance the counters (the next wheel is a new one)
 	if how == "Coins" then
 		c.profile.Coins -= SP.ExtraSpinCost
+		S.AnalyticsService.coinPurchase(c)
 	end
 	if how == "Bonus" then
 		table.remove(SpinService.bonusSpins(c), 1)
