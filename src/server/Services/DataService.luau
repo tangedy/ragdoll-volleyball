@@ -81,6 +81,10 @@ export type Profile = {
 	-- load, 1 for a save from before this was kept), and its coin purchases so far
 	FirstJoinAt: number,
 	CoinPurchases: number,
+	-- today's shop deals (ShopService.deals): the UTC date they were picked and an id per shop tab
+	Deals: { date: string, ids: { [string]: string } },
+	-- the coin item this player is saving for (the hub's goal chip), "" for none
+	SavingFor: string,
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -119,6 +123,8 @@ local function default(): Profile
 		HubGuideSeen = false,
 		FirstJoinAt = 0,
 		CoinPurchases = 0,
+		Deals = { date = "", ids = {} },
+		SavingFor = "",
 		Lock = nil,
 	}
 end
@@ -302,6 +308,9 @@ local function pushProfile(c: any)
 		return
 	end
 	leaderstats(c, p)
+	-- collection titles can complete from any item that lands (a buy, a spin, a chest, a bundle)
+	S.ShopService.checkUnlocks(c)
+	local deals, dealsEnd = S.ShopService.deals(c)
 	S.NetService.send(c.player, "Profile", {
 		coins = p.Coins,
 		owned = p.OwnedCosmetics,
@@ -324,6 +333,8 @@ local function pushProfile(c: any)
 		groupReward = p.GroupRewardClaimed,
 		starter = p.StarterBought,
 		hubGuide = p.HubGuideSeen,
+		deals = { ids = deals, endsAt = dealsEnd },
+		savingFor = p.SavingFor,
 	})
 	S.PlayerStateService.setAttr(c, "Level", p.Level)
 	S.PlayerStateService.setAttr(c, "Streak", p.CurrentWinStreak)

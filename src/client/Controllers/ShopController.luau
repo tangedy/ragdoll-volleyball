@@ -82,6 +82,53 @@ local function owns(item: Catalog.Item): boolean
 	return item.Default == true or (profile.owned and profile.owned[item.Id] == true)
 end
 
+-- Is `item` one of today's deals (ShopService.deals: one per tab, Config.Economy.DailyDeal)?
+local function isDeal(item: Catalog.Item): boolean
+	local d = profile.deals
+	return type(d) == "table"
+		and type(d.ids) == "table"
+		and d.ids[item.Category] == item.Id
+		and (tonumber(d.endsAt) or 0) > Workspace:GetServerTimeNow()
+end
+
+-- What you pay for a coin item right now (its deal price while it's on deal).
+local function priceOf(item: Catalog.Item): number
+	return if isDeal(item) then Catalog.dealPrice(item) else item.Price
+end
+ShopController.priceOf = priceOf
+
+-- a collection title's locked button: "🔒 3/9 Common skins"
+local KIND_PLURAL =
+	{ BallSkin = "skins", Trail = "trails", Title = "titles", Finisher = "finishers", Pose = "gestures" }
+
+-- Coin items you can afford and don't own: the Shop button's dot shows while one of them is new
+-- since you last opened the shop.
+local affordSeen: { [string]: boolean } = {}
+local shopDot: Frame? = nil
+local function affordable(): { string }
+	local list = {}
+	local coins = profile.coins or 0
+	for _, item in Catalog.Items do
+		if Catalog.coinSold(item) and not owns(item) and priceOf(item) <= coins then
+			table.insert(list, item.Id)
+		end
+	end
+	return list
+end
+local function refreshShopDot(seen: boolean?)
+	local fresh = false
+	for _, id in affordable() do
+		if seen then
+			affordSeen[id] = true
+		elseif not affordSeen[id] then
+			fresh = true
+		end
+	end
+	if shopDot then
+		shopDot.Visible = fresh
+	end
+end
+
 -- The limited-time Robux bundle (Config.CoinShop.Offers) a bundle-only item comes in, while that
 -- bundle is on sale and Robux buttons are unlocked. Its items sit on the shelf with a button that
 -- buys the whole bundle.
@@ -565,7 +612,7 @@ end
 -- Robux unlocks (tutorial plus play time) there's no Coins sheet at all.
 local failedBuys = 0
 local autoOpened = false
-local function getCoins(need: number?)
+local function getCoins(need: number?, goal: string?)
 	local CoinShopController = require(script.Parent.CoinShopController) :: any
 	local unlocked = CoinShopController.unlocked()
 	if need == nil then
@@ -581,7 +628,12 @@ local function getCoins(need: number?)
 		return
 	end
 	SoundController.play("UIError")
-	HUDController.hint(("You need %d more coins"):format(need), 1.6)
+	HUDController.hint(
+		if goal
+			then ("Saving for %s · %s more coins"):format(goal, tostring(need))
+			else ("You need %d more coins"):format(need),
+		1.8
+	)
 end
 
 -- Buy, equip, or (short on coins) the Coins sheet.
@@ -597,6 +649,7 @@ local function primaryAction(item: Catalog.Item?)
 		HUDController.hint(
 			if item.Unlock.Level
 				then ("Reach level %d to earn it"):format(item.Unlock.Level)
+				elseif item.Unlock.Collection then "Collect the whole set to earn it"
 				else "Earn it with power-ball knockouts",
 			1.6
 		)
@@ -607,10 +660,14 @@ local function primaryAction(item: Catalog.Item?)
 		if exclusivePrice(item) then
 			buyExclusive(item)
 		end
-	elseif (profile.coins or 0) >= item.Price then
-		Net.request(Net.Actions.BuyItem, { id = item.Id })
+	elseif (profile.coins or 0) >= priceOf(item) then
+		Net.request(Net.Actions.BuyItem, { id = item.Id, price = priceOf(item) })
 	else
-		getCoins(item.Price - (profile.coins or 0))
+		-- short on coins: it becomes the item you're saving for (the hub's goal chip)
+		if Catalog.coinSold(item) and profile.savingFor ~= item.Id then
+			Net.request(Net.Actions.SetGoal, { id = item.Id })
+		end
+		getCoins(priceOf(item) - (profile.coins or 0), if Catalog.coinSold(item) then item.Name else nil)
 	end
 end
 
@@ -666,12 +723,19 @@ local function renderAction(item: Catalog.Item, b: TextButton)
 		Theme.setEnabled(b, true)
 	elseif item.Unlock then
 		-- Power Ball Mastery or a level title: locked until earned, showing the progress
-		local have, need = Catalog.unlockProgress(item, profile.powerKOs, profile.level)
+		local have, need = Catalog.unlockProgress(item, profile.powerKOs, profile.level, profile.owned)
 		local ball = if item.Unlock.Ball == "All" then "each" else item.Unlock.Ball
+		local col = item.Unlock.Collection
 		Theme.setText(
 			b,
 			if item.Unlock.Level
 				then ("🔒 Level %d"):format(need)
+				elseif col then ("🔒 %d/%d %s%s"):format(
+					have,
+					need,
+					if col.Rarity then col.Rarity .. " " else "",
+					KIND_PLURAL[col.Category] or col.Category
+				)
 				else ("🔒 %d/%d %s KOs"):format(have, need, ball or "")
 		)
 		Theme.recolor(b, "secondary")
@@ -686,12 +750,12 @@ local function renderAction(item: Catalog.Item, b: TextButton)
 		Theme.setText(b, ("R$ %d"):format(exclusivePrice(item) or 0))
 		Theme.recolor(b, T.candy)
 		Theme.setEnabled(b, true)
-	elseif coins >= item.Price then
-		Theme.setText(b, ("Buy · %s"):format(commas(item.Price)))
+	elseif coins >= priceOf(item) then
+		Theme.setText(b, ("Buy · %s"):format(commas(priceOf(item))))
 		Theme.recolor(b, T.sun)
 		Theme.setEnabled(b, true)
 	else
-		Theme.setText(b, ("Buy · %s"):format(commas(item.Price)))
+		Theme.setText(b, ("Buy · %s"):format(commas(priceOf(item))))
 		Theme.recolor(b, "secondary")
 		Theme.setEnabled(b, true)
 	end
@@ -785,6 +849,13 @@ local function itemCard(item: Catalog.Item, order: number, parent: Instance): { 
 			Position = UDim2.fromOffset(8, 32),
 			ZIndex = 10,
 		})
+	elseif isDeal(item) and not owns(item) then
+		Theme.sticker(
+			face,
+			("%d%% off today"):format(math.floor(Config.Economy.DailyDeal.Discount * 100 + 0.5)),
+			T.joyRed,
+			{ Position = UDim2.fromOffset(8, 32), ZIndex = 10 }
+		)
 	end
 	if item.Category == "Finisher" or item.Category == "Pose" then
 		local preview = Theme.iconButton(face, "play", "secondary", 34, {
@@ -1402,6 +1473,7 @@ function ShopController.openShop(on: boolean)
 		ShopController.openSettings(false)
 		Theme.show(f, backdrop)
 		markSeen(currentTab) -- opening the shop on a tab counts as looking at it
+		refreshShopDot(true)
 		renderShelf()
 		bindShopKeys(true)
 	else
@@ -2366,10 +2438,10 @@ function ShopController.init()
 		setMenuOpen(not menuOpen)
 		SoundController.play(if menuOpen then "UIOpen" else "UIBack")
 	end)
-	ShopController.addAction("Shop", T.sun, "bag", 1, function()
+	local _
+	_, shopDot = ShopController.addAction("Shop", T.sun, "bag", 1, function()
 		ShopController.openShop(not ShopController.isOpen(shop.frame))
 	end)
-	local _
 	_, dailyDot = ShopController.addAction("Daily", T.leaf, "gift", 3, function()
 		ShopController.openDaily(not ShopController.isOpen(daily.frame))
 	end)
@@ -2412,6 +2484,7 @@ function ShopController.start()
 	end
 	Net.on("Profile", function(d)
 		profile = d
+		refreshShopDot(ShopController.isOpen(shop.frame))
 		refreshTabTags()
 		if shop.frame.Visible then
 			renderShelf()

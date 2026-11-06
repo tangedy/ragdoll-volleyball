@@ -1886,4 +1886,92 @@ return function(H)
 		A.matchEnded({ c }, { aborted = true, bots = 0, duration = 1 })
 		eq(#logged("Funnel", "PlayAfterLoss"), 3, "an aborted match is no loss")
 	end)
+
+	test("daily deals: one unowned coin item per tab, held all day, sold at the deal price", function()
+		local c = H.combatant()
+		local first = Catalog.inCategory("BallSkin")
+		for _, item in first do
+			if Catalog.coinSold(item) and Catalog.rarity(item) == "Common" then
+				c.profile.OwnedCosmetics[item.Id] = true -- owned items are never picked
+			end
+		end
+		local ids = S.ShopService.deals(c)
+		local n = 0
+		for cat, id in ids do
+			n += 1
+			local item = Catalog.get(id) :: any
+			check(item ~= nil and item.Category == cat, id .. " is in the wrong tab")
+			check(Catalog.coinSold(item), id .. " isn't a coin item")
+			check(not S.ShopService.owns(c, id), id .. " is already owned")
+			check(Catalog.dealPrice(item) < item.Price, id .. " isn't cheaper")
+			eq(S.ShopService.priceOf(c, item), Catalog.dealPrice(item), id .. " price")
+		end
+		check(n >= 4, ("only %d deals"):format(n))
+		local skin = Catalog.get(ids.BallSkin) :: any
+		c.profile.Coins = 1e6
+		check(S.ShopService.buy(c, skin.Id, Catalog.dealPrice(skin)), "deal buy refused")
+		eq(c.profile.Coins, 1e6 - Catalog.dealPrice(skin), "charged the deal price")
+		local again = S.ShopService.deals(c)
+		for cat, id in ids do
+			eq(again[cat], id, cat .. " deal reshuffled after a buy")
+		end
+		-- a deal the shop showed at a lower price than the server charges is refused, not overcharged
+		local trail = Catalog.get(ids.Trail) :: any
+		local before = c.profile.Coins
+		check(not S.ShopService.buy(c, trail.Id, Catalog.dealPrice(trail) - 1), "charged more than shown")
+		eq(c.profile.Coins, before, "coins spent on a refused buy")
+		-- a new day picks new deals
+		c.profile.Deals.date = "2000-01-01"
+		S.ShopService.deals(c)
+		check(c.profile.Deals.date ~= "2000-01-01", "deals didn't refresh on a new day")
+	end)
+
+	test("saving for: only an unowned coin item, cleared by buying it", function()
+		local c = H.combatant()
+		check(not S.ShopService.setGoal(c, Config.CoinShop.Offers[1].Items[1]), "a bundle item became a goal")
+		check(not S.ShopService.setGoal(c, "Title_WarmedUp"), "an earn-only item became a goal")
+		check(not S.ShopService.setGoal(c, "nope"), "an unknown id became a goal")
+		local item = nil
+		for _, it in Catalog.Items do
+			if Catalog.coinSold(it) and Catalog.rarity(it) == "Rare" then
+				item = it
+				break
+			end
+		end
+		check(item ~= nil, "no Rare coin item")
+		check(S.ShopService.setGoal(c, item.Id), "goal refused")
+		eq(c.profile.SavingFor, item.Id, "goal not saved")
+		c.profile.Coins = 1e6
+		check(S.ShopService.buy(c, item.Id), "buy refused")
+		eq(c.profile.SavingFor, "", "goal kept after buying it")
+		check(not S.ShopService.setGoal(c, item.Id), "an owned item became a goal")
+		check(S.ShopService.setGoal(c, ""), "clearing refused")
+	end)
+
+	test("collection titles: the whole set earns the title once, and they're never sold", function()
+		local c = H.combatant()
+		local title = Catalog.get("Title_FullPalette") :: any
+		check(title and title.Unlock and title.Unlock.Collection, "Full Palette missing")
+		local set = Catalog.collection(title.Unlock.Collection)
+		check(#set >= 5, "the Common skin set is too small")
+		for i, item in set do
+			check(Catalog.rarity(item) == "Common" and item.Category == "BallSkin", item.Id .. " in the set")
+			if i < #set then
+				c.profile.OwnedCosmetics[item.Id] = true
+			end
+		end
+		S.ShopService.checkUnlocks(c)
+		check(not S.ShopService.owns(c, title.Id), "granted one item short")
+		c.profile.OwnedCosmetics[set[#set].Id] = true
+		local granted = S.ShopService.checkUnlocks(c)
+		check(table.find(granted, title.Id) ~= nil, "not granted on completing the set")
+		eq(#S.ShopService.checkUnlocks(c), 0, "granted twice")
+		c.profile.Coins = 1e6
+		for _, item in Catalog.Items do
+			if item.Unlock and item.Unlock.Collection then
+				check(#Catalog.collection(item.Unlock.Collection) > 0, item.Id .. " has an empty set")
+				check(not S.ShopService.buy(c, item.Id), item.Id .. " sold for coins")
+			end
+		end
+	end)
 end

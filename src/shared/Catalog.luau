@@ -31,7 +31,13 @@ export type Item = {
 	-- earned. Power Ball Mastery: granted once the player has Knockouts credited knockouts with that
 	-- power ball (Ball = "All": that many with each type). Level title: granted on reaching Level
 	-- (Config.Progression.LevelTitles, RewardService.payLevels).
-	Unlock: { Ball: string?, Knockouts: number?, Level: number? }?,
+	-- Collection = own every coin-sold item of Category (and Rarity, if given) for a collection title
+	Unlock: {
+		Ball: string?,
+		Knockouts: number?,
+		Level: number?,
+		Collection: { Category: string, Rarity: string? }?,
+	}?,
 	-- a Robux-exclusive cosmetic: bought only with its own developer product (RobuxProductId, at
 	-- Config.Economy.RobuxPriceByRarity / ByCategory), never sold for coins, spun or rolled. On the shelf with a
 	-- Robux button and an EXCLUSIVE tag. Price is just its value. Epic or Legendary only.
@@ -742,6 +748,48 @@ local items: { Item } = {
 		Unlock = { Ball = "Pop", Knockouts = 10 },
 		Data = { Text = "Pop Star" },
 	},
+	-- Collection titles: own every coin-sold item of a kind (Unlock.Collection). Earn-only, like the
+	-- mastery and level titles: never sold or rolled.
+	{
+		Id = "Title_FullPalette",
+		Category = "Title",
+		Name = "Full Palette",
+		Price = Config.Economy.PriceByRarity.Rare,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Unlock = { Collection = { Category = "BallSkin", Rarity = "Common" } },
+		Data = { Text = "Full Palette" },
+	},
+	{
+		Id = "Title_Trailblazer",
+		Category = "Title",
+		Name = "Trailblazer",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Unlock = { Collection = { Category = "Trail" } },
+		Data = { Text = "Trailblazer" },
+	},
+	{
+		Id = "Title_Showstealer",
+		Category = "Title",
+		Name = "Showstealer",
+		Price = Config.Economy.PriceByRarity.Epic,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Unlock = { Collection = { Category = "Finisher" } },
+		Data = { Text = "Showstealer" },
+	},
+	{
+		Id = "Title_GrandCollector",
+		Category = "Title",
+		Name = "Grand Collector",
+		Price = Config.Economy.PriceByRarity.Legendary,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Unlock = { Collection = { Category = "BallSkin" } },
+		Data = { Text = "Grand Collector" },
+	},
 	-- Level titles: one for every 10th level (Unlock.Level), banked on reaching it. Never sold or rolled.
 	{
 		Id = "Title_WarmedUp",
@@ -1357,13 +1405,56 @@ end
 -- Progress toward an Unlock item: (have, need). Power Ball Mastery counts from a PowerKOs map
 -- ({ Heavy = n, ... }); for Ball = "All", `have` is the lowest count across the power types. A level
 -- title counts from `level`, which is 0 when left out, so a mastery check never grants one.
-function Catalog.unlockProgress(item: Item, powerKOs: { [string]: number }?, level: number?): (number, number)
+-- Coin-sold items always on the shelf (no event, bundle, earn-only or Robux-exclusive ones), the
+-- pool for daily deals and collection titles.
+function Catalog.coinSold(item: Item): boolean
+	return item.Price > 0 and not item.Default and not item.Event and Catalog.isOffered(item, {})
+end
+
+-- The items a Collection unlock needs, in catalog order.
+function Catalog.collection(spec: { Category: string, Rarity: string? }): { Item }
+	local list = {}
+	for _, item in items do
+		if
+			item.Category == spec.Category
+			and Catalog.coinSold(item)
+			and (spec.Rarity == nil or Catalog.rarity(item) == spec.Rarity)
+		then
+			table.insert(list, item)
+		end
+	end
+	return list
+end
+
+-- A daily deal's price (Config.Economy.DailyDeal).
+function Catalog.dealPrice(item: Item): number
+	local d = Config.Economy.DailyDeal
+	return math.max(d.RoundTo, math.floor(item.Price * (1 - d.Discount) / d.RoundTo + 0.5) * d.RoundTo)
+end
+
+-- `owned` (OwnedCosmetics) is only read by collection unlocks.
+function Catalog.unlockProgress(
+	item: Item,
+	powerKOs: { [string]: number }?,
+	level: number?,
+	owned: { [string]: boolean }?
+): (number, number)
 	local u = item.Unlock
 	if not u then
 		return 0, 0
 	end
 	if u.Level then
 		return math.min(u.Level, level or 0), u.Level
+	end
+	if u.Collection then
+		local list = Catalog.collection(u.Collection)
+		local have = 0
+		for _, it in list do
+			if owned and owned[it.Id] then
+				have += 1
+			end
+		end
+		return have, #list
 	end
 	local need = u.Knockouts or 0
 	local kos = powerKOs or {}

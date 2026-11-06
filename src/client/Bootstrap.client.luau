@@ -40,6 +40,7 @@ local ORDER = {
 	"BundleDisplayController",
 	"HubGuideController",
 	"FavoriteController",
+	"SavingController",
 	"DebugController",
 }
 

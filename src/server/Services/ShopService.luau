@@ -79,7 +79,73 @@ local function inHub(c: any): boolean
 	return not c.inMatch and c.status == "Lobby"
 end
 
-function ShopService.buy(c: any, id: string): (boolean, string?)
+local DEAL_TABS = { "BallSkin", "Trail", "Title", "Finisher", "Pose" }
+
+-- Today's deals (Config.Economy.DailyDeal): one unowned coin-sold item per shop tab, picked the
+-- first time today's deals are asked for and saved, so they hold all day. Returns
+-- { [category] = id } and when they end (unix seconds).
+function ShopService.deals(c: any): ({ [string]: string }, number)
+	local endsAt = (os.time() // 86400 + 1) * 86400
+	if not c.profile then
+		return {}, endsAt
+	end
+	local today = dateOf(os.time())
+	local d = c.profile.Deals
+	if type(d) ~= "table" or d.date ~= today or type(d.ids) ~= "table" then
+		local ids = {}
+		local rng = Random.new(os.time() // 86400 * 7919 + (if c.player then c.player.UserId else 0))
+		for _, cat in DEAL_TABS do
+			local pool = {}
+			for _, item in Catalog.inCategory(cat) do
+				if Catalog.coinSold(item) and not ShopService.owns(c, item.Id) then
+					table.insert(pool, item.Id)
+				end
+			end
+			if #pool > 0 then
+				ids[cat] = pool[rng:NextInteger(1, #pool)]
+			end
+		end
+		d = { date = today, ids = ids }
+		c.profile.Deals = d
+	end
+	return d.ids, endsAt
+end
+
+-- What `c` pays for `item` right now: its deal price if it's one of today's deals.
+function ShopService.priceOf(c: any, item: any): number
+	local ids = ShopService.deals(c)
+	if ids[item.Category] == item.Id then
+		return Catalog.dealPrice(item)
+	end
+	return item.Price
+end
+
+-- The item you're saving for (the hub's goal chip): a coin-sold item you don't own, or "" to
+-- clear it. Buying it clears it too.
+function ShopService.setGoal(c: any, id: string): (boolean, string?)
+	if not c.profileLoaded or not c.profile then
+		return false, "Not ready yet"
+	end
+	if id == "" then
+		c.profile.SavingFor = ""
+		S.DataService.push(c)
+		return true, nil
+	end
+	local item = Catalog.get(id)
+	if not item or not Catalog.coinSold(item) then
+		return false, "Not sold for coins"
+	end
+	if ShopService.owns(c, id) then
+		return false, "Already owned"
+	end
+	c.profile.SavingFor = id
+	S.AnalyticsService.event(c, "SavingFor_" .. id, item.Price)
+	S.DataService.push(c)
+	return true, nil
+end
+
+-- `expected` is the price the client showed; a deal that ended at midnight never charges more.
+function ShopService.buy(c: any, id: string, expected: number?): (boolean, string?)
 	local item = Catalog.get(id)
 	if not item or not c.profileLoaded then
 		return false, "Not available"
@@ -97,7 +163,7 @@ function ShopService.buy(c: any, id: string): (boolean, string?)
 		return false, "Only in a bundle"
 	end
 	if item.Unlock then
-		return false, "Earn it with power-ball knockouts"
+		return false, "Earn-only: it can't be bought"
 	end
 	if item.Exclusive then
 		return false, "Robux exclusive"
@@ -105,14 +171,25 @@ function ShopService.buy(c: any, id: string): (boolean, string?)
 	if not Catalog.isOffered(item) then
 		return false, ("Only during %s"):format(item.Event or "its event")
 	end
-	if c.profile.Coins < item.Price then
-		return false, ("Need %d more coins"):format(item.Price - c.profile.Coins)
+	local price = ShopService.priceOf(c, item)
+	if expected and price > expected then
+		return false, "Today's deal has ended"
 	end
-	c.profile.Coins -= item.Price
+	if c.profile.Coins < price then
+		return false, ("Need %d more coins"):format(price - c.profile.Coins)
+	end
+	c.profile.Coins -= price
 	c.profile.OwnedCosmetics[id] = true
 	c.profile.Equipped[item.Category] = id -- equip on purchase
-	S.AnalyticsService.event(c, "ShopBuy_" .. id, item.Price)
+	if c.profile.SavingFor == id then
+		c.profile.SavingFor = ""
+	end
+	S.AnalyticsService.event(c, "ShopBuy_" .. id, price)
+	if price < item.Price then
+		S.AnalyticsService.event(c, "ShopDeal_" .. item.Category, price)
+	end
 	S.AnalyticsService.coinPurchase(c)
+	ShopService.checkUnlocks(c)
 	ShopService.applyCosmetics(c)
 	S.DataService.push(c)
 	task.spawn(S.DataService.save, c, false)
@@ -157,9 +234,10 @@ function ShopService.checkUnlocks(c: any): { string }
 		return granted
 	end
 	for _, item in Catalog.Items do
+		-- level titles are banked by RewardService.payLevels, never here (no level is passed)
 		if item.Unlock and not ShopService.owns(c, item.Id) then
-			local have, need = Catalog.unlockProgress(item, c.profile.PowerKOs)
-			if have >= need then
+			local have, need = Catalog.unlockProgress(item, c.profile.PowerKOs, nil, c.profile.OwnedCosmetics)
+			if need > 0 and have >= need then
 				c.profile.OwnedCosmetics[item.Id] = true
 				table.insert(granted, item.Id)
 				S.AnalyticsService.event(c, "MasteryUnlock_" .. item.Id)
@@ -408,8 +486,14 @@ function ShopService.start()
 	S.NetService.on(A.BuyItem, function(player, p)
 		local c = S.PlayerStateService.get(player)
 		if c then
-			local ok, why = ShopService.buy(c, p.id)
+			local ok, why = ShopService.buy(c, p.id, p.price)
 			S.NetService.send(player, "ShopResult", { id = p.id, ok = ok, message = why })
+		end
+	end)
+	S.NetService.on(A.SetGoal, function(player, p)
+		local c = S.PlayerStateService.get(player)
+		if c then
+			ShopService.setGoal(c, p.id)
 		end
 	end)
 	S.NetService.on(A.EquipItem, function(player, p)

@@ -347,3 +347,32 @@ The quick wins from the monetization review. Everything is code-complete and cov
 | Private servers | Experience settings > Access | 99 R a month | (no code) |
 
 Once the DoubleCoins pass is on sale, take the old "2x Coins Forever" developer product off sale in the dashboard (don't delete it).
+
+
+## 10. Getting players to spend coins (Nov 6)
+
+Almost nobody was buying anything. A new player had about 300 coins after the tutorial and their first level, the cheapest item cost 500, nothing pointed at what they could afford, and once you owned what you liked, coins had no use. These changes give coins a target and a reason to spend now, which is also what makes a Robux coin bundle worth buying.
+
+- **Tutorial reward 250 → 500** (`Config.Tutorial.Reward`): enough for any Common item, so the first purchase can happen in the first few minutes.
+- **Daily deals** (`Config.Economy.DailyDeal`, `ShopService.deals` / `priceOf`, `Catalog.dealPrice`):
+  - Each UTC day, every shop tab puts one item you don't own on sale at 25% off, rounded to 25 coins (Common 375, Rare 1,325, Epic 3,750, Legendary 9,000).
+  - They're picked per player the first time that day's profile goes out and saved (`profile.Deals`, additive), so buying one doesn't reshuffle the rest.
+  - The card shows a "25% off today" sticker and the deal price. `BuyItem` sends the price the card showed, and the server refuses a buy that would cost more (a deal that ended at midnight), rather than overcharging.
+  - The discount is real: the same items sell at full price every other day, so this isn't a made-up "was" price (§7).
+  - Analytics: `ShopDeal_<category>`.
+- **Saving for** (`SetGoal` remote, `profile.SavingFor`, additive; `SavingController`): a chip over the hub's coin card.
+  - Pressing Buy on something you can't afford makes it your goal ("Saving for Gold · 1,200 more coins"). Until you pick one, the chip shows the cheapest coin item you can't afford yet ("Next up").
+  - The bar fills in the item's rarity color, and turns sun with "Buy X now!" once you can afford it.
+  - Tapping the chip opens the shop on the item. Its "+" (once Robux buttons unlock) opens the Coins sheet with the missing amount.
+  - Buying the item clears the goal. Analytics: `SavingFor_<id>`.
+- **Affordable dot**: the hub Shop button shows its red dot while there's a coin item you can afford that's new since you last opened the shop (client-side, per session).
+- **Collection titles** (`Unlock = { Collection = { Category, Rarity? } }`, `Catalog.collection`): earn-only titles for owning every coin-sold item of a set, counted from any source (bought, spun, rolled or picked). They're granted when the profile is next pushed (`DataService.push` calls `ShopService.checkUnlocks`).
+
+| Title | Rarity | Set |
+| --- | --- | --- |
+| Full Palette | Rare | every Common ball skin |
+| Trailblazer | Epic | every coin trail |
+| Showstealer | Epic | every coin finisher |
+| Grand Collector | Legendary | every coin ball skin |
+
+**Not done yet:** a coin-priced quest reroll (it touches `QuestService`, which has other uncommitted changes) and a 5-spin pack.

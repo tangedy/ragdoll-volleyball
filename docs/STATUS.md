@@ -1,5 +1,11 @@
 # Implementation status (Oct 24, 2026)
 
+## Nov 6 coin spending: deals, saving goal, collection titles
+
+Details are in docs/ECONOMY.md §10: the tutorial reward goes from 250 to 500, every tab gets a 25% daily deal, there's a "Saving for" chip over the coin card, the Shop button shows a dot when there's something new you can afford, and there are 4 collection titles. `selene` and `stylua` pass. 3 new offline tests (deals, saving goal, collection titles) pass, 84/85 in all; the one failure is the playtime quest test, from separate uncommitted QuestService/Config edits.
+
+**Checked in Studio** (phone emulation, 627 × 288): the goal chip sits over the coin card in the hub and hides in a match ("Next up: Orange · 150 / 375", then "Saving for Gold · 150 / 1,750" after `SetGoal`). The Orange card shows "25% off today" and "Buy · 375". The Leave button sits below the top bar. **Not checked:** the Shop dot, the chip's "+" (Robux was locked), and the sun "Buy X now!" state.
+
 ## Nov 5 join in progress, Leave Match, stand-in bots
 
 - **Join in progress** (`Config.Match.JoinInProgress`, `MatchService.joinInProgress`): once the tutorial is done, joining the server during a live round or its countdown puts you straight on the court. There's no PLAY press: `LobbyService.onPlayerAdded` tries for up to 8 s while the avatar builds. You take the place of a bot that's still on the court: on the side with fewer real players, the least damaged first. You get its spot, its roster slot and its damage %, plus `JoinImmunity` (2 s) where you can't be hit. You're marked `lateJoin` (you can win, but not flawless). Analytics: `JoinInProgress`.

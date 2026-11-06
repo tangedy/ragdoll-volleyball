@@ -596,6 +596,10 @@ Config.Economy = {
 		Title = { Epic = 39, Legendary = 99 },
 		Pose = { Epic = 39, Legendary = 99 },
 	},
+	-- Daily deals (ShopService.deals): each UTC day every shop tab puts one item you don't own yet
+	-- on sale at Discount off, rounded to RoundTo coins. Picked per player when the day's first
+	-- shop data goes out and kept for the day, so buying one doesn't reshuffle the rest.
+	DailyDeal = { Discount = 0.25, RoundTo = 25 },
 }
 
 -- Daily quests (docs/ECONOMY.md §4). The hub shows Shown quests: every Repeats quest, plus daily
@@ -670,7 +674,8 @@ Config.Tutorial = {
 	Done = 7,
 	DiscoverSeconds = 4, -- step 5 moves on by itself after this long
 	StepCooldown = 0.5, -- at most one step change per player this often (a spammed remote can't skip it)
-	Reward = { Kind = "Coins", Amount = 250 } :: Reward, -- paid once, on reaching Done
+	-- paid once, on reaching Done: enough for a Common item, so the first purchase comes right away
+	Reward = { Kind = "Coins", Amount = 500 } :: Reward,
 	-- Heavy step (PracticeController): the dummy stands up at this %, and one practice ball turns
 	-- Heavy; a thrown Heavy ball goes back to its spot this long after it lands, to try again
 	HeavyDummyDamage = 50,

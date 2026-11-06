@@ -22,6 +22,7 @@ NetSchema.Actions = {
 	SetSetting = "SetSetting",
 	ReportDevice = "ReportDevice",
 	BuyItem = "BuyItem",
+	SetGoal = "SetGoal", -- the item you're saving for (the hub's goal chip); "" clears it
 	EquipItem = "EquipItem",
 	ClaimDaily = "ClaimDaily",
 	PickReward = "PickReward", -- choose one cosmetic from a waiting reward pick (day 7 of the ladder)
@@ -126,6 +127,14 @@ NetSchema.Validators = {
 		return { kind = p.kind }
 	end,
 	BuyItem = function(p: any): any
+		if not isTable(p) or type(p.id) ~= "string" or #p.id > 64 then
+			return nil
+		end
+		-- the price the shop showed (a deal that ended meanwhile never charges more); optional
+		local price = if type(p.price) == "number" and p.price == p.price and p.price >= 0 then p.price else nil
+		return { id = p.id, price = price }
+	end,
+	SetGoal = function(p: any): any
 		if not isTable(p) or type(p.id) ~= "string" or #p.id > 64 then
 			return nil
 		end
