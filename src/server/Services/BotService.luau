@@ -178,15 +178,29 @@ local function playAnim(c: any, key: string, speed: number?)
 	end
 end
 
-function BotService.create(team: string, roster: { any }, difficulty: string?): any
+-- `as` makes a stand-in for a player who left mid-match: their name, their avatar (and headshot),
+-- built where they stood and put in their roster slot. Without it the bot takes the next name and
+-- avatar from the pool and spawns on its team's first spawn point.
+export type StandIn = {
+	name: string,
+	desc: HumanoidDescription?,
+	avatarUserId: number?,
+	cf: CFrame?,
+	index: number?,
+}
+
+function BotService.create(team: string, roster: { any }, difficulty: string?, as: StandIn?): any
 	local profile = nil
-	if #profiles > 0 then
-		nameIndex = nameIndex % #profiles + 1
-		profile = profiles[nameIndex]
-	else
-		nameIndex = nameIndex % #B.Names + 1
+	if not as then
+		if #profiles > 0 then
+			nameIndex = nameIndex % #profiles + 1
+			profile = profiles[nameIndex]
+		else
+			nameIndex = nameIndex % #B.Names + 1
+		end
 	end
-	local c = S.PlayerStateService.create(if profile then profile.name else B.Names[nameIndex], nil, true, false)
+	local name = if as then as.name elseif profile then profile.name else B.Names[nameIndex]
+	local c = S.PlayerStateService.create(name, nil, true, false)
 	local level = difficulty or "Easy"
 	c.bot = {
 		plan = nil, -- the current throw plan while holding a ball
@@ -199,11 +213,14 @@ function BotService.create(team: string, roster: { any }, difficulty: string?): 
 		difficulty = level,
 		profile = B.Profiles[level] or B.Profiles.Easy,
 	}
-	c.avatarUserId = if profile then profile.id else nil -- for the scoreboard headshot
+	c.avatarUserId = if as then as.avatarUserId elseif profile then profile.id else nil -- for the scoreboard headshot
+	c.standIn = as ~= nil
 	S.PlayerStateService.setTeam(c, team)
 	local spawn = ArenaLayout.spawnPoints(team, 1)[1]
 	local desc: HumanoidDescription
-	if profile then
+	if as and as.desc then
+		desc = as.desc:Clone()
+	elseif profile then
 		-- a real avatar (CharacterService normalizes its scale so hitboxes stay fair)
 		desc = profile.desc:Clone()
 	else
@@ -217,13 +234,17 @@ function BotService.create(team: string, roster: { any }, difficulty: string?): 
 		desc.LeftLegColor = gray
 		desc.RightLegColor = gray
 	end
-	S.CharacterService.spawn(c, desc, CFrame.new(spawn))
+	S.CharacterService.spawn(c, desc, if as and as.cf then as.cf else CFrame.new(spawn))
 	if c.character then
 		c.character:SetAttribute("BotDifficulty", level) -- shown in the F8 debug overlay
 	end
 	setupAnimation(c)
 	c.inMatch = true
-	table.insert(roster, c)
+	if as and as.index then
+		table.insert(roster, math.clamp(as.index, 1, #roster + 1), c)
+	else
+		table.insert(roster, c)
+	end
 	S.CharacterService.setTeamVisual(c)
 	return c
 end

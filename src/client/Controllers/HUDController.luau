@@ -7,6 +7,7 @@
 -- Built from the Toybox Island kit in Theme: chrome is quiet (surface pills, ink text) and color
 -- belongs to the content (team plates, coins, stickers).
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -623,6 +624,66 @@ local function build()
 	end)
 	refs.cancel = cancel
 
+	-- Top left, in a match: Leave. It asks first (the match reward is lost), then the server sends
+	-- you to the hub and a bot with your name takes your place.
+	local leave = Theme.button(gui, "Leave", "secondary", {
+		Name = "Leave",
+		Position = UDim2.fromOffset(Theme.Space.M, Theme.Space.S),
+		Size = UDim2.fromOffset(104, 44),
+		Visible = false,
+		back = true,
+	})
+	Theme.autoScale(leave, 0.95)
+	refs.leave = leave
+	local confirm = Theme.panel(gui, {
+		Name = "LeaveConfirm",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(360, 184),
+		Visible = false,
+		ZIndex = 20,
+	}, Theme.Radius.L)
+	Theme.autoScale(confirm)
+	refs.leaveConfirm = confirm
+	Theme.label(confirm, {
+		Position = UDim2.fromOffset(24, 18),
+		Size = UDim2.new(1, -48, 0, 34),
+		Text = "Leave this match?",
+		ZIndex = 21,
+	}, 0)
+	Theme.body(confirm, {
+		Position = UDim2.fromOffset(24, 58),
+		Size = UDim2.new(1, -48, 0, 44),
+		Text = "You'll miss this match's reward. A bot takes your place.",
+		TextWrapped = true,
+		ZIndex = 21,
+	})
+	local stay = Theme.button(confirm, "Stay", "primary", {
+		Name = "Stay",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 24, 1, -18),
+		Size = UDim2.new(0.5, -30, 0, 52),
+		ZIndex = 21,
+		back = true,
+	})
+	local go = Theme.button(confirm, "Leave", "secondary", {
+		Name = "Go",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -24, 1, -18),
+		Size = UDim2.new(0.5, -30, 0, 52),
+		ZIndex = 21,
+	})
+	leave.Activated:Connect(function()
+		confirm.Visible = not confirm.Visible
+	end)
+	stay.Activated:Connect(function()
+		confirm.Visible = false
+	end)
+	go.Activated:Connect(function()
+		confirm.Visible = false
+		Net.request(Net.Actions.LeaveMatch, {})
+	end)
+
 	-- Results card (non-blocking): title + tier sticker, coins counting up, three stat wells, level
 	local results = Theme.panel(gui, {
 		Name = "Results",
@@ -1214,8 +1275,10 @@ local function update()
 	-- counts straight away, before the server's AutoQueue answers.
 	local tutorialDone = player:GetAttribute("TutorialDone") == true
 	local queued = player:GetAttribute("AutoQueue") == true or (queuedAt ~= nil and os.clock() - queuedAt < 2)
+	local joinable = num("OpenSlots", 0) > 0
 	local waitReason = if queued
 		then nil
+		elseif joinable then "Match in progress · jump in now!"
 		elseif live then "Match in progress · press PLAY to join the next one"
 		else "Press PLAY to join a match"
 	if not inMatch and not tutorialDone then
@@ -1252,14 +1315,22 @@ local function update()
 	-- same intermission timer as the phase pill; before the intermission starts, its full length).
 	local hub = not inMatch and tutorialDone
 	refs.corner.Visible = hub
+	local canLeave = inMatch and state ~= "Intro" and state ~= "Finisher"
+	refs.leave.Visible = canLeave
+	-- just under the Roblox top bar (its menu and chat buttons own the top-left corner)
+	refs.leave.Position = UDim2.fromOffset(Theme.Space.M, GuiService.TopbarInset.Max.Y + Theme.Space.S)
+	if not canLeave then
+		refs.leaveConfirm.Visible = false
+	end
 	if hub then
 		local fill = if queued then T.sun else T.leaf
 		local label = refs.playLabel :: TextLabel
 		refs.playFace.BackgroundColor3 = fill
 		refs.playLedge.BackgroundColor3 = fill:Lerp(Color3.new(0, 0, 0), 0.3)
 		label.TextColor3 = if queued then Theme.textOn(T.sun) else T.onFill
-		label.Text = if not queued
-			then "PLAY"
+		label.Text = if not queued and joinable
+			then "JOIN MATCH"
+			elseif not queued then "PLAY"
 			elseif state == "Intermission" then ("Waiting for next match · %d"):format(
 				math.max(0, math.ceil(left))
 			)
@@ -1269,6 +1340,7 @@ local function update()
 			else "Waiting for next match"
 		(label:FindFirstChildOfClass("UITextSizeConstraint") :: UITextSizeConstraint).MaxTextSize = if queued
 			then 22
+			elseif joinable then 36
 			else 46
 		refs.cancel.Visible = queued
 		-- a gentle breathing pulse while it's asking to be pressed

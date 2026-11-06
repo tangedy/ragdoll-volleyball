@@ -1,5 +1,15 @@
 # Implementation status (Oct 24, 2026)
 
+## Nov 5 join in progress, Leave Match, stand-in bots
+
+- **Join in progress** (`Config.Match.JoinInProgress`, `MatchService.joinInProgress`): once the tutorial is done, joining the server during a live round or its countdown puts you straight on the court. There's no PLAY press: `LobbyService.onPlayerAdded` tries for up to 8 s while the avatar builds. You take the place of a bot that's still on the court: on the side with fewer real players, the least damaged first. You get its spot, its roster slot and its damage %, plus `JoinImmunity` (2 s) where you can't be hit. You're marked `lateJoin` (you can win, but not flawless). Analytics: `JoinInProgress`.
+- **PLAY reads JOIN MATCH** while `MatchState.OpenSlots` > 0 (bots on the court during the countdown or the live round). Pressing it queues you as before, and the server's 0.25 s join loop puts queued players in at once. Outside those states, waiting players still join at the next round's reset (`admitWaiting`), as before.
+- **Leave Match** (`LeaveMatch` remote, top-left HUD button with a Stay / Leave confirm card): back to the hub with PLAY off. You keep the knockout coins already paid and your quest progress, but not the match reward. It's refused during the intro and a finisher. Analytics: `LeftMatch_<status>` (value = round).
+- **Stand-in bots** (`handOff`, used by Leave and by leaving the game): a bot with the leaver's display name, avatar and headshot takes their roster slot, team, status, damage %, jail returns and last hitter. Hits the leaver landed are credited to the bot. The bot is built after the leaver is off the roster, because the avatar build yields. If a new round started meanwhile, it plays that round fresh; if the match ended, it's removed. No stand-in is made once no real player is left (the match aborts then, as before).
+- **Checked in Studio:** the new F9 test "leaving hands your slot to a bot with your name; JOIN MATCH takes a bot's place" passed. Across two suite runs, "void fall -> jail ... jail hit" and the purchases boost test failed both times, and "rolling ball" and "bot always throws" failed once. None of them goes through the changed code; there's no baseline run to compare against.
+- **Checked by eye** (Studio, 808 × 359): the Leave button shows only in a match. The confirm card reads right. Leave puts you in the hub with PLAY off (solo, the match then aborts, as designed). With `OpenSlots` > 0, PLAY reads JOIN MATCH and the pill says "Match in progress · jump in now!". Leave first sat at y 8, under the Roblox top bar (`TopbarInset` is x 0–208, y 0–58), so it now sits just below it.
+- **Not checked:** the moved Leave button by eye (Studio disconnected before the re-check), and joining with a second real client.
+
 ## Nov 2 guided tutorial: playtest and polish (build-path prompt 9)
 
 Built over prompts 2–6 and checked end to end in Studio. All of it ran under Studio's **phone emulation** (750 × 381, touch); there was no mouse or gamepad pass (see "Not checked").

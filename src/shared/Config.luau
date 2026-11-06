@@ -28,6 +28,11 @@ Config.Match = {
 	RoundsToWin = 2, -- best of three
 	MaxDrawReplays = 2,
 	FirstMatchMaxWait = 15, -- a solo joiner must be in a match within this many seconds
+	-- Join in progress: once the tutorial is done, joining the server (or pressing PLAY, which then
+	-- reads JOIN MATCH) during a live round or its countdown puts you straight in, in place of a bot
+	-- still on the court. You keep its spot and damage %, and can't be hit for JoinImmunity seconds.
+	JoinInProgress = true,
+	JoinImmunity = 2,
 }
 
 -- Real players on server -> team size. Bots fill the rest (Amendment A2).

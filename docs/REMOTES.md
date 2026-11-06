@@ -18,6 +18,7 @@ Every request is rate-limited to `Config.Net.MaxActionsPerSecond` per player and
 | `Dodge` | `{ dir: Vector3 }` | Flattened to the horizontal plane. Off cooldown, not ragdolled, catching or in throw recovery, and not frozen in the countdown. |
 | `Catch` | `{}` | Empty hands, off cooldown, `Active` or `Lobby` status (jailed players can't catch). Opens a `CatchWindow` on the server. |
 | `SetAutoQueue` | `{ value: boolean }` | The "Play again" setting (in ⚙). Turning it off also clears `Ready`. |
+| `LeaveMatch` | `{}` | The in-match Leave button. Back to the hub with PLAY off; a bot with your name and avatar takes your slot. Refused during the intro and a finisher. |
 | `SetReady` | `{ value: boolean }` | The lobby Ready button. Accepted (as `true`) only during `Intermission` for a hub player whose profile is loaded; anything else stores `false`. Ready also turns `AutoQueue` on. The match starts early once every queued player is ready, or after `Config.Match.LobbyMaxWait` regardless. Ready flags clear at the start and end of every intermission. Open hub menus never keep a player out of a match: the client closes them when the match pulls the player in. |
 | `SetSetting` | `{ key: "ReducedMotion" \| "CameraShake", value: boolean }` | Stored per session. |
 | `ReportDevice` | `{ kind: "Touch" \| "Mouse" \| "Gamepad" }` | Analytics only, logged once per kind per session. |
@@ -64,6 +65,6 @@ Signature: `FireClient(kind: string, data: table)`.
 
 ## Replicated state (attributes)
 
-- `ReplicatedStorage.MatchState` holds the match attributes: `State`, `PhaseEndsAt` (server time), `Round`, `RedWins`, `BlueWins`, `RedActive`, `BlueActive`, `RedJail`, `BlueJail`, `Overtime`, `OvertimeSteps`, `MatchId`, `TeamSize`, and during the intermission `ReadyCount` / `QueuedCount` (the "2/4 ready" count).
+- `ReplicatedStorage.MatchState` holds the match attributes: `State`, `PhaseEndsAt` (server time), `Round`, `RedWins`, `BlueWins`, `RedActive`, `BlueActive`, `RedJail`, `BlueJail`, `Overtime`, `OvertimeSteps`, `MatchId`, `TeamSize`, `OpenSlots` (bots on the court a hub player could replace right now; 0 outside the countdown and live round), and during the intermission `ReadyCount` / `QueuedCount` (the "2/4 ready" count).
 - Character models and `Player` objects carry `Team`, `Status`, `Action`, `IsBot`, `HeldBall`, `DodgeReadyAt`, `CatchReadyAt`, `Level` and `Streak`. `Player` objects also carry `AutoQueue` and `Ready` (server-set).
 - Ball parts in `Workspace.Balls` carry `BallId`, `BallType`, `BallState`, `ThrowerTeam` and `Context`.

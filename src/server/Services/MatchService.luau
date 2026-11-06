@@ -36,6 +36,7 @@ local devFinisherBy: any? = nil -- Studio T key: end the match with this player'
 -- the most recent void elimination this round: who fell and who (if anyone) gets the credit
 local lastElim: { victim: any, credit: any? }? = nil
 local staging = false -- a finisher is staging the victim; don't move them to jail/lobby
+local botOnlyOk = false -- TestService: a match with no real players in it doesn't abort
 
 local function now(): number
 	return Workspace:GetServerTimeNow()
@@ -162,7 +163,29 @@ function MatchService.start()
 			end
 		end
 	end)
+	S.NetService.on(NetSchema.Actions.LeaveMatch, function(player)
+		local c = S.PlayerStateService.get(player)
+		if c and not MatchService.leaveMatch(c) and c.inMatch then
+			S.NetService.send(player, "Hint", { text = "Can't leave right now", duration = 1.5 })
+		end
+	end)
 	task.spawn(MatchService.run)
+	-- join in progress: anyone who pressed PLAY goes straight in while a bot's slot is open; the hub
+	-- PLAY button reads JOIN MATCH while OpenSlots > 0
+	task.spawn(function()
+		while true do
+			task.wait(0.25)
+			local open = MatchService.openSlots()
+			MatchService.setAttr("OpenSlots", open)
+			if open > 0 then
+				for _, c in MatchService.queuedPlayers() do
+					if not MatchService.joinInProgress(c) then
+						break
+					end
+				end
+			end
+		end
+	end)
 end
 
 function MatchService.getState(): string
@@ -576,6 +599,212 @@ local function freeze(on: boolean)
 	end
 end
 
+-- Joining and leaving mid-match ---------------------------------------------------------------------
+
+-- Rounds you can drop into: the countdown and the live round (not the intro, a finisher or the gap
+-- after a round, when admitWaiting puts waiting players in at the next round's reset anyway).
+local JOIN_STATES = { RoundCountdown = true, RoundActive = true }
+
+local function halt(c: any)
+	if c.humanoid then
+		c.humanoid.WalkSpeed = 0
+		c.humanoid.JumpPower = 0
+	end
+end
+
+local function realOnTeam(team: string): number
+	local n = 0
+	for _, c in roster do
+		if c.team == team and c.player and c.player.Parent then
+			n += 1
+		end
+	end
+	return n
+end
+
+-- The bot a joiner takes over: one still on the court, on the side with fewer real players, the
+-- least damaged first (you inherit its %).
+local function openBot(): any?
+	local best, bestKey = nil, math.huge
+	local redReal, blueReal = realOnTeam("Red"), realOnTeam("Blue")
+	for _, c in roster do
+		if c.isBot and c.status == "Active" and S.PlayerStateService.isAlive(c) and not c.heldBall then
+			local real = if c.team == "Red" then redReal else blueReal
+			local key = real * 10000 + (c.damage or 0)
+			if key < bestKey then
+				best, bestKey = c, key
+			end
+		end
+	end
+	return best
+end
+
+function MatchService.openSlots(): number
+	if not M.JoinInProgress or not JOIN_STATES[state] or staging or (realInRoster() == 0 and not botOnlyOk) then
+		return 0
+	end
+	local n = 0
+	for _, c in roster do
+		if c.isBot and c.status == "Active" and S.PlayerStateService.isAlive(c) then
+			n += 1
+		end
+	end
+	return n
+end
+
+-- Put a hub player straight into the live round in place of a bot (see Config.Match.JoinInProgress).
+-- Returns whether they went in.
+function MatchService.joinInProgress(c: any): boolean
+	if
+		c.inMatch
+		or not c.player
+		or not c.profileLoaded
+		or c.spawning
+		or c.player:GetAttribute("TutorialDone") ~= true
+		or c.player:GetAttribute("InDevRoom") == true
+		or not S.PlayerStateService.isAlive(c)
+		or MatchService.openSlots() == 0
+	then
+		return false
+	end
+	local bot = openBot()
+	if not bot then
+		return false
+	end
+	local team = bot.team
+	local index = table.find(roster, bot)
+	local cf = bot.root.CFrame
+	local damage = bot.damage or 0
+	S.BotService.remove(roster, bot)
+	S.TeamService.enter(c, roster, team, index)
+	c.lateJoin = true -- joined mid-match: can win, but not "flawless"
+	c.matchStartedAt = now()
+	resetCombatant(c)
+	S.PlayerStateService.setDamage(c, damage)
+	c.immuneUntil = now() + M.JoinImmunity
+	S.CharacterService.placeFacing(c, cf.Position, faceCenter(cf.Position))
+	if state == "RoundCountdown" then
+		halt(c)
+	elseif c.humanoid then
+		c.humanoid.WalkSpeed = Config.Player.WalkSpeed
+		c.humanoid.JumpPower = Config.Player.JumpPower
+	end
+	S.AnalyticsService.matchStarted(c)
+	S.AnalyticsService.event(c, "JoinInProgress", if state == "RoundActive" then 1 else 0)
+	feed(("%s jumped in!"):format(tag(c)))
+	publishCounts()
+	return true
+end
+
+-- Someone in the match is leaving it (the Leave button, or leaving the game). A bot with their name
+-- and avatar carries on in their slot, in the same state (status, damage, jail returns, who last hit
+-- them), so their team is never a player short. Nobody stands in once no real player is left: the
+-- match aborts then anyway. The bot is built after they're off the roster, since the avatar build
+-- yields; if the round or match moved on meanwhile it's fitted to that instead.
+local function handOff(c: any)
+	local index = table.find(roster, c)
+	if not index then
+		return
+	end
+	if c.heldBall then
+		S.BallService.drop(c)
+	end
+	-- spawn and jail spots are worked out while they're still on the roster
+	local cf: CFrame? = nil
+	local root = c.root :: BasePart?
+	if c.status == "Active" and root and root.Parent then
+		cf = root.CFrame
+	else
+		local spot = if c.status == "Active" then spawnFor(c) else jailSpot(c)
+		cf = ArenaLayout.faceFlat(spot, faceCenter(spot))
+	end
+	table.remove(roster, index)
+	local team = c.team
+	if not team or (realInRoster() == 0 and not botOnlyOk) then
+		return
+	end
+	local snapshot = {
+		status = c.status,
+		damage = c.damage or 0,
+		jailReturns = c.jailReturns,
+		lastHitBy = c.lastHitBy,
+		lastHitAt = c.lastHitAt,
+		immuneUntil = c.immuneUntil,
+		matchEliminations = c.matchEliminations,
+	}
+	local level = if c.profile then tonumber(c.profile.Level) or 1 else 1
+	local thisMatch, thisRound = matchId, roundId
+	task.spawn(function()
+		local ok, bot = pcall(S.BotService.create, team, roster, S.BotService.pickDifficulty(level), {
+			name = c.name,
+			desc = c.avatarDesc,
+			avatarUserId = if c.player then c.player.UserId else c.avatarUserId,
+			cf = cf,
+			index = index,
+		})
+		if not ok then
+			warn("[Match] stand-in bot failed: " .. tostring(bot))
+			return
+		end
+		if matchId ~= thisMatch or not table.find(roster, bot) then
+			S.BotService.remove(roster, bot) -- the match ended while it was being built
+			return
+		end
+		if roundId ~= thisRound then
+			resetCombatant(bot) -- a new round started: it plays it fresh from its spawn
+			local pos = spawnFor(bot)
+			S.CharacterService.teleport(bot, pos, faceCenter(pos))
+		else
+			S.PlayerStateService.setStatus(bot, snapshot.status)
+			S.PlayerStateService.setDamage(bot, snapshot.damage)
+			bot.jailReturns = snapshot.jailReturns
+			bot.lastHitBy = snapshot.lastHitBy
+			bot.lastHitAt = snapshot.lastHitAt
+			bot.immuneUntil = snapshot.immuneUntil
+			bot.matchEliminations = snapshot.matchEliminations
+			S.PlayerStateService.syncAttributes(bot)
+			S.CharacterService.setTeamVisual(bot)
+		end
+		-- hits the leaver landed still count: a knockout from them is credited to their stand-in
+		for _, o in roster do
+			if o.lastHitBy == c then
+				o.lastHitBy = bot
+			end
+		end
+		if lastElim and lastElim.credit == c then
+			lastElim.credit = bot
+		end
+		if state == "RoundCountdown" or state == "Intro" then
+			halt(bot)
+		end
+		publishCounts()
+	end)
+	publishCounts()
+end
+
+-- The in-match Leave button: back to the hub, with a stand-in bot in your place. You keep the
+-- knockout coins already paid and your quest progress; the match's own reward is gone. PLAY is off
+-- afterwards (or you'd be put straight back in).
+function MatchService.leaveMatch(c: any): boolean
+	if not c.inMatch or not table.find(roster, c) or state == "Intro" or state == "Finisher" or staging then
+		return false
+	end
+	S.AnalyticsService.event(c, "LeftMatch_" .. tostring(c.status), tonumber(stateFolder:GetAttribute("Round")) or 0)
+	handOff(c)
+	c.autoQueue = false
+	if c.player then
+		c.player:SetAttribute("AutoQueue", false)
+	end
+	MatchService.moveToLobby(c)
+	publishCounts()
+	return true
+end
+
+-- TestService: let a match run with no real player in it, so one Studio player can leave and rejoin.
+function MatchService.debugAllowBotOnly(on: boolean)
+	botOnlyOk = on
+end
+
 local function resetRound()
 	roundId += 1
 	overtime = false
@@ -619,7 +848,7 @@ local function teamEmpty(team: string): boolean
 end
 
 local function shouldAbort(): boolean
-	return realInRoster() == 0 or teamEmpty("Red") or teamEmpty("Blue")
+	return (realInRoster() == 0 and not botOnlyOk) or teamEmpty("Red") or teamEmpty("Blue")
 end
 
 -- Two dispensers a side, the second half an interval behind the first. Each slot rolls its next
@@ -1230,11 +1459,9 @@ end
 
 -- Population changes -------------------------------------------------------------------------------
 
+-- Left the game: a bot with their name takes their place if they were in the match (handOff).
 function MatchService.onLeave(c: any)
-	local idx = table.find(roster, c)
-	if idx then
-		table.remove(roster, idx)
-	end
+	handOff(c)
 	if c.heldBall then
 		S.BallService.drop(c)
 	end

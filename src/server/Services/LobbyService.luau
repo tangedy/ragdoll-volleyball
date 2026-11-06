@@ -206,6 +206,20 @@ local function onPlayerAdded(player: Player)
 	S.DataService.push(c)
 	S.AnalyticsService.funnel(c, "Joined")
 	S.TutorialService.sync(c)
+	-- tutorial done and a round is live with a bot on the court: straight in, no PLAY press (the
+	-- avatar may still be building, so give it a few seconds)
+	if player:GetAttribute("TutorialDone") == true then
+		local deadline = os.clock() + 8
+		while player.Parent == Players and os.clock() < deadline do
+			if c.inMatch or S.MatchService.joinInProgress(c) then
+				break
+			end
+			if not c.spawning and S.PlayerStateService.isAlive(c) and S.MatchService.openSlots() == 0 then
+				break -- nothing to join: the hub and PLAY as usual
+			end
+			task.wait(0.25)
+		end
+	end
 end
 
 local function onPlayerRemoving(player: Player)

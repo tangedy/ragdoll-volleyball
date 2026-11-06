@@ -34,15 +34,21 @@ local function count(roster: { any }, team: string, realOnly: boolean): number
 	return n
 end
 
-local function enter(c: any, roster: { any }, team: string)
+-- `index` keeps a replacement in the slot it took over, so spawnFor's spawn points don't reshuffle.
+local function enter(c: any, roster: { any }, team: string, index: number?)
 	S.PlayerStateService.setTeam(c, team)
 	c.inMatch = true
 	c.stats = S.PlayerStateService.newStats()
 	c.matchEliminations = 0
 	c.aliveAtWin = false
-	table.insert(roster, c)
+	if index then
+		table.insert(roster, math.clamp(index, 1, #roster + 1), c)
+	else
+		table.insert(roster, c)
+	end
 	S.CharacterService.setTeamVisual(c)
 end
+TeamService.enter = enter
 
 -- Initial assignment: shuffle real players and alternate so teams differ by at most one.
 function TeamService.assign(players: { any }, roster: { any }, teamSize: number)

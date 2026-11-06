@@ -17,6 +17,7 @@ NetSchema.Actions = {
 	Dodge = "Dodge",
 	Catch = "Catch",
 	SetAutoQueue = "SetAutoQueue", -- the hub PLAY button (true) and its Cancel (false); also Play again
+	LeaveMatch = "LeaveMatch", -- the in-match Leave button: back to the hub, a bot takes your place
 	SetTouchCamera = "SetTouchCamera", -- Shift lock on touch: the camera only turns when dragged
 	SetSetting = "SetSetting",
 	ReportDevice = "ReportDevice",
@@ -99,6 +100,9 @@ NetSchema.Validators = {
 			return nil
 		end
 		return { value = p.value }
+	end,
+	LeaveMatch = function(_p: any): any
+		return {}
 	end,
 	SetTouchCamera = function(p: any): any
 		if not isTable(p) or type(p.classic) ~= "boolean" then

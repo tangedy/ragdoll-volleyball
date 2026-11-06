@@ -1614,6 +1614,62 @@ test("save schema v5 migration keeps v4 data and adds the daily spin", function(
 	assertTrue(v1.Spin ~= nil and v1.LoginStreak ~= nil, "v1 profile not fully migrated")
 end)
 
+test("leaving hands your slot to a bot with your name; JOIN MATCH takes a bot's place", function()
+	local roster = S.MatchService.roster()
+	local me = nil
+	for _, c in roster do
+		if c.player and c.status == "Active" and S.PlayerStateService.isAlive(c) then
+			me = c
+			break
+		end
+	end
+	assertTrue(me ~= nil, "need a real player on the court")
+	local size = #roster
+	local team = me.team
+	local index = table.find(roster, me)
+	S.PlayerStateService.setDamage(me, 40)
+	S.MatchService.debugAllowBotOnly(true)
+	local ok, err = pcall(function()
+		assertTrue(S.MatchService.leaveMatch(me), "leaveMatch refused")
+		assertTrue(not me.inMatch and table.find(roster, me) == nil, "still in the match")
+		assertTrue(me.player:GetAttribute("AutoQueue") == false, "PLAY still on after leaving")
+		local standIn = nil
+		assertTrue(
+			waitUntil(function()
+				for _, c in roster do
+					if c.isBot and c.name == me.name and S.PlayerStateService.isAlive(c) then
+						standIn = c
+						return true
+					end
+				end
+				return false
+			end, 8),
+			"no stand-in bot with the leaver's name"
+		)
+		assertTrue(standIn.team == team, "stand-in on the wrong team")
+		assertTrue(table.find(roster, standIn) == index, "stand-in not in the leaver's slot")
+		assertTrue(standIn.status == "Active" and standIn.damage == 40, "stand-in didn't keep status and %")
+		assertTrue(standIn.avatarUserId == me.player.UserId, "stand-in has someone else's headshot")
+		assertTrue(#roster == size, ("roster went %d -> %d"):format(size, #roster))
+		assertTrue(S.MatchService.openSlots() > 0, "no open slot during a live round")
+		assertTrue(
+			waitUntil(function()
+				return S.MatchService.joinInProgress(me)
+			end, 6),
+			"joinInProgress refused"
+		)
+		assertTrue(me.inMatch and me.status == "Active" and me.lateJoin, "joiner not on the court")
+		assertTrue(me.immuneUntil > now(), "no join immunity")
+		assertTrue(#roster == size, ("roster went %d -> %d after joining"):format(size, #roster))
+	end)
+	S.MatchService.debugAllowBotOnly(false)
+	me.autoQueue = true
+	me.player:SetAttribute("AutoQueue", true)
+	if not ok then
+		error(err, 0)
+	end
+end)
+
 test("sudden death: jail closes (no returns, no new prisoners)", function()
 	local ms = ReplicatedStorage:FindFirstChild("MatchState") :: Folder
 	S.MatchService.debugForceSuddenDeath()
