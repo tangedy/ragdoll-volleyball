@@ -205,7 +205,14 @@ function CombatService.resolveCatch(ball: any, catcher: any)
 	local thrower = ball.lastThrower
 	S.PlayerStateService.setAction(catcher, "Idle")
 	catcher.catchUntil = 0
+	if ball.power then
+		-- catching an ultimate ball smothers it: it's a plain ball in the catcher's hands
+		ball.power = nil
+		S.BallService.setType(ball, "Standard")
+		S.NetService.broadcast("PowerFx", { kind = "Smothered", position = catcher.root and catcher.root.Position })
+	end
 	S.BallService.give(ball, catcher) -- a catch preserves the ball's type
+	S.PowerService.onCatch(catcher)
 	if thrower and thrower.isBot then
 		catcher.stats.botCatches += 1
 	else
@@ -298,6 +305,10 @@ end
 function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 	local thrower = ball.lastThrower
 	local t = now()
+	local power = ball.power -- an ultimate ball: its area effect goes off here too (read before spend)
+	if power then
+		task.defer(S.PowerService.onImpact, power, pos, target)
+	end
 	-- every hit launches harder than the last; a throw from jail lands at the current level
 	local scale = ProjectileMath.escalation(target.damage)
 	local kb = ProjectileMath.knockback(ball.vel, ball.type, scale)
@@ -307,22 +318,36 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 	if t < target.immuneUntil then
 		return -- repeated hits during immunity add no force and do not extend the ragdoll
 	end
+	-- a hit shatters any ice first, so a frozen target launches like anyone else
+	S.PowerService.unfreeze(target)
+	local added = 0
 	if not (thrower and thrower.status == "Jailed") then
 		local dist = if ball.throwOrigin then ProjectileMath.flatDistance(ball.throwOrigin, pos) else nil
-		S.PlayerStateService.setDamage(target, target.damage + ProjectileMath.damageFor(ball.type, dist))
+		-- the type it was thrown as (spend has already turned the ball back to Standard)
+		added = ProjectileMath.damageFor(ballType, dist)
+		S.PlayerStateService.setDamage(target, target.damage + added)
 	end
+	S.PowerService.onHit(thrower, target, added)
 	-- cancel current action; getting hit while charging drops the ball
 	target.chargeStart = nil
 	target.catchUntil = 0
-	if target.heldBall then
-		S.BallService.drop(target)
+	if ballType == "Frost" and target.inMatch and target.status == "Active" then
+		-- a Frost ball freezes instead of launching (PowerDefinitions Frost.FreezeTime); a frozen
+		-- target stays hittable, so the next ball launches them
+		local frost = S.PowerService.freezeTime()
+		target.immuneUntil = t + 0.3
+		S.PowerService.freeze(target, frost)
+	else
+		if target.heldBall then
+			S.BallService.drop(target)
+		end
+		S.PlayerStateService.setAction(target, "Ragdolled")
+		target.immuneUntil = t + ragdollTime + P.PostHitImmunity
+		if target.character then
+			S.RagdollService.ragdoll(target.character, kb, ProjectileMath.maxKnockbackSpeed(scale))
+		end
+		scheduleRecovery(target, ragdollTime)
 	end
-	S.PlayerStateService.setAction(target, "Ragdolled")
-	target.immuneUntil = t + ragdollTime + P.PostHitImmunity
-	if target.character then
-		S.RagdollService.ragdoll(target.character, kb, ProjectileMath.maxKnockbackSpeed(scale))
-	end
-	scheduleRecovery(target, ragdollTime)
 
 	if thrower and thrower.team ~= target.team then
 		target.lastHitBy = thrower
@@ -365,6 +390,53 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 			S.MatchService.onJailHit(thrower, target)
 		end
 	end
+end
+
+-- An area hit from a power (Meteor's shockwave, Geyser): `target` is launched along `dir` (flat;
+-- almost zero for straight up) as if hit by a `ballType` ball, with `damage` % added. Credits `owner`
+-- for a knockout like a thrown hit.
+function CombatService.areaHit(owner: any, target: any, pos: Vector3, dir: Vector3, damage: number, ballType: string)
+	local t = now()
+	if t < target.immuneUntil or not alive(target) or ragdolled(target) then
+		return
+	end
+	S.PowerService.unfreeze(target)
+	local scale = ProjectileMath.escalation(target.damage)
+	local kb = ProjectileMath.knockback(dir * 100, ballType, scale)
+	local ragdollTime = ProjectileMath.ragdollDuration(scale)
+	S.PlayerStateService.setDamage(target, target.damage + damage)
+	S.PowerService.onHit(owner, target, damage)
+	target.chargeStart = nil
+	target.catchUntil = 0
+	if target.heldBall then
+		S.BallService.drop(target)
+	end
+	S.PlayerStateService.setAction(target, "Ragdolled")
+	target.immuneUntil = t + ragdollTime + P.PostHitImmunity
+	if target.character then
+		S.RagdollService.ragdoll(target.character, kb, ProjectileMath.maxKnockbackSpeed(scale))
+	end
+	scheduleRecovery(target, ragdollTime)
+	if owner.team ~= target.team then
+		target.lastHitBy = owner
+		target.lastHitAt = t
+	end
+	S.NetService.broadcast("Impact", {
+		kind = "Hit",
+		ballType = ballType,
+		position = target.root and target.root.Position or pos,
+		direction = dir,
+		target = target.player,
+		targetModel = target.character,
+		thrower = owner.player,
+		escalation = scale,
+	})
+	if target.isBot then
+		owner.stats.botHits += 1
+	else
+		owner.stats.hits += 1
+	end
+	S.MatchService.recordHit(owner, target)
 end
 
 -- Studio dev key (F10): fling a combatant exactly like a real hit coming from behind them.
@@ -418,7 +490,10 @@ function CombatService.doThrow(c: any, dir: Vector3, throwId: number): boolean
 	c.chargeStart = nil
 	-- instant, full power
 	local speed = ProjectileMath.throwSpeed(ball.type) * (if c.isBot then Config.Bots.ThrowSpeedScale else 1)
-	S.BallService.launch(c, dir * speed, throwId)
+	local thrown = S.BallService.launch(c, dir * speed, throwId)
+	if thrown then
+		S.PowerService.onLaunch(c, thrown) -- Barrage splits here
+	end
 	S.PlayerStateService.setAction(c, "Recovering", P.ThrowRecovery)
 	c.stats.throws += 1
 	send(c, "ThrowResult", { throwId = throwId, ok = true })
@@ -496,6 +571,7 @@ function CombatService.creditDodges(ball: any, from: Vector3, to: Vector3)
 		if not ball.dodgedBy[c] then
 			ball.dodgedBy[c] = true
 			S.QuestService.record(c, "Dodge")
+			S.PowerService.onDodge(c)
 			-- the instant dodge bonus: "NICE DODGE!" and its coins on the dodger's screen
 			if c.player and c.profile then
 				local reward = Config.Coins.Dodge * S.BoostService.multiplier(c)

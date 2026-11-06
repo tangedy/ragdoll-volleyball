@@ -419,7 +419,8 @@ The milestones are listed in spec order, with the amendment's additions under ea
 
 ### M4: Power-ups and feedback
 
-- **Ball types:** Heavy, Rocket and Pop, each with its own color, size, material, trail or light. Mirrored dispensers give both teams the same type every 12 s. A catch keeps the type; a spent ball reverts to standard.
+- **Ball types:** Heavy, Rocket, Pop, Frost and Meteor, each with its own color, size, material, trail or light. They come from equipped powers now; the random dispensers are gone. A catch keeps the type (an ultimate ball turns back to standard when caught or dropped); a spent ball reverts to standard.
+- **Powers (Racket Rivals style):** every player equips a power (`Config.Powers`, `PowerDefinitions`, `PowerService`, `PowerController`). It has an active on a cooldown (F / Y / POWER) and comes with an ultimate (R / B / ULT) charged by hits, catches, knockouts, dodges and a slow trickle, reset each round. The roster: Heavy (free starter; ult Meteor), Rocket (Barrage), Pop (Geyser), Blink (Phantom), Magnet (Ball Storm) and Frost (Time Stop). Powers are sold in the shop's Powers tab and won on the Power Wheel. The Extra Power Slot pass adds a second active on V / D-pad up. Bots get a random power and use it. Still to do: create the pass and the Power Wheel Robux product, and add a power tutorial step.
 - **Feedback:** an impact burst, sound and capped camera shake. The settings include reduced motion and a camera-shake toggle.
 - **Not done:** the A6 weekly events, which are in Stage 3 of the release plan.
 

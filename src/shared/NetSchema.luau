@@ -16,6 +16,9 @@ NetSchema.Actions = {
 	CancelAim = "CancelAim",
 	Dodge = "Dodge",
 	Catch = "Catch",
+	UsePower = "UsePower", -- an equipped power's active ({ slot = 1 | 2 }); PowerService decides
+	UseUltimate = "UseUltimate", -- slot 1's ultimate, once the meter is full
+	SpinPower = "SpinPower", -- a coin spin on the Power Wheel
 	SetAutoQueue = "SetAutoQueue", -- the hub PLAY button (true) and its Cancel (false); also Play again
 	LeaveMatch = "LeaveMatch", -- the in-match Leave button: back to the hub, a bot takes your place
 	SetTouchCamera = "SetTouchCamera", -- Shift lock on touch: the camera only turns when dragged
@@ -74,6 +77,24 @@ NetSchema.Validators = {
 		return {}
 	end,
 	Catch = function(_p: any): any
+		return {}
+	end,
+	UsePower = function(p: any): any
+		-- the move direction (Blink) is optional; slot 2 is the Extra Power Slot pass
+		if not isTable(p) or (p.slot ~= 1 and p.slot ~= 2) then
+			return nil
+		end
+		local dir = nil
+		if typeof(p.dir) == "Vector3" and ProjectileMath.isFiniteVector(p.dir) then
+			local flat = Vector3.new(p.dir.X, 0, p.dir.Z)
+			dir = if flat.Magnitude > 0.1 then flat.Unit else nil
+		end
+		return { slot = p.slot, dir = dir }
+	end,
+	UseUltimate = function(_p: any): any
+		return {}
+	end,
+	SpinPower = function(_p: any): any
 		return {}
 	end,
 	Throw = function(p: any): any

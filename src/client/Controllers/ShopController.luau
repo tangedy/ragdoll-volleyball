@@ -20,6 +20,7 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Catalog = require(Shared.Catalog)
+local PowerDefinitions = require(Shared.PowerDefinitions)
 local Config = require(Shared.Config)
 local Net = require(script.Parent.Net)
 local HUDController = require(script.Parent.HUDController)
@@ -39,6 +40,7 @@ local new = Theme.new
 
 local ShopController = {}
 ShopController.onOpenSpin = nil :: (() -> ())? -- set by SpinController: a claimed bonus spin opens its sheet
+ShopController.onOpenPowerWheel = nil :: (() -> ())? -- set by SpinController: opens the Power Wheel
 ShopController.hubHidden = false -- set by SpectatorController while watching the match from the hub
 
 local SHOP_SIZE = Vector2.new(880, 600)
@@ -229,6 +231,9 @@ local function newTag(tab: GuiObject): Frame
 end
 
 local function isEquipped(item: Catalog.Item): boolean
+	if item.Category == "Power" and profile.equipped and profile.equipped.Power2 == item.Id then
+		return player:GetAttribute("Pass_PowerSlot") == true -- the Extra Power Slot's power
+	end
 	return Catalog.equipped(profile.equipped, item.Category).Id == item.Id
 end
 
@@ -713,7 +718,14 @@ end
 local function renderAction(item: Catalog.Item, b: TextButton)
 	local coins = profile.coins or 0
 	if isEquipped(item) then
-		Theme.setText(b, "Equipped")
+		Theme.setText(
+			b,
+			if item.Category == "Power"
+					and profile.equipped
+					and profile.equipped.Power2 == item.Id
+				then "Equipped · Slot 2"
+				else "Equipped"
+		)
 		Theme.recolor(b, T.leaf)
 		Theme.setEnabled(b, true)
 		b.Interactable = false
@@ -783,6 +795,12 @@ local function selectItem(id: string)
 		return
 	end
 	selectedId = id
+	-- a power says what it does (its active, then the ultimate it comes with)
+	local picked = Catalog.get(id)
+	local power = PowerDefinitions.get(Catalog.powerOf(picked))
+	if power then
+		HUDController.hint(("%s %s · ⚡ %s: %s"):format(power.Icon, power.Active, power.Ult.Name, power.Ult.Text), 4)
+	end
 	for _, entry in tiles do
 		if entry.item.Id == id then
 			scrollIntoView(entry.card.button)
@@ -925,7 +943,8 @@ end
 -- A card on a bundle's page (CoinShopController): the item's art on its tier band with the tier
 -- sticker, its name and kind, an Owned sticker once you have it, and the play button for a finisher
 -- or a pose (`back` reopens the page after a finisher preview).
-local KIND_NAMES = { BallSkin = "Ball skin", Trail = "Trail", Title = "Title", Finisher = "Finisher", Pose = "Pose" }
+local KIND_NAMES =
+	{ BallSkin = "Ball skin", Trail = "Trail", Title = "Title", Finisher = "Finisher", Pose = "Pose", Power = "Power" }
 ShopController.CONTENTS_CARD = Vector2.new(ITEM_CARD.X, ART_H + 70)
 function ShopController.contentsCard(item: Catalog.Item, order: number, parent: Instance, back: () -> ()): Frame
 	local tone = toneOf(item)

@@ -1,7 +1,9 @@
 --!strict
 -- Ball types (spec v0.1 §8). Visuals stay readable while held and in flight.
 
-export type BallType = "Standard" | "Heavy" | "Rocket" | "Pop"
+-- Heavy, Rocket and Pop come from the ball powers (PowerDefinitions); Frost from the Frost power and
+-- Meteor from Heavy's ultimate. None of them spawn on their own any more.
+export type BallType = "Standard" | "Heavy" | "Rocket" | "Pop" | "Frost" | "Meteor"
 
 export type BallDef = {
 	Type: BallType,
@@ -69,6 +71,35 @@ local Defs: { [string]: BallDef } = {
 		UpwardKnockbackScale = 2.2,
 		DamageScale = 1.5,
 		Trail = false,
+	},
+	-- Frost power: a normal throw that freezes whoever it hits (PowerService.freeze) instead of
+	-- launching them, so a teammate can follow up
+	Frost = {
+		Type = "Frost",
+		DisplayName = "FROST",
+		Color = Color3.fromRGB(150, 225, 255),
+		Material = Enum.Material.Ice,
+		RadiusScale = 1.1,
+		SpeedScale = 1.05,
+		GravityScale = 0.9,
+		HorizontalKnockbackScale = 0.2,
+		UpwardKnockbackScale = 0.2,
+		DamageScale = 1.25,
+		Trail = true,
+	},
+	-- Heavy's ultimate: a huge slow ball whose impact (hit or miss) sends out a shockwave
+	Meteor = {
+		Type = "Meteor",
+		DisplayName = "METEOR",
+		Color = Color3.fromRGB(255, 90, 30),
+		Material = Enum.Material.CrackedLava,
+		RadiusScale = 2.6,
+		SpeedScale = 0.85,
+		GravityScale = 0.9,
+		HorizontalKnockbackScale = 1.6,
+		UpwardKnockbackScale = 1.3,
+		DamageScale = 2.5,
+		Trail = true,
 	},
 }
 

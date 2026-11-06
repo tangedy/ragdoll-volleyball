@@ -1974,4 +1974,101 @@ return function(H)
 			end
 		end
 	end)
+
+	-- Powers (Config.Powers, PowerDefinitions) -------------------------------------------------------
+
+	test("powers: every Power item names a defined power; Heavy is the free starter", function()
+		local PowerDefinitions = H.require("shared/PowerDefinitions")
+		local seen = {}
+		for _, item in Catalog.inCategory("Power") do
+			local id = Catalog.powerOf(item)
+			check(PowerDefinitions.get(id) ~= nil, item.Id .. " names no power")
+			check(not seen[id], id .. " sold twice")
+			seen[id] = true
+		end
+		for _, id in PowerDefinitions.Order do
+			check(seen[id], id .. " has no shop item")
+			local def = PowerDefinitions.get(id)
+			check(def.Cooldown > 0, id .. " cooldown")
+			check(def.Ult and def.Ult.Name ~= "", id .. " ultimate")
+			if def.Kind == "Ball" then
+				check(H.require("shared/BallDefinitions").Defs[def.Ball] ~= nil, id .. " ball type")
+			end
+		end
+		local starter = Catalog.get(Config.Powers.Starter)
+		check(starter and starter.Default and starter.Category == "Power", "starter is a default power")
+		eq(Catalog.default("Power").Id, Config.Powers.Starter, "default power")
+	end)
+
+	test("powers: never on the cosmetic wheels or chests; the Power Wheel has only paid powers", function()
+		for _, list in S.SpinService.pool() do
+			for _, item in list do
+				check(item.Category ~= "Power", item.Id .. " on a cosmetic wheel")
+			end
+		end
+		local n = 0
+		for _, list in S.SpinService.pool(true) do
+			for _, item in list do
+				n += 1
+				check(item.Category == "Power", item.Id .. " on the Power Wheel")
+				check(not item.Default, item.Id .. " (free) on the Power Wheel")
+			end
+		end
+		eq(n, #Catalog.inCategory("Power") - 1, "every paid power on the Power Wheel")
+	end)
+
+	test("powers: the Power Wheel charges coins, grants a power, caps per day, hub only", function()
+		local W = Config.Powers.Wheel
+		local c = H.combatant()
+		local r, why = S.SpinService.spinPower(c, "Coins")
+		check(r == nil and why ~= nil, "spun with no coins")
+		c.profile.Coins = W.CoinCost * (W.MaxPaidPerDay + 1)
+		c.status, c.inMatch = "Active", true
+		check(S.SpinService.spinPower(c, "Coins") == nil, "spun in a match")
+		c.status, c.inMatch = "Lobby", false
+		local shown = S.SpinService.powerWheel(c)
+		eq(#shown, Config.Spin.Slots, "wheel slots")
+		r = S.SpinService.spinPower(c, "Coins")
+		check(r and r.ok and r.power, "spin refused")
+		eq(r.slots[r.index], r.id, "prize is the slot it landed on")
+		eq(table.concat(r.slots, ","), table.concat(shown, ","), "the preview is the real wheel")
+		check(Catalog.get(r.id).Category == "Power", "prize is a power")
+		check(S.ShopService.owns(c, r.id), "prize not granted")
+		for _ = 2, W.MaxPaidPerDay do
+			check(S.SpinService.spinPower(c, "Coins") ~= nil, "a spin under the cap was refused")
+		end
+		check(S.SpinService.spinPower(c, "Coins") == nil, "spun past the daily cap")
+		local spent = W.CoinCost * W.MaxPaidPerDay
+		check(c.profile.Coins <= W.CoinCost * (W.MaxPaidPerDay + 1) - spent + 1000 * W.MaxPaidPerDay, "coins")
+		eq(S.SpinService.powerStatus(c).paidLeft, 0, "status shows none left")
+	end)
+
+	test("powers: equipping fills slot 1; the Extra Power Slot keeps the last two", function()
+		local c = H.combatant()
+		eq(table.concat(S.ShopService.equippedPowers(c), ","), "Heavy", "a new player has the starter")
+		c.profile.OwnedCosmetics.Power_Rocket = true
+		c.profile.OwnedCosmetics.Power_Blink = true
+		check(S.ShopService.equip(c, "Power_Rocket"), "equip refused")
+		eq(table.concat(S.ShopService.equippedPowers(c), ","), "Rocket", "slot 1 without the pass")
+		check(not S.ShopService.equip(c, "Power_Frost"), "equipped an unowned power")
+		S.GamePassService.setOwned(c, "PowerSlot")
+		check(S.ShopService.equip(c, "Power_Blink"), "equip refused")
+		eq(table.concat(S.ShopService.equippedPowers(c), ","), "Blink,Rocket", "the old one moved to slot 2")
+		check(S.ShopService.equip(c, "Power_Rocket"), "swap refused")
+		eq(table.concat(S.ShopService.equippedPowers(c), ","), "Rocket,Blink", "equipping slot 2 swaps")
+		-- slot 2 needs the pass; an equipped power you no longer own falls back to the starter
+		c.passes.PowerSlot = nil
+		eq(table.concat(S.ShopService.equippedPowers(c), ","), "Rocket", "no slot 2 without the pass")
+		c.profile.OwnedCosmetics.Power_Rocket = nil
+		eq(table.concat(S.ShopService.equippedPowers(c), ","), "Heavy", "unowned falls back")
+	end)
+
+	test("powers: the Power Wheel's counters survive migration", function()
+		local fresh = S.DataService.migrate(nil)
+		eq(fresh.PowerSpin.paid, 0, "new profile")
+		local old = S.DataService.migrate({ SchemaVersion = 13, Coins = 5 })
+		check(type(old.PowerSpin) == "table", "old save gets the counters")
+		local kept = S.DataService.migrate({ SchemaVersion = 13, PowerSpin = { date = "x", paid = 2, total = 9 } })
+		eq(kept.PowerSpin.total, 9, "counters kept")
+	end)
 end

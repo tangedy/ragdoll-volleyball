@@ -3,11 +3,14 @@
 -- its Robux product id. Cosmetics never change
 -- competitive stats: skins apply only to Standard balls so power-up types always stay readable,
 -- and nothing here touches radius, speed, knockback or catch timing (spec §13).
+-- The one exception is Category "Power": equippable gameplay powers (PowerDefinitions, Data.Power).
+-- They're sold in the shop's Powers tab (a goal you can save for) and won on the Power Wheel, never
+-- on the cosmetic wheels or chests (SpinService.pool). Equipped.Power is slot 1, Equipped.Power2 the extra slot.
 
 local BallDefinitions = require(script.Parent.BallDefinitions)
 local Config = require(script.Parent.Config)
 
-export type Category = "BallSkin" | "Trail" | "Title" | "Finisher" | "Pose"
+export type Category = "BallSkin" | "Trail" | "Title" | "Finisher" | "Pose" | "Power"
 export type Rarity = "Common" | "Rare" | "Epic" | "Legendary"
 
 export type Item = {
@@ -1302,17 +1305,74 @@ local items: { Item } = {
 		-- a jack-o-lantern over your head while you shuffle like Frankenstein's monster (IntroPoses Prop)
 		Data = { Pose = "PumpkinHead", Icon = "🎃" },
 	},
+
+	-- Powers (PowerDefinitions): gameplay, not cosmetics. Heavy is everyone's starter.
+	{
+		Id = "Power_Heavy",
+		Category = "Power",
+		Name = "Heavy",
+		Price = 0,
+		RobuxProductId = 0,
+		Default = true,
+		Data = { Power = "Heavy", Icon = "🪨" },
+	},
+	{
+		Id = "Power_Rocket",
+		Category = "Power",
+		Name = "Rocket",
+		Price = 500,
+		Rarity = "Common",
+		RobuxProductId = 0,
+		Data = { Power = "Rocket", Icon = "🚀" },
+	},
+	{
+		Id = "Power_Pop",
+		Category = "Power",
+		Name = "Pop",
+		Price = 1750,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Data = { Power = "Pop", Icon = "🎈" },
+	},
+	{
+		Id = "Power_Blink",
+		Category = "Power",
+		Name = "Blink",
+		Price = 1750,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Data = { Power = "Blink", Icon = "💨" },
+	},
+	{
+		Id = "Power_Magnet",
+		Category = "Power",
+		Name = "Magnet",
+		Price = 5000,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Power = "Magnet", Icon = "🧲" },
+	},
+	{
+		Id = "Power_Frost",
+		Category = "Power",
+		Name = "Frost",
+		Price = 12000,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Data = { Power = "Frost", Icon = "❄️" },
+	},
 }
 
 local Catalog = {}
 
-Catalog.Categories = { "BallSkin", "Trail", "Title", "Finisher", "Pose" } :: { Category }
+Catalog.Categories = { "BallSkin", "Trail", "Title", "Finisher", "Pose", "Power" } :: { Category }
 Catalog.CategoryNames = {
 	BallSkin = "Ball Skins",
 	Trail = "Trails",
 	Title = "Titles",
 	Finisher = "Finishers",
 	Pose = "Gestures",
+	Power = "Powers",
 }
 Catalog.Items = items
 
@@ -1484,6 +1544,11 @@ function Catalog.trailStyle(item: Item): TrailStyle?
 		return nil
 	end
 	return { lifetime = d.Lifetime, width = d.Width, glow = d.Glow, sparkle = d.Sparkle, sparkleRate = d.SparkleRate }
+end
+
+-- A power item's PowerDefinitions id (nil for anything else).
+function Catalog.powerOf(item: Item?): string?
+	return if item and item.Category == "Power" then item.Data.Power else nil
 end
 
 -- The equipped item for a category from a profile's Equipped map, falling back to the default.

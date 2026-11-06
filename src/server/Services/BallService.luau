@@ -40,6 +40,15 @@ export type Ball = {
 	turned: number, -- radians of homing used so far
 	courseDirty: boolean, -- homing bent the arc since clients were last told (BallCourse)
 	dodgedBy: { [any]: boolean }?, -- players already credited with dodging this throw (daily quest)
+	-- an ultimate ball (PowerService): { ult = "Meteor" | "Barrage" | "Geyser", owner = combatant }
+	power: any?,
+	-- an extra ball a power added (Barrage rockets, Ball Storm): it isn't one of the court's
+	-- BallsPerCourt and vanishes once it has lain around until expiresAt (PowerService.tick)
+	temporary: boolean?,
+	expiresAt: number?,
+	-- homing overrides for this throw (Barrage): degrees a second and in all
+	homingRate: number?,
+	homingMax: number?,
 }
 
 local BallService = {}
@@ -389,6 +398,11 @@ function BallService.drop(c: any)
 	c.chargeStart = nil
 	S.PlayerStateService.setAttr(c, Types.Attr.HeldBall, "")
 	ball.holder = nil
+	if ball.power then
+		-- a dropped ultimate ball is spent: it goes back to a plain ball
+		ball.power = nil
+		ball.type = "Standard"
+	end
 	applyLook(ball)
 	local pos = if c.root and c.root.Parent then c.root.Position + Vector3.new(0, 1, 0) else ball.part.Position
 	makePhysical(ball, pos, Vector3.new(rng:NextNumber(-6, 6), 8, rng:NextNumber(-6, 6)))
@@ -425,7 +439,7 @@ local function steer(ball: Ball, dt: number)
 		or not root.Parent
 		or target.status ~= "Active" and ball.context == "Match"
 		or now() < target.immuneUntil
-		or ball.turned >= HOMING_MAX
+		or ball.turned >= (ball.homingMax or HOMING_MAX)
 		or now() - (target.dodgedAt or -math.huge) < ball.flightT -- they dodged since the throw
 	then
 		ball.homing = nil
@@ -439,7 +453,7 @@ local function steer(ball: Ball, dt: number)
 		return
 	end
 	local angle = math.acos(math.clamp(v.Unit:Dot(to.Unit), -1, 1))
-	local step = math.min(angle, HOMING_RATE * dt, HOMING_MAX - ball.turned)
+	local step = math.min(angle, (ball.homingRate or HOMING_RATE) * dt, (ball.homingMax or HOMING_MAX) - ball.turned)
 	if step < 1e-4 then
 		return
 	end
@@ -482,6 +496,8 @@ function BallService.launch(c: any, velocity: Vector3, throwId: number): Ball?
 	ball.hasHit = false
 	ball.homing = nil
 	ball.turned = 0
+	ball.homingRate = nil
+	ball.homingMax = nil
 	ball.courseDirty = false
 	ball.dodgedBy = nil
 	launchSeq += 1
@@ -542,6 +558,33 @@ function BallService.launch(c: any, velocity: Vector3, throwId: number): Ball?
 	return ball
 end
 
+-- Throw an extra ball of `ballType` from `c` (a power's: Barrage rockets) as if they'd held it: it's
+-- temporary, so it never adds to the court's balls for long.
+function BallService.fireExtra(c: any, ballType: string, velocity: Vector3): Ball?
+	if c.heldBall or not c.root then
+		return nil
+	end
+	local ball = BallService.spawn(ballType, c.root.Position, "Match", true)
+	ball.temporary = true
+	ball.holder = c
+	c.heldBall = ball
+	local launched = BallService.launch(c, velocity, 0)
+	if not launched then
+		c.heldBall = nil
+		BallService.destroy(ball)
+	end
+	return launched
+end
+
+-- Make a thrown ball home harder (degrees a second / in all), at `target` if given.
+function BallService.boostHoming(ball: Ball, degPerSec: number, maxDeg: number, target: any?)
+	ball.homingRate = math.rad(degPerSec)
+	ball.homingMax = math.rad(maxDeg)
+	if target then
+		ball.homing = target
+	end
+end
+
 -- Make an in-flight ball non-damaging and let physics carry it.
 function BallService.spend(ball: Ball, pos: Vector3, vel: Vector3)
 	if ball.state ~= "InFlight" then
@@ -549,7 +592,12 @@ function BallService.spend(ball: Ball, pos: Vector3, vel: Vector3)
 	end
 	ball.hasHit = true
 	setState(ball, "Spent")
-	ball.isPower = false
+	ball.power = nil
+	-- an extra ball stays extra (it never counts as one of the court's balls) and expires
+	ball.isPower = ball.temporary == true
+	if ball.temporary then
+		ball.expiresAt = now() + Config.Powers.ExtraBallLife
+	end
 	BallService.setType(ball, "Standard") -- reverts power types and clears the owner's skin
 	makePhysical(ball, pos, vel)
 end
@@ -596,7 +644,11 @@ local function simulate(ball: Ball, dt: number)
 			local n = result.Normal
 			local v = ball.vel
 			local reflected = (v - 2 * v:Dot(n) * n) * 0.45
+			local power = ball.power -- an ultimate ball's area effect goes off where it lands
 			S.BallService.spend(ball, hitPos + n * (r + 0.05), reflected)
+			if power then
+				S.PowerService.onImpact(power, hitPos, nil)
+			end
 			S.NetService.broadcast("Sound", { cue = "BallLand", position = hitPos }) -- a miss
 		end
 		return
@@ -653,6 +705,11 @@ end
 
 -- Out-of-bounds: hide, then return to an under-supplied side after a delay.
 function BallService.reset(ball: Ball)
+	ball.power = nil
+	if ball.temporary then
+		BallService.destroy(ball) -- a power's extra ball that went out is simply gone
+		return
+	end
 	if ball.holder then
 		local h = ball.holder
 		h.heldBall = nil
@@ -813,7 +870,7 @@ function BallService.conservationTick()
 		end
 	end
 	local want = Config.Ball.BallsPerCourt
-	local maxTotal = want + 2 * Config.PowerUps.MaxPowerBallsPerSide
+	local maxTotal = want + Config.Powers.MaxExtraBalls
 	local standardCount = 0
 	for _, b in list do
 		if not b.isPower then
@@ -850,19 +907,6 @@ function BallService.resetMatchBalls()
 	for _, pos in ArenaLayout.openingBallSpots() do
 		BallService.spawn("Standard", pos, "Match")
 	end
-end
-
-function BallService.countPower(team: string): number
-	local n = 0
-	for _, b in balls do
-		if b.context == "Match" and b.isPower then
-			local pos = if b.holder and b.holder.root then b.holder.root.Position else b.part.Position
-			if ArenaLayout.onHalf(team, pos, 0, -2) or (b.holder and b.holder.team == team) then
-				n += 1
-			end
-		end
-	end
-	return n
 end
 
 return BallService

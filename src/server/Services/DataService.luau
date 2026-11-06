@@ -85,6 +85,8 @@ export type Profile = {
 	Deals: { date: string, ids: { [string]: string } },
 	-- the coin item this player is saving for (the hub's goal chip), "" for none
 	SavingFor: string,
+	-- the Power Wheel's counters (SpinService.powerState): paid spins today and spins ever (its seed)
+	PowerSpin: { date: string, paid: number, total: number },
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -125,6 +127,7 @@ local function default(): Profile
 		CoinPurchases = 0,
 		Deals = { date = "", ids = {} },
 		SavingFor = "",
+		PowerSpin = { date = "", paid = 0, total = 0 },
 		Lock = nil,
 	}
 end
@@ -229,6 +232,9 @@ function DataService.migrate(old: any): Profile
 	if type(data.PowerKOs) ~= "table" then
 		data.PowerKOs = {}
 	end
+	if type(data.PowerSpin) ~= "table" then
+		data.PowerSpin = { date = "", paid = 0, total = 0 }
+	end
 	if type(data.QuestFirstClaims) ~= "table" then
 		data.QuestFirstClaims = {}
 	end
@@ -317,6 +323,7 @@ local function pushProfile(c: any)
 		equipped = p.Equipped,
 		daily = S.ShopService.dailyStatus(c),
 		spin = S.SpinService.status(c),
+		powerSpin = S.SpinService.powerStatus(c),
 		quests = S.QuestService.status(c),
 		level = p.Level,
 		xp = p.XP,

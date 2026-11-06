@@ -326,7 +326,7 @@ test("ball conservation repairs missing balls without duplicates", function()
 		end
 	end
 	assertTrue(standard >= Config.Ball.BallsPerCourt, ("only %d standard balls"):format(standard))
-	assertTrue(standard <= Config.Ball.BallsPerCourt + 2 * Config.PowerUps.MaxPowerBallsPerSide, "too many balls")
+	assertTrue(standard <= Config.Ball.BallsPerCourt + Config.Powers.MaxExtraBalls, "too many balls")
 end)
 
 test("void fall -> jail; jail hit -> return; revenge on own eliminator; cap -> spectate", function()
@@ -718,10 +718,7 @@ test("no constraint, ball or bot build-up", function()
 	local bots = #(Workspace:FindFirstChild("Bots") :: Folder):GetChildren()
 	assertTrue(bots <= Config.Bots.MaxPerServer + 1, ("%d bot models"):format(bots))
 	local balls = #(Workspace:FindFirstChild("Balls") :: Folder):GetChildren()
-	assertTrue(
-		balls <= Config.Ball.BallsPerCourt + 2 * Config.PowerUps.MaxPowerBallsPerSide + 6,
-		("%d balls"):format(balls)
-	)
+	assertTrue(balls <= Config.Ball.BallsPerCourt + Config.Powers.MaxExtraBalls + 6, ("%d balls"):format(balls))
 end)
 
 -- Signed distance into a team's own half (positive = on its side of the center line).

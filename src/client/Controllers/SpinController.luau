@@ -48,6 +48,16 @@ local spinning = false
 local rotation = 0
 local spinConn: RBXScriptConnection? = nil
 local lastTick = -1
+-- The same sheet runs the Power Wheel (Config.Powers.Wheel): a paid wheel of powers only.
+local PW = Config.Powers.Wheel
+local mode = "Daily" -- "Daily" | "Power"
+local powerStatus: any = nil -- profile.powerSpin from the server
+local powerRobuxPrice: number? = nil
+
+-- The shown wheel's status (profile.spin or profile.powerSpin).
+local function cur(): any
+	return if mode == "Power" then powerStatus else status
+end
 
 local function inHub(): boolean
 	return player:GetAttribute("Status") == "Lobby" and (player:GetAttribute("Team") or "") == ""
@@ -141,8 +151,8 @@ end
 -- Free spins waiting: today's daily spin plus bonus spins from the login ladder (spin.freeSpins).
 -- spin.bonus names the wheel the next one is on (Config.Spin.Wheels), nil for the daily spin.
 local function freeSpins(): number
-	if not status then
-		return 0
+	if not status or mode == "Power" then
+		return 0 -- the Power Wheel is always a paid spin
 	end
 	local n = tonumber(status.freeSpins)
 	return if n then math.max(0, math.floor(n)) elseif status.free then 1 else 0
@@ -154,6 +164,15 @@ local function renderStatus()
 		return
 	end
 	local n = freeSpins()
+	if mode == "Power" and not spinning then
+		WheelSheet.setStatus(info, {
+			fill = T.candy,
+			glyph = "star",
+			title = "Win a power!",
+			detail = "Every slot is a power. One you already own pays coins instead.",
+		})
+		return
+	end
 	if spinning then
 		WheelSheet.setStatus(info, {
 			fill = T.sun,
@@ -182,17 +201,20 @@ local function renderStatus()
 end
 
 local function renderButtons()
-	if not status then
+	local st = cur()
+	if not st then
 		return
 	end
 	local free = freeSpins() > 0
-	local wheel = status.bonus and SP.Wheels[status.bonus]
+	local wheel = mode == "Daily" and status.bonus and SP.Wheels[status.bonus]
+	local maxPaid = if mode == "Power" then PW.MaxPaidPerDay else SP.MaxPaidPerDay
+	local cost = st.cost or (if mode == "Power" then PW.CoinCost else SP.ExtraSpinCost)
 	if free then
 		Theme.setText(spinButton, if wheel then "Use your " .. string.lower(wheel.Name) else "Spin for free")
 		Theme.recolor(spinButton, "primary")
 		Theme.setEnabled(spinButton, true)
-	elseif status.paidLeft > 0 then
-		Theme.setText(spinButton, ("Spin for %s coins"):format(ShopController.commas(status.cost)))
+	elseif st.paidLeft > 0 then
+		Theme.setText(spinButton, ("Spin for %s coins"):format(ShopController.commas(cost)))
 		Theme.recolor(spinButton, "primary")
 		Theme.setEnabled(spinButton, true)
 	else
@@ -201,24 +223,59 @@ local function renderButtons()
 		Theme.setEnabled(spinButton, false)
 	end
 	-- cost row: what an extra spin costs, and how many are left today
-	info.price.Text = ("%s coins"):format(ShopController.commas(status.cost or SP.ExtraSpinCost))
-	info.priceNote.Text = if status.restricted
+	info.price.Text = ("%s coins"):format(ShopController.commas(cost))
+	info.priceNote.Text = if status and status.restricted
 		then "Extra spins aren't available in your region"
-		elseif status.paidLeft > 0 then ("Extra spins left today: %d/%d"):format(status.paidLeft, SP.MaxPaidPerDay)
+		elseif st.paidLeft > 0 then ("%s left today: %d/%d"):format(
+			if mode == "Power" then "Power spins" else "Extra spins",
+			st.paidLeft,
+			maxPaid
+		)
 		else "No extra spins left today"
-	robuxButton.Visible = (status.robux or 0) > 0 and not free and player:GetAttribute("RobuxOk") == true
+	robuxButton.Visible = (st.robux or 0) > 0 and not free and player:GetAttribute("RobuxOk") == true
+	local price = if mode == "Power" then powerRobuxPrice else robuxPrice
 	Theme.setText(
 		robuxButton,
-		if robuxPrice then ("Extra spin for R$ %d"):format(robuxPrice) else "Extra spin with Robux"
+		if price
+			then ("%s for R$ %d"):format(if mode == "Power" then "Power spin" else "Extra spin", price)
+			else "Extra spin with Robux"
 	)
 	info.caption.Text = ("You have %s coins"):format(ShopController.commas(coins))
-	badge.Visible = freeSpins() > 0
+	-- the hub badge is the daily wheel's: free spins waiting
+	local dailyFree = 0
+	if status then
+		dailyFree = tonumber(status.freeSpins) or (if status.free then 1 else 0)
+	end
+	badge.Visible = dailyFree > 0
 	renderStatus()
 end
 
-function SpinController.open(on: boolean)
+-- Show the daily wheel or the Power Wheel on the sheet.
+local function setMode(m: string)
+	if mode == m then
+		return
+	end
+	mode = m
+	sheet.title.Text = if m == "Power" then "Power Wheel" else "Daily spin"
+	if sheet.subtitle then
+		sheet.subtitle.Text = if m == "Power"
+			then "Spin for a new power. Every slot is equally likely."
+			else "One free spin a day. Every slot is equally likely."
+	end
+	local st = cur()
+	if st and not spinning then
+		buildWheel(st.slots or {})
+		renderOdds()
+	end
+	renderButtons()
+end
+
+function SpinController.open(on: boolean, which: string?)
 	if on and not inHub() then
 		return
+	end
+	if on and not spinning then
+		setMode(which or "Daily")
 	end
 	if on then
 		if not ShopController.isOpen(panel) then
@@ -466,11 +523,12 @@ local function landOn(index: number, onDone: () -> ())
 end
 
 function SpinController.spin()
-	if spinning or not status or not inHub() then
+	local st = cur()
+	if spinning or not st or not inHub() then
 		return
 	end
 	local paid = freeSpins() == 0
-	if paid and status.paidLeft <= 0 then
+	if paid and st.paidLeft <= 0 then
 		SoundController.play("UIError")
 		HUDController.hint("No more spins today", 1.5)
 		return
@@ -480,7 +538,11 @@ function SpinController.spin()
 	SoundController.play("SpinStart")
 	HubController.boostWheel(SP.SpinDuration + 1)
 	spinUp()
-	Net.request(Net.Actions.Spin, { paid = paid })
+	if mode == "Power" then
+		Net.request(Net.Actions.SpinPower)
+	else
+		Net.request(Net.Actions.Spin, { paid = paid })
+	end
 	-- if the server never answers, don't leave the wheel spinning forever
 	task.delay(6, function()
 		if spinning and spinConn and not panel:GetAttribute("Landing") then
@@ -583,8 +645,21 @@ function SpinController.init()
 		}, face or robuxButton)
 	end
 	robuxButton.Activated:Connect(function()
-		if SP.RobuxProductId > 0 then
-			MarketplaceService:PromptProductPurchase(player, SP.RobuxProductId)
+		local id = if mode == "Power" then PW.RobuxProductId else SP.RobuxProductId
+		if id > 0 then
+			MarketplaceService:PromptProductPurchase(player, id)
+		end
+	end)
+	task.spawn(function()
+		if PW.RobuxProductId <= 0 then
+			return
+		end
+		local ok, product = pcall(function()
+			return MarketplaceService:GetProductInfo(PW.RobuxProductId, Enum.InfoType.Product)
+		end)
+		if ok and type(product) == "table" and type(product.PriceInRobux) == "number" then
+			powerRobuxPrice = product.PriceInRobux
+			renderButtons()
 		end
 	end)
 	-- show the extra spin's Robux price on its button once the store answers
@@ -624,6 +699,14 @@ function SpinController.init()
 	ShopController.onOpenSpin = function()
 		SpinController.open(true)
 	end
+	-- the Power Wheel: its own hub button (and ShopController.onOpenPowerWheel for the shop)
+	ShopController.addAction("Power Wheel", T.peach, "star", 2, function()
+		local open = ShopController.isOpen(panel) and mode == "Power"
+		SpinController.open(not open, "Power")
+	end)
+	ShopController.onOpenPowerWheel = function()
+		SpinController.open(true, "Power")
+	end
 	ShopController.onCloseAll(function()
 		SpinController.open(false)
 	end)
@@ -632,10 +715,12 @@ end
 function SpinController.start()
 	Net.on("Profile", function(d)
 		status = d.spin
+		powerStatus = d.powerSpin
 		owned = d.owned or {}
 		coins = tonumber(d.coins) or coins
-		if status and not spinning then
-			buildWheel(status.slots or {})
+		local st = cur()
+		if st and not spinning then
+			buildWheel(st.slots or {})
 			renderOdds()
 		end
 		renderButtons()
@@ -649,10 +734,16 @@ function SpinController.start()
 			return
 		end
 		-- a Robux spin can arrive while the sheet is closed: open it to show the spin
+		local which = if d.power then "Power" else "Daily"
 		if not ShopController.isOpen(panel) and inHub() then
-			SpinController.open(true)
+			SpinController.open(true, which)
 			spinUp()
 			spinning = true
+		elseif mode ~= which then
+			local was = spinning
+			spinning = false
+			setMode(which)
+			spinning = was
 		end
 		-- the wheel shown should already be this one; rebuild if anything changed
 		local same = #d.slots == #slotsShown
@@ -674,8 +765,9 @@ function SpinController.start()
 			task.delay(0.35, function()
 				showReveal(d)
 				-- the next wheel (from the profile push) appears once the reveal is up
-				if status then
-					buildWheel(status.slots or {})
+				local st = cur()
+				if st then
+					buildWheel(st.slots or {})
 					renderOdds()
 				end
 			end)

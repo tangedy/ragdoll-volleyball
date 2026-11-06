@@ -100,7 +100,8 @@ local function copy(): (string, string, string?)
 		end
 		return "You got a HEAVY ball!", "Grab the big orange ball", nil
 	elseif step == 5 then
-		return "More special balls to find!", "Grab them in matches", nil
+		-- in matches the Heavy power (F / Y / POWER) makes them; the shop sells more powers
+		return "That was your HEAVY power!", "Use it in matches, and unlock more in the shop", nil
 	elseif step == 6 then
 		return "Dodge a close call!",
 			if touch

@@ -34,21 +34,31 @@ local function today(): string
 	return os.date("!%Y-%m-%d", os.time()) :: string
 end
 
--- Prize pool by rarity: every catalog item that isn't a free default.
-local pool: { [string]: { Catalog.Item } }? = nil
-function SpinService.pool(): { [string]: { Catalog.Item } }
-	if pool then
-		return pool
+-- Prize pool by rarity: every catalog cosmetic that isn't a free default. With `powers`, the Power
+-- Wheel's pool instead: every power that isn't the free starter.
+local pools: { [string]: { [string]: { Catalog.Item } } } = {}
+function SpinService.pool(powers: boolean?): { [string]: { Catalog.Item } }
+	local key = if powers then "Power" else "Cosmetic"
+	if pools[key] then
+		return pools[key]
 	end
 	local p: { [string]: { Catalog.Item } } = { Common = {}, Rare = {}, Epic = {}, Legendary = {} }
 	for _, item in Catalog.Items do
 		-- event cosmetics are never on the wheels (they're only sold during their event), mastery
-		-- cosmetics are only earned and Robux exclusives only bought (the chest pools narrow this one)
-		if not item.Default and item.Price > 0 and not item.Event and not item.Unlock and not item.Exclusive then
+		-- cosmetics are only earned and Robux exclusives only bought (the chest pools narrow this one);
+		-- powers are only on the Power Wheel
+		if
+			not item.Default
+			and item.Price > 0
+			and not item.Event
+			and not item.Unlock
+			and not item.Exclusive
+			and (item.Category == "Power") == (powers == true)
+		then
 			table.insert(p[Catalog.rarity(item)], item)
 		end
 	end
-	pool = p
+	pools[key] = p
 	return p
 end
 
@@ -80,21 +90,8 @@ function SpinService.bonusSpins(c: any): { string }
 	return q
 end
 
--- The wheel for this player's next spin today (deterministic, so the preview is the real wheel).
--- `bonus` is a Config.Spin.Wheels id for a bonus spin; without it, it's the daily/paid wheel.
-function SpinService.wheel(c: any, bonus: string?): { string }
-	local st = SpinService.state(c)
-	local who = if c.player then c.player.UserId else c.id
-	local day = os.time() // 86400
-	local spinNumber = (if st.freeUsed then 1 else 0) + st.paid
-	local weights = SP.RarityWeights
-	if bonus then
-		-- its own seed stream, moved on by every spin (so each bonus spin gets a fresh wheel)
-		spinNumber = 1000 + st.total
-		weights = (SP.Wheels[bonus] or SP.Wheels.Standard).RarityWeights
-	end
-	local seeded = Random.new(math.abs(who) * 7919 + day * 104729 + spinNumber * 31 + 17)
-	local p = SpinService.pool()
+-- Config.Spin.Slots prizes drawn from `p` by `weights` with the seeded generator.
+local function fillWheel(seeded: Random, p: { [string]: { Catalog.Item } }, weights: { [string]: number }): { string }
 	local total = 0
 	for _, r in RARITIES do
 		if #p[r] > 0 then
@@ -129,6 +126,23 @@ function SpinService.wheel(c: any, bonus: string?): { string }
 		table.insert(slots, id)
 	end
 	return slots
+end
+
+-- The wheel for this player's next spin today (deterministic, so the preview is the real wheel).
+-- `bonus` is a Config.Spin.Wheels id for a bonus spin; without it, it's the daily/paid wheel.
+function SpinService.wheel(c: any, bonus: string?): { string }
+	local st = SpinService.state(c)
+	local who = if c.player then c.player.UserId else c.id
+	local day = os.time() // 86400
+	local spinNumber = (if st.freeUsed then 1 else 0) + st.paid
+	local weights = SP.RarityWeights
+	if bonus then
+		-- its own seed stream, moved on by every spin (so each bonus spin gets a fresh wheel)
+		spinNumber = 1000 + st.total
+		weights = (SP.Wheels[bonus] or SP.Wheels.Standard).RarityWeights
+	end
+	local seeded = Random.new(math.abs(who) * 7919 + day * 104729 + spinNumber * 31 + 17)
+	return fillWheel(seeded, SpinService.pool(), weights)
 end
 
 -- What the HUD needs: free spins waiting (bonus spins plus today's daily one), the bonus wheel the
@@ -249,6 +263,107 @@ function SpinService.spin(c: any, how: string): (any?, string?)
 		nil
 end
 
+-- Power Wheel (Config.Powers.Wheel) ---------------------------------------------------------------
+-- A paid wheel (coins, capped per day, or Robux) whose prizes are powers only. Same rules as the
+-- cosmetic wheel: the wheel is seeded so the preview is the real one, one slot is picked uniformly,
+-- and a power you already own pays Config.Spin.DuplicateCoins instead. Its counters are
+-- profile.PowerSpin.
+local PW = Config.Powers.Wheel
+
+function SpinService.powerState(c: any): { date: string, paid: number, total: number }
+	local p = c.profile
+	local st = p.PowerSpin
+	if type(st) ~= "table" then
+		st = { date = "", paid = 0, total = 0 }
+		p.PowerSpin = st
+	end
+	local d = today()
+	if st.date ~= d then
+		st.date = d
+		st.paid = 0
+	end
+	st.total = tonumber(st.total) or 0
+	return st
+end
+
+function SpinService.powerWheel(c: any): { string }
+	local st = SpinService.powerState(c)
+	local who = if c.player then c.player.UserId else c.id
+	local seeded = Random.new(math.abs(who) * 6151 + (os.time() // 86400) * 92821 + st.total * 37 + 5)
+	return fillWheel(seeded, SpinService.pool(true), PW.RarityWeights)
+end
+
+function SpinService.powerStatus(c: any): { paidLeft: number, cost: number, slots: { string }, robux: number }
+	if not c.profile then
+		return { paidLeft = 0, cost = PW.CoinCost, slots = {}, robux = 0 }
+	end
+	local restricted = S.ComplianceService.paidRandomRestricted(c)
+	local st = SpinService.powerState(c)
+	return {
+		paidLeft = if restricted then 0 else math.max(0, PW.MaxPaidPerDay - st.paid),
+		cost = PW.CoinCost,
+		slots = SpinService.powerWheel(c),
+		robux = if restricted then 0 else PW.RobuxProductId,
+	}
+end
+
+-- Spin the Power Wheel: `how` is "Coins" or "Robux". Returns the result table, or nil and a reason.
+function SpinService.spinPower(c: any, how: string): (any?, string?)
+	if not c.profileLoaded or not c.profile then
+		return nil, "Not ready yet"
+	end
+	if how ~= "Robux" and not inHub(c) then
+		return nil, "Spin in the hub"
+	end
+	if S.ComplianceService.paidRandomRestricted(c) then
+		return nil, "Paid spins aren't available in your region"
+	end
+	local st = SpinService.powerState(c)
+	if how == "Coins" then
+		if st.paid >= PW.MaxPaidPerDay then
+			return nil, "No more Power Wheel spins today"
+		end
+		if c.profile.Coins < PW.CoinCost then
+			return nil, ("Need %d more coins"):format(PW.CoinCost - c.profile.Coins)
+		end
+	elseif how ~= "Robux" then
+		return nil, "Not available"
+	end
+	local slots = SpinService.powerWheel(c)
+	local index = rng:NextInteger(1, #slots)
+	local item = Catalog.get(slots[index]) :: Catalog.Item
+	local rarity = Catalog.rarity(item)
+	if how == "Coins" then
+		c.profile.Coins -= PW.CoinCost
+		st.paid += 1
+		S.AnalyticsService.coinPurchase(c)
+	end
+	st.total += 1
+	local duplicate = S.ShopService.owns(c, item.Id)
+	local coins = 0
+	if duplicate then
+		coins = SP.DuplicateCoins[rarity] or 0
+		c.profile.Coins += coins
+	else
+		c.profile.OwnedCosmetics[item.Id] = true
+	end
+	S.AnalyticsService.event(c, "PowerSpin_" .. how .. "_" .. rarity, coins)
+	S.DataService.push(c)
+	task.spawn(S.DataService.save, c, false)
+	return {
+		ok = true,
+		index = index,
+		slots = slots,
+		id = item.Id,
+		rarity = rarity,
+		duplicate = duplicate,
+		coins = coins,
+		how = how,
+		power = true,
+	},
+		nil
+end
+
 function SpinService.start()
 	S.NetService.on(NetSchema.Actions.Spin, function(player, p)
 		local c = S.PlayerStateService.get(player)
@@ -261,6 +376,31 @@ function SpinService.start()
 		else
 			S.NetService.send(player, "SpinResult", { ok = false, message = why })
 		end
+	end)
+	S.NetService.on(NetSchema.Actions.SpinPower, function(player, _p)
+		local c = S.PlayerStateService.get(player)
+		if not c then
+			return
+		end
+		local result, why = SpinService.spinPower(c, "Coins")
+		S.NetService.send(player, "SpinResult", result or { ok = false, message = why, power = true })
+	end)
+	S.PurchaseService.register(PW.RobuxProductId, function(c: any): boolean
+		if S.ComplianceService.paidRandomRestricted(c) then
+			c.profile.Coins += PW.CoinCost
+			if c.player then
+				S.NetService.send(c.player, "CoinsBought", { id = "PowerSpin", coins = PW.CoinCost })
+			end
+			return true
+		end
+		local result = SpinService.spinPower(c, "Robux")
+		if not result then
+			return false
+		end
+		if c.player then
+			S.NetService.send(c.player, "SpinResult", result)
+		end
+		return true
 	end)
 	-- Robux extra spin (only once Config.Spin.RobuxProductId is set); PurchaseService handles the
 	-- receipt and its save

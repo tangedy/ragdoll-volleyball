@@ -253,15 +253,57 @@ Config.Practice = {
 	ThrowerLockout = 0.6, -- can't re-grab your own throw for this long
 }
 
+-- Power-ball mastery. The random power-ball dispensers are gone: Heavy, Rocket and Pop balls now
+-- come from equipped powers (Config.Powers). Featured ball of the day: one power type a UTC day, in
+-- BallDefinitions.PowerTypes order; its knockouts count MasteryBonus times toward Power Ball Mastery
+-- (the Catalog Unlock cosmetics).
 Config.PowerUps = {
+	Featured = { Enabled = true, MasteryBonus = 2 },
+}
+
+-- Equippable powers (PowerDefinitions, PowerService, PowerController), modelled on Racket Rivals'
+-- Spirits (an active with a cooldown) and Awakenings (an ultimate charged by playing well). Each
+-- power you equip gives an active on a cooldown and comes with its own ultimate. Everyone owns the
+-- starter power; the rest are bought in the shop's Powers tab or won on the Power Wheel. The
+-- Extra Power Slot game pass (Config.CoinShop.Passes.PowerSlot) adds a second power: its active
+-- only, on its own button (the ultimate is always slot 1's).
+Config.Powers = {
 	Enabled = true,
-	DispenserInterval = 12, -- per dispenser; each side's second dispenser runs half an interval behind
-	MaxPowerBallsPerSide = 2,
-	Weights = { Heavy = 1, Rocket = 1, Pop = 1 },
-	-- Featured ball of the day: one power type a UTC day, in BallDefinitions.PowerTypes order. It
-	-- drops WeightBoost times as often, and its knockouts count MasteryBonus times toward Power Ball
-	-- Mastery (the Catalog Unlock cosmetics).
-	Featured = { Enabled = true, WeightBoost = 3, MasteryBonus = 2 },
+	Starter = "Power_Heavy", -- the Catalog id everyone owns
+	-- each round, actives become ready this many seconds after GO (so nobody fires one on the whistle)
+	RoundStartDelay = 4,
+	-- Ultimate meter (0..Max). Gains for playing well, like Racket Rivals' Awakening bar: landing a
+	-- hit (more for a close one, ProjectileMath.damageFor relative to a Standard long-range hit),
+	-- catching, a credited knockout and a dodge that the dodge quest credits. Passive is per second
+	-- while you're active on the court, so everyone gets there eventually. It resets each round.
+	Meter = {
+		Max = 100,
+		Hit = 14,
+		Catch = 22,
+		Knockout = 30,
+		Dodge = 8,
+		Passive = 0.6,
+		GotHit = 4, -- a little back for taking a hit (comeback)
+	},
+	-- the ultimate's wind-up: the caster's camera pushes in and everyone sees its banner; the effect
+	-- starts after it. The caster can't be hit during the wind-up.
+	UltWindup = 0.9,
+	-- extra balls a power adds to the court (Ball Storm) count against this on top of BallsPerCourt,
+	-- and vanish after ExtraBallLife seconds lying on the court
+	MaxExtraBalls = 10,
+	ExtraBallLife = 10,
+	-- Bots: each gets a random power when it spawns (weighted by rarity), uses its active when it
+	-- makes sense, and its ultimate UltDelay seconds (random in range) after the meter fills.
+	BotRarityWeights = { Common = 60, Rare = 28, Epic = 10, Legendary = 2 },
+	BotUltDelay = { 0.5, 3 },
+	BotUseChance = 0.35, -- per bot think when the active is ready and useful
+	-- the Power Wheel: a coin (or Robux) spin whose prizes are powers only (SpinService)
+	Wheel = {
+		CoinCost = 2500,
+		MaxPaidPerDay = 3,
+		RobuxProductId = 0, -- PLACEHOLDER: developer product "Power Wheel spin"
+		RarityWeights = { Common = 55, Rare = 30, Epic = 12, Legendary = 3 },
+	},
 }
 
 Config.Bots = {
@@ -450,6 +492,9 @@ Config.CoinShop = {
 		-- a gold VIP tag on the name tag, and a daily gift the first time you're here each UTC day: a
 		-- free bonus spin on DailyWheel and DailyCoins coins. Nothing that changes a match.
 		VIP = { Name = "VIP", Robux = 299, PassId = 2066960299, Image = 0, DailyCoins = 150, DailyWheel = "Standard" },
+		-- a second equipped power (Config.Powers): its active on its own button. PassId 0 until the
+		-- pass is made in the Creator Dashboard (Studio: the dev command "PowerSlot" grants it)
+		PowerSlot = { Name = "Extra Power Slot", Robux = 249, PassId = 0, Image = 0 },
 	},
 	-- The Starter Pack: a one-time developer product shown on the Coins sheet once Robux buttons
 	-- unlock, until bought (profile.StarterBought). It grants Items (Robux exclusives that are also sold

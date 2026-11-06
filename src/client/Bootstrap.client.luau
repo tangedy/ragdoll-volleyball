@@ -22,6 +22,7 @@ local ORDER = {
 	"HUDController",
 	"DamageController",
 	"EffectsController",
+	"PowerController",
 	"CharacterController",
 	"SpectatorController",
 	"BallGuideController",

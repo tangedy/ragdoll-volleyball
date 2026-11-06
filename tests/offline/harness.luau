@@ -501,6 +501,7 @@ local SERVICES = {
 	"PurchaseService",
 	"BoostService",
 	"GamePassService",
+	"PowerService",
 	"QuestService",
 	"HalloweenService",
 }

@@ -180,7 +180,11 @@ function ShopService.buy(c: any, id: string, expected: number?): (boolean, strin
 	end
 	c.profile.Coins -= price
 	c.profile.OwnedCosmetics[id] = true
-	c.profile.Equipped[item.Category] = id -- equip on purchase
+	if item.Category == "Power" then
+		ShopService.equipPower(c, id) -- slot 1 (the old one moves to slot 2 with the pass)
+	else
+		c.profile.Equipped[item.Category] = id -- equip on purchase
+	end
 	if c.profile.SavingFor == id then
 		c.profile.SavingFor = ""
 	end
@@ -204,10 +208,54 @@ function ShopService.equip(c: any, id: string): (boolean, string?)
 	if not inHub(c) then
 		return false, "Change cosmetics in the hub"
 	end
+	if item.Category == "Power" then
+		ShopService.equipPower(c, id)
+		S.DataService.push(c)
+		return true, nil
+	end
 	c.profile.Equipped[item.Category] = id
 	ShopService.applyCosmetics(c)
 	S.DataService.push(c)
 	return true, nil
+end
+
+-- Powers: Equipped.Power is slot 1 (its active and the ultimate), Equipped.Power2 the Extra Power
+-- Slot pass's second active. Equipping a power puts it in slot 1; with the pass, what was in slot 1
+-- moves to slot 2 (equipping the slot 2 power swaps them), so the last two you picked are equipped.
+function ShopService.equipPower(c: any, id: string)
+	local eq = c.profile.Equipped
+	local current = Catalog.equipped(eq, "Power").Id
+	if current == id then
+		return
+	end
+	if S.GamePassService.owns(c, "PowerSlot") then
+		eq.Power2 = current
+	end
+	eq.Power = id
+end
+
+-- The power ids a combatant has equipped this match, slot 1 first ({ slot1, slot2? }). Anything not
+-- owned (or slot 2 without the pass) falls back: slot 1 to the starter, slot 2 to nothing. Bots get
+-- theirs from PowerService.
+function ShopService.equippedPowers(c: any): { string }
+	local eq = c.profile and c.profile.Equipped or {}
+	local list = {}
+	local first = Catalog.get(eq.Power)
+	if not (first and first.Category == "Power" and ShopService.owns(c, first.Id)) then
+		first = Catalog.get(Config.Powers.Starter)
+	end
+	table.insert(list, Catalog.powerOf(first) :: string)
+	local second = Catalog.get(eq.Power2)
+	if
+		second
+		and second.Category == "Power"
+		and second.Id ~= (first :: any).Id
+		and ShopService.owns(c, second.Id)
+		and S.GamePassService.owns(c, "PowerSlot")
+	then
+		table.insert(list, Catalog.powerOf(second) :: string)
+	end
+	return list
 end
 
 -- Power Ball Mastery ------------------------------------------------------------------------------
@@ -262,8 +310,11 @@ function ShopService.recordPowerKO(c: any, ballType: string?): { string }
 	if not c.player or not c.profileLoaded or not c.profile or not BallDefinitions.Defs[ballType or ""] then
 		return {}
 	end
-	if ballType == "Standard" then
+	if ballType == "Standard" or ballType == "Frost" then
 		return {}
+	end
+	if ballType == "Meteor" then
+		ballType = "Heavy" -- Heavy's ultimate counts toward Heavy mastery
 	end
 	local kos = c.profile.PowerKOs
 	local amount = if ballType == ShopService.featuredBall() then Config.PowerUps.Featured.MasteryBonus else 1

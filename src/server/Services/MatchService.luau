@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local Catalog = require(Shared.Catalog)
 local ArenaLayout = require(Shared.ArenaLayout)
 local BallDefinitions = require(Shared.BallDefinitions)
 local NetSchema = require(Shared.NetSchema)
@@ -91,6 +92,7 @@ MatchService.tag = tag
 local function feed(text: string)
 	S.NetService.broadcast("Feed", { text = text })
 end
+MatchService.feed = feed
 
 function MatchService.init(services: any)
 	S = services
@@ -153,6 +155,19 @@ function MatchService.start()
 				else
 					S.TutorialService.devSkip(c)
 				end
+			end
+		elseif p.cmd == "FillUlt" or p.cmd == "PowerSlot" or p.cmd == "AllPowers" then
+			-- powers testing (Studio): a full ultimate meter, the Extra Power Slot pass, every power
+			local c = S.PlayerStateService.get(player)
+			if c and p.cmd == "FillUlt" then
+				S.PowerService.addMeter(c, Config.Powers.Meter.Max)
+			elseif c and p.cmd == "PowerSlot" then
+				S.GamePassService.setOwned(c, "PowerSlot")
+			elseif c and c.profile then
+				for _, item in Catalog.inCategory("Power") do
+					c.profile.OwnedCosmetics[item.Id] = true
+				end
+				S.DataService.push(c)
 			end
 		elseif p.cmd == "SkipToFinisher" then
 			local c = S.PlayerStateService.get(player)
@@ -353,6 +368,8 @@ local function eliminate(c: any)
 	lastElim = { victim = c, credit = credit }
 	local ballType = c.pendingHit and c.pendingHit.ballType -- read before hitResolved clears it
 	S.AnalyticsService.hitResolved(c, "Void")
+	S.PowerService.unfreeze(c)
+	S.PowerService.endPhantom(c)
 	if c.heldBall then
 		S.BallService.drop(c)
 	end
@@ -373,6 +390,7 @@ local function eliminate(c: any)
 			S.ShopService.recordPowerKO(credit, ballType) -- Power Ball Mastery, bots included
 			S.DataService.push(credit)
 		end
+		S.PowerService.onKnockout(credit)
 		feed(("%s 💥 launched %s off the court!"):format(tag(credit), tag(c)))
 	else
 		feed(("%s fell off!"):format(tag(c)))
@@ -584,6 +602,7 @@ local function resetCombatant(c: any)
 	c.catchUntil = 0
 	c.dodgeReadyAt = 0
 	c.catchReadyAt = 0
+	S.PowerService.reset(c) -- empty ultimate meter, fresh powers, no ice or phantom left over
 	S.PlayerStateService.setStatus(c, "Active")
 	S.PlayerStateService.setAction(c, "Idle")
 	S.PlayerStateService.syncAttributes(c)
@@ -852,83 +871,9 @@ local function shouldAbort(): boolean
 	return (realInRoster() == 0 and not botOnlyOk) or teamEmpty("Red") or teamEmpty("Blue")
 end
 
--- Two dispensers a side, the second half an interval behind the first. Each slot rolls its next
--- type ahead of time so the pads can show it with a countdown; both teams' pads for a slot drop
--- the same type at once, so luck is never one-sided.
-local DISPENSER_SLOTS = 2
-local DISPENSER_IDLE_COLOR = Color3.fromRGB(255, 230, 90)
-local powerSlots: { { type: string, at: number } } = {}
-
--- Today's featured ball drops more often.
-local function rollPowerType(): string
-	local types = BallDefinitions.PowerTypes
-	local featured = S.ShopService.featuredBall()
-	local function weight(t: string): number
-		local w = (Config.PowerUps.Weights :: { [string]: number })[t] or 0
-		return if t == featured then w * Config.PowerUps.Featured.WeightBoost else w
-	end
-	local total = 0
-	for _, t in types do
-		total += weight(t)
-	end
-	local roll = rng:NextNumber() * total
-	local chosen = types[1]
-	for _, t in types do
-		roll -= weight(t)
-		if roll <= 0 then
-			chosen = t
-			break
-		end
-	end
-	return chosen
-end
-
-local function resetPowerSlots(start: number)
-	for slot = 1, DISPENSER_SLOTS do
-		local offset = Config.PowerUps.DispenserInterval * (slot - 1) / DISPENSER_SLOTS
-		powerSlots[slot] = { type = rollPowerType(), at = start + Config.PowerUps.DispenserInterval + offset }
-	end
-end
-
--- Each pad shows its next ball and the seconds until it drops; `t` nil (between rounds) shows "?".
-local function labelDispensers(t: number?)
-	for slot = 1, DISPENSER_SLOTS do
-		local s = powerSlots[slot]
-		local text, color = "?", DISPENSER_IDLE_COLOR
-		if t and s and Config.PowerUps.Enabled then
-			local def = BallDefinitions.get(s.type)
-			text = ("%s\n%ds"):format(def.DisplayName, math.max(0, math.ceil(s.at - t)))
-			color = def.Color
-		end
-		for _, team in { "Red", "Blue" } do
-			S.ArenaService.setDispenserLabel(team, slot, text, color)
-		end
-	end
-end
-
--- A slot that's due drops its ball on both sides, unless a side is already at the cap (then it
--- keeps the same type and tries again next interval).
-local function spawnPowerUp(slot: number)
-	local s = powerSlots[slot]
-	if
-		S.BallService.countPower("Red") >= Config.PowerUps.MaxPowerBallsPerSide
-		or S.BallService.countPower("Blue") >= Config.PowerUps.MaxPowerBallsPerSide
-	then
-		return
-	end
-	for _, team in { "Red", "Blue" } do
-		S.BallService.spawn(s.type, S.ArenaService.dispenserPosition(team, slot), "Match", true)
-	end
-	feed(("%s balls dropped!"):format(BallDefinitions.get(s.type).DisplayName))
-	for _, team in { "Red", "Blue" } do
-		S.NetService.broadcast("Sound", { cue = "PowerUp", position = S.ArenaService.dispenserPosition(team, slot) })
-	end
-	s.type = rollPowerType()
-end
-
 -- Feed line naming today's featured ball (Config.PowerUps.Featured), once a match.
 local function announceFeatured()
-	local featured = Config.PowerUps.Enabled and S.ShopService.featuredBall()
+	local featured = S.ShopService.featuredBall()
 	if not featured then
 		return
 	end
@@ -993,12 +938,12 @@ end
 local function playRound(): (string, boolean)
 	setState("RoundActive", M.RoundTime)
 	banner("GO!", Color3.fromRGB(120, 255, 140), 0.8, "Go")
+	S.PowerService.roundStarted(roster)
 	local endsAt = now() + M.RoundTime
 	local sdStart = 0
 	local stepsDone = 0
 	local warned = 0
 	local fallbackAt = math.huge
-	resetPowerSlots(now())
 	local nextPublish = 0
 	S.AnalyticsService.roundStarted(roster)
 	while true do
@@ -1046,15 +991,6 @@ local function playRound(): (string, boolean)
 		elseif blue == 0 then
 			return "Red", true
 		end
-		if Config.PowerUps.Enabled then
-			for slot, s in powerSlots do
-				if t >= s.at then
-					s.at = t + Config.PowerUps.DispenserInterval
-					spawnPowerUp(slot)
-				end
-			end
-		end
-		labelDispensers(t)
 		if clockHeld and not overtime then
 			endsAt = math.max(endsAt, t + 1)
 		end
@@ -1286,7 +1222,6 @@ local function runMatch(queued: { any })
 			end
 		end
 		local result, byElimination = playRound()
-		labelDispensers(nil)
 		publishCounts()
 		if result == "Abort" then
 			aborted = true
