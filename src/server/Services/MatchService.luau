@@ -169,6 +169,12 @@ function MatchService.start()
 				end
 				S.DataService.push(c)
 			end
+		elseif string.sub(p.cmd, 1, 6) == "Power:" then
+			-- powers testing (Studio): swap slot 1 to this power mid-match, off cooldown
+			local c = S.PlayerStateService.get(player)
+			if c then
+				S.PowerService.devSet(c, string.sub(p.cmd, 7))
+			end
 		elseif p.cmd == "SkipToFinisher" then
 			local c = S.PlayerStateService.get(player)
 			if c and c.inMatch and c.team then
@@ -368,8 +374,7 @@ local function eliminate(c: any)
 	lastElim = { victim = c, credit = credit }
 	local ballType = c.pendingHit and c.pendingHit.ballType -- read before hitResolved clears it
 	S.AnalyticsService.hitResolved(c, "Void")
-	S.PowerService.unfreeze(c)
-	S.PowerService.endPhantom(c)
+	S.PowerService.clearEffects(c)
 	if c.heldBall then
 		S.BallService.drop(c)
 	end

@@ -294,15 +294,30 @@ Config.Powers = {
 	ExtraBallLife = 10,
 	-- Bots: each gets a random power when it spawns (weighted by rarity), uses its active when it
 	-- makes sense, and its ultimate UltDelay seconds (random in range) after the meter fills.
-	BotRarityWeights = { Common = 60, Rare = 28, Epic = 10, Legendary = 2 },
+	BotRarityWeights = { Common = 55, Rare = 28, Epic = 12, Legendary = 4, Mythic = 1, Secret = 0 },
 	BotUltDelay = { 0.5, 3 },
 	BotUseChance = 0.35, -- per bot think when the active is ready and useful
+	-- Mastery (like Racket Rivals' Spirit mastery): every power you play with levels up on its own,
+	-- 1 to MaxLevel, from mastery XP earned while it's equipped (slot 1 or 2): XP.* per credited hit,
+	-- knockout, active used and ultimate used. Thresholds[n] is the total XP for level n. Each level's
+	-- perks: CooldownScale (× the active's cooldown) and MeterScale (× ultimate meter gains, slot 1).
+	-- At MaxLevel the power is Mastered: its ultimate goes off in gold. Real players only (bots stay 1).
+	Mastery = {
+		MaxLevel = 5,
+		Thresholds = { 0, 25, 75, 175, 350 },
+		XP = { Hit = 1, Knockout = 4, Active = 1, Ult = 3 },
+		CooldownScale = { 1, 0.92, 0.92, 0.85, 0.85 },
+		MeterScale = { 1, 1, 1.1, 1.1, 1.15 },
+	},
 	-- the Power Wheel: a coin (or Robux) spin whose prizes are powers only (SpinService)
 	Wheel = {
 		CoinCost = 2500,
 		MaxPaidPerDay = 3,
 		RobuxProductId = 0, -- PLACEHOLDER: developer product "Power Wheel spin"
-		RarityWeights = { Common = 55, Rare = 30, Epic = 12, Legendary = 3 },
+		-- Mythic and Secret powers exist only above Legendary (Catalog); a Mythic or Secret win is
+		-- announced to the whole server
+		RarityWeights = { Common = 50, Rare = 30, Epic = 14, Legendary = 5, Mythic = 0.8, Secret = 0.2 },
+		Announce = { Mythic = true, Secret = true },
 	},
 }
 
@@ -612,7 +627,8 @@ Config.DailyRewards = {
 Config.Spin = {
 	Slots = 12,
 	RarityWeights = { Common = 60, Rare = 28, Epic = 10, Legendary = 2 },
-	DuplicateCoins = { Common = 100, Rare = 250, Epic = 500, Legendary = 1000 }, -- already owned
+	-- already owned (Mythic and Secret are powers only: the Power Wheel)
+	DuplicateCoins = { Common = 100, Rare = 250, Epic = 500, Legendary = 1000, Mythic = 2500, Secret = 5000 },
 	ExtraSpinCost = 1000, -- coins
 	MaxPaidPerDay = 5,
 	RobuxProductId = 3723376241, -- developer product "Extra daily spin" (35 Robux; price set in the Creator Dashboard)
@@ -624,6 +640,9 @@ Config.Spin = {
 		Rare = Color3.fromHex("#7cc47f"),
 		Epic = Color3.fromHex("#ff9cc0"),
 		Legendary = Color3.fromHex("#f7cd46"),
+		-- the two power-only tiers above Legendary: hot coral and a deep violet
+		Mythic = Color3.fromHex("#ff7a59"),
+		Secret = Color3.fromHex("#9b7bff"),
 	},
 }
 -- Wheels a free bonus spin (a login reward) can be on. Bonus spins are free, so they're allowed where
@@ -640,8 +659,10 @@ Config.Spin.Wheels = {
 -- costs; exclusives are Epic or Legendary only. RobuxPriceByCategory overrides it for the smaller
 -- cosmetics (titles and gestures).
 Config.Economy = {
-	PriceByRarity = { Common = 500, Rare = 1750, Epic = 5000, Legendary = 12000 },
-	DuplicateCoins = { Common = 100, Rare = 350, Epic = 1000, Legendary = 2400 },
+	-- Mythic and Secret are power-only tiers. A Secret power is Power Wheel only (Item.WheelOnly):
+	-- its price is just its value.
+	PriceByRarity = { Common = 500, Rare = 1750, Epic = 5000, Legendary = 12000, Mythic = 25000, Secret = 50000 },
+	DuplicateCoins = { Common = 100, Rare = 350, Epic = 1000, Legendary = 2400, Mythic = 5000, Secret = 10000 },
 	RobuxPriceByRarity = { Epic = 79, Legendary = 199 },
 	RobuxPriceByCategory = {
 		Title = { Epic = 39, Legendary = 99 },

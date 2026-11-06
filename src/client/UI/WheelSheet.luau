@@ -26,6 +26,7 @@ WheelSheet.SIZE = Vector2.new(840, 580)
 WheelSheet.WHEEL = 380 -- the wheel's diameter (SpinController.wheelFrame)
 
 local RARITIES = { "Legendary", "Epic", "Rare", "Common" }
+local EXTRA_RARITIES = { "Secret", "Mythic" } -- power-only tiers, shown above when present
 local STATUS_H = 72
 local DISC = 44
 local ROW_H = 22
@@ -334,7 +335,19 @@ function WheelSheet.setOdds(
 		end
 	end
 	total = math.max(total, 1)
-	for i, r in RARITIES do
+	-- the four base tiers always show; the power-only tiers (Mythic, Secret) only when they're on
+	-- this wheel, with the rows squeezed to keep the card's height
+	local shown = {}
+	for _, r in EXTRA_RARITIES do
+		if (counts[r] or 0) > 0 then
+			table.insert(shown, r)
+		end
+	end
+	for _, r in RARITIES do
+		table.insert(shown, r)
+	end
+	local rowH = math.floor((#RARITIES * ROW_H + (#RARITIES - #shown) * ROW_GAP) / #shown)
+	for i, r in shown do
 		local n = counts[r] or 0
 		local share = n / total
 		local live = n > 0
@@ -342,7 +355,7 @@ function WheelSheet.setOdds(
 		local row = new("Frame", {
 			Name = r,
 			LayoutOrder = i,
-			Size = UDim2.new(1, 0, 0, ROW_H),
+			Size = UDim2.new(1, 0, 0, rowH),
 			BackgroundTransparency = 1,
 			ZIndex = 5,
 		}, list)

@@ -3,7 +3,18 @@
 
 -- Heavy, Rocket and Pop come from the ball powers (PowerDefinitions); Frost from the Frost power and
 -- Meteor from Heavy's ultimate. None of them spawn on their own any more.
-export type BallType = "Standard" | "Heavy" | "Rocket" | "Pop" | "Frost" | "Meteor"
+-- Curve, Bounce, Gravity and Thunder come from those powers' actives.
+export type BallType =
+	"Standard"
+	| "Heavy"
+	| "Rocket"
+	| "Pop"
+	| "Frost"
+	| "Meteor"
+	| "Curve"
+	| "Bounce"
+	| "Gravity"
+	| "Thunder"
 
 export type BallDef = {
 	Type: BallType,
@@ -99,6 +110,62 @@ local Defs: { [string]: BallDef } = {
 		HorizontalKnockbackScale = 1.6,
 		UpwardKnockbackScale = 1.3,
 		DamageScale = 2.5,
+		Trail = true,
+	},
+	-- Curve power: bends hard toward its target (PowerService.onLaunch)
+	Curve = {
+		Type = "Curve",
+		DisplayName = "CURVE",
+		Color = Color3.fromRGB(140, 255, 90),
+		Material = Enum.Material.Neon,
+		RadiusScale = 1,
+		SpeedScale = 1,
+		GravityScale = 0.8,
+		HorizontalKnockbackScale = 1,
+		UpwardKnockbackScale = 1,
+		DamageScale = 1.15,
+		Trail = true,
+	},
+	-- Bounce power: ricochets into a second enemy after it lands (PowerService.onImpact)
+	Bounce = {
+		Type = "Bounce",
+		DisplayName = "BOUNCE",
+		Color = Color3.fromRGB(255, 200, 40),
+		Material = Enum.Material.SmoothPlastic,
+		RadiusScale = 1.05,
+		SpeedScale = 1,
+		GravityScale = 1,
+		HorizontalKnockbackScale = 0.9,
+		UpwardKnockbackScale = 1.2,
+		DamageScale = 1.1,
+		Trail = false,
+	},
+	-- Gravity power: pulls nearby enemies in where it lands
+	Gravity = {
+		Type = "Gravity",
+		DisplayName = "GRAVITY",
+		Color = Color3.fromRGB(90, 40, 140),
+		Material = Enum.Material.Glass,
+		RadiusScale = 1.2,
+		SpeedScale = 0.95,
+		GravityScale = 1.1,
+		HorizontalKnockbackScale = 0.9,
+		UpwardKnockbackScale = 0.8,
+		DamageScale = 1.2,
+		Trail = true,
+	},
+	-- Thunder power: its hit chains lightning to nearby enemies
+	Thunder = {
+		Type = "Thunder",
+		DisplayName = "THUNDER",
+		Color = Color3.fromRGB(255, 245, 120),
+		Material = Enum.Material.Neon,
+		RadiusScale = 1,
+		SpeedScale = 1.15,
+		GravityScale = 0.7,
+		HorizontalKnockbackScale = 1,
+		UpwardKnockbackScale = 1,
+		DamageScale = 1.3,
 		Trail = true,
 	},
 }

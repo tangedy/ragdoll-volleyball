@@ -2071,4 +2071,62 @@ return function(H)
 		local kept = S.DataService.migrate({ SchemaVersion = 13, PowerSpin = { date = "x", paid = 2, total = 9 } })
 		eq(kept.PowerSpin.total, 9, "counters kept")
 	end)
+
+	test("powers: Mythic and Secret are power-only tiers; Secret is Power Wheel only", function()
+		for _, item in Catalog.Items do
+			local r = Catalog.rarity(item)
+			if r == "Mythic" or r == "Secret" then
+				eq(item.Category, "Power", item.Id .. " is a " .. r .. " non-power")
+			end
+			if item.WheelOnly then
+				check(not Catalog.isOffered(item, {}), item.Id .. " (wheel only) on sale")
+				check(not Catalog.coinSold(item), item.Id .. " (wheel only) coin-sold")
+			end
+		end
+		for _, r in { "Mythic", "Secret" } do
+			check(Config.Spin.RarityColors[r] ~= nil, r .. " colour")
+			check(Config.Spin.DuplicateCoins[r] ~= nil, r .. " duplicate coins")
+			check((Config.Powers.Wheel.RarityWeights[r] or 0) > 0, r .. " on the Power Wheel")
+			check(#S.SpinService.pool(true)[r] > 0, r .. " prizes in the Power Wheel pool")
+			eq(#S.SpinService.pool()[r], 0, r .. " on a cosmetic wheel")
+		end
+		local c = H.combatant()
+		c.profile.Coins = 1e7
+		local ok, why = S.ShopService.buy(c, "Power_Void")
+		check(not ok and why ~= nil, "bought a wheel-only power")
+		check(S.ShopService.buy(c, "Power_Rewind"), "a Mythic power isn't for sale")
+	end)
+
+	test("mastery: levels follow the thresholds; perks get better; bots never level", function()
+		local PowerDefinitions = H.require("shared/PowerDefinitions")
+		local MA = Config.Powers.Mastery
+		eq(PowerDefinitions.masteryLevel(0), 1, "fresh")
+		eq(PowerDefinitions.masteryLevel(MA.Thresholds[2] - 1), 1, "one short of 2")
+		eq(PowerDefinitions.masteryLevel(MA.Thresholds[2]), 2, "level 2")
+		eq(PowerDefinitions.masteryLevel(1e9), MA.MaxLevel, "capped")
+		local into, need = PowerDefinitions.masteryProgress(MA.Thresholds[2] + 3)
+		eq(into, 3, "xp into level 2")
+		eq(need, MA.Thresholds[3] - MA.Thresholds[2], "xp level 2 takes")
+		local last = PowerDefinitions.masteryPerks(1)
+		for level = 2, MA.MaxLevel do
+			local perks = PowerDefinitions.masteryPerks(level)
+			check(perks.cooldown <= last.cooldown and perks.meter >= last.meter, "level " .. level .. " is worse")
+			last = perks
+		end
+
+		local c = H.combatant()
+		local base = S.PowerService.cooldownFor(c, 1)
+		eq(S.PowerService.masteryLevel(c, "Heavy"), 1, "starts at 1")
+		local gained = S.PowerService.gainMastery(c, MA.Thresholds[3])
+		eq(gained, 2, "levels gained")
+		eq(S.PowerService.masteryLevel(c, "Heavy"), 3, "level 3")
+		eq(c.profile.PowerMastery.Heavy, MA.Thresholds[3], "xp saved on the profile")
+		check(S.PowerService.cooldownFor(c, 1) < base, "the cooldown perk didn't apply")
+		eq(S.PowerService.gainMastery(c, 0), 0, "no xp, no level")
+		local bot = H.combatant(false)
+		bot.isBot = true
+		eq(S.PowerService.gainMastery(bot, 1000), 0, "a bot levelled")
+		eq(S.PowerService.masteryLevel(bot, "Heavy"), 1, "a bot's level")
+		check(type(S.DataService.migrate({ SchemaVersion = 13 }).PowerMastery) == "table", "old saves get mastery")
+	end)
 end

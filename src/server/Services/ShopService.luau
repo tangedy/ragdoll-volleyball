@@ -168,6 +168,9 @@ function ShopService.buy(c: any, id: string, expected: number?): (boolean, strin
 	if item.Exclusive then
 		return false, "Robux exclusive"
 	end
+	if item.WheelOnly then
+		return false, "Win it on the Power Wheel"
+	end
 	if not Catalog.isOffered(item) then
 		return false, ("Only during %s"):format(item.Event or "its event")
 	end

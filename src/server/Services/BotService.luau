@@ -491,6 +491,7 @@ local function bestTarget(c: any, smart: boolean, anySight: boolean?, botsOnly: 
 			and o.root
 			and o.root.Parent
 			and t >= o.immuneUntil
+			and not (o.hiddenUntil and t < o.hiddenUntil) -- Decoy: out of sight
 			and (anySight or visible(c.root.Position, o.root.Position))
 		then
 			local score = BotService.targetScore(c, o, smart)

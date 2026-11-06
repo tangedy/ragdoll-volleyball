@@ -665,6 +665,11 @@ local function primaryAction(item: Catalog.Item?)
 		if exclusivePrice(item) then
 			buyExclusive(item)
 		end
+	elseif item.WheelOnly then
+		-- a Secret power: only the Power Wheel gives it
+		if ShopController.onOpenPowerWheel then
+			ShopController.onOpenPowerWheel()
+		end
 	elseif (profile.coins or 0) >= priceOf(item) then
 		Net.request(Net.Actions.BuyItem, { id = item.Id, price = priceOf(item) })
 	else
@@ -757,6 +762,10 @@ local function renderAction(item: Catalog.Item, b: TextButton)
 		Theme.setText(b, ("Bundle · R$ %d"):format(liveOffer(item).Robux))
 		Theme.recolor(b, T.candy)
 		Theme.setEnabled(b, true)
+	elseif item.WheelOnly then
+		Theme.setText(b, "🎡 Power Wheel")
+		Theme.recolor(b, T.candy)
+		Theme.setEnabled(b, true)
 	elseif item.Exclusive then
 		-- Robux-exclusive: the button prompts the item's own product
 		Theme.setText(b, ("R$ %d"):format(exclusivePrice(item) or 0))
@@ -799,13 +808,31 @@ local function selectItem(id: string)
 	local picked = Catalog.get(id)
 	local power = PowerDefinitions.get(Catalog.powerOf(picked))
 	if power then
-		HUDController.hint(("%s %s · ⚡ %s: %s"):format(power.Icon, power.Active, power.Ult.Name, power.Ult.Text), 4)
+		local text = ("%s %s · ⚡ %s: %s"):format(power.Icon, power.Active, power.Ult.Name, power.Ult.Text)
+		if picked and owns(picked) then
+			-- its mastery: the level and how far into the next one
+			local xp = tonumber((profile.powerMastery or {})[power.Id]) or 0
+			local level = PowerDefinitions.masteryLevel(xp)
+			local into, need = PowerDefinitions.masteryProgress(xp)
+			text ..= if need > 0 then (" · Mastery %d (%d/%d XP)"):format(level, into, need) else " · 🌟 Mastered"
+		end
+		HUDController.hint(text, 4)
 	end
 	for _, entry in tiles do
 		if entry.item.Id == id then
 			scrollIntoView(entry.card.button)
 		end
 	end
+end
+
+-- A card's name: an owned power's shows its mastery level in stars.
+local function cardName(item: Catalog.Item): string
+	local power = PowerDefinitions.get(Catalog.powerOf(item))
+	if not power or not owns(item) then
+		return item.Name
+	end
+	local level = PowerDefinitions.masteryLevel(tonumber((profile.powerMastery or {})[power.Id]) or 0)
+	return ("%s %s"):format(item.Name, string.rep("★", level))
 end
 
 local function itemCard(item: Catalog.Item, order: number, parent: Instance): { [string]: any }
@@ -891,7 +918,7 @@ local function itemCard(item: Catalog.Item, order: number, parent: Instance): { 
 		Name = "Name",
 		Position = UDim2.fromOffset(10, ART_H + 8),
 		Size = UDim2.new(1, -20, 0, 26),
-		Text = item.Name,
+		Text = cardName(item),
 		ZIndex = 7,
 	}, 0)
 	new("UITextSizeConstraint", { MaxTextSize = 22 }, name)
@@ -1029,7 +1056,7 @@ end
 -- The shelf is grouped by tier, cheapest first: Free, then Common, Rare, Epic and Legendary. Each
 -- group has a header (the tier's colored tag, a rule and how many of them you own) over its own
 -- four-wide grid.
-local TIERS = { "Free", "Common", "Rare", "Epic", "Legendary" }
+local TIERS = { "Free", "Common", "Rare", "Epic", "Legendary", "Mythic", "Secret" }
 local SECTION_W = COLUMNS * ITEM_CARD.X + (COLUMNS - 1) * Theme.Space.L
 
 local function tierOf(item: Catalog.Item): string

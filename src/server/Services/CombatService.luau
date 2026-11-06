@@ -180,6 +180,11 @@ local function isCatching(c: any): boolean
 	return c.action == "Catching" and now() <= c.catchUntil
 end
 
+-- Shield power: a bubble that catches from any side (PowerService)
+local function shielded(c: any): boolean
+	return c.shieldUntil ~= nil and now() < c.shieldUntil
+end
+
 -- Find a catching enemy whose catch radius the segment passes through. Returns (catcher, point).
 function CombatService.findCatcher(ball: any, from: Vector3, to: Vector3): (any?, Vector3)
 	if ball.context ~= "Match" or not S.MatchService.isRoundLive() then
@@ -189,11 +194,16 @@ function CombatService.findCatcher(ball: any, from: Vector3, to: Vector3): (any?
 	local lenSq = math.max(seg:Dot(seg), 1e-6)
 	local best, bestT, bestPoint = nil, math.huge, to
 	for _, c in S.PlayerStateService.all() do
-		if c.inMatch and c.status == "Active" and c.team ~= ball.lastTeam and isCatching(c) and c.root then
+		local shield = shielded(c)
+		if c.inMatch and c.status == "Active" and c.team ~= ball.lastTeam and (shield or isCatching(c)) and c.root then
 			local rp = c.root.Position
 			local t = math.clamp((rp - from):Dot(seg) / lenSq, 0, 1)
 			local point = from + seg * t
-			if (point - rp).Magnitude <= P.CatchRadius and t < bestT and catchGeometryOk(c, ball, point) then
+			if
+				(point - rp).Magnitude <= P.CatchRadius
+				and t < bestT
+				and (shield or catchGeometryOk(c, ball, point))
+			then
 				best, bestT, bestPoint = c, t, point
 			end
 		end
@@ -203,7 +213,17 @@ end
 
 function CombatService.resolveCatch(ball: any, catcher: any)
 	local thrower = ball.lastThrower
-	S.PlayerStateService.setAction(catcher, "Idle")
+	if shielded(catcher) then
+		S.PowerService.endShield(catcher) -- a shield takes one ball
+		if catcher.heldBall then
+			-- hands full: the bubble just blocks it
+			S.BallService.spend(ball, ball.pos, -ball.vel * 0.25 + Vector3.new(0, 12, 0))
+			S.NetService.broadcast("PowerFx", { kind = "Blocked", position = ball.pos })
+			return
+		end
+	else
+		S.PlayerStateService.setAction(catcher, "Idle")
+	end
 	catcher.catchUntil = 0
 	if ball.power then
 		-- catching an ultimate ball smothers it: it's a plain ball in the catcher's hands
@@ -235,7 +255,7 @@ function CombatService.resolveCatch(ball: any, catcher: any)
 end
 
 function CombatService.resolveContact(ball: any, target: any, pos: Vector3)
-	if isCatching(target) and catchGeometryOk(target, ball, pos) then
+	if shielded(target) or (isCatching(target) and catchGeometryOk(target, ball, pos)) then
 		CombatService.resolveCatch(ball, target)
 		return
 	end
@@ -305,13 +325,12 @@ end
 function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 	local thrower = ball.lastThrower
 	local t = now()
-	local power = ball.power -- an ultimate ball: its area effect goes off here too (read before spend)
-	if power then
-		task.defer(S.PowerService.onImpact, power, pos, target)
-	end
+	-- a power ball's effect (Bounce, Gravity, Thunder, the ultimates) goes off here too; read before
+	-- spend turns the ball back to Standard
+	task.defer(S.PowerService.onImpact, ball, ball.type, ball.power, thrower, pos, target)
 	-- every hit launches harder than the last; a throw from jail lands at the current level
 	local scale = ProjectileMath.escalation(target.damage)
-	local kb = ProjectileMath.knockback(ball.vel, ball.type, scale)
+	local kb = ProjectileMath.knockback(ball.vel, ball.type, scale) * S.PowerService.knockbackScale(target)
 	local ragdollTime = ProjectileMath.ragdollDuration(scale)
 	local ballType = ball.type
 	S.BallService.spend(ball, pos, -ball.vel * 0.12 + Vector3.new(0, 14, 0))
@@ -347,6 +366,7 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 			S.RagdollService.ragdoll(target.character, kb, ProjectileMath.maxKnockbackSpeed(scale))
 		end
 		scheduleRecovery(target, ragdollTime)
+		S.PowerService.onLaunched(thrower, target, ball.vel, added, ballType) -- Tether
 	end
 
 	if thrower and thrower.team ~= target.team then
@@ -392,17 +412,26 @@ function CombatService.applyHit(ball: any, target: any, pos: Vector3)
 	end
 end
 
--- An area hit from a power (Meteor's shockwave, Geyser): `target` is launched along `dir` (flat;
--- almost zero for straight up) as if hit by a `ballType` ball, with `damage` % added. Credits `owner`
--- for a knockout like a thrown hit.
-function CombatService.areaHit(owner: any, target: any, pos: Vector3, dir: Vector3, damage: number, ballType: string)
+-- An area hit from a power (Meteor's shockwave, Geyser, chains, pulls): `target` is launched along
+-- `dir` (flat; almost zero for straight up) as if hit by a `ballType` ball, with `damage` % added, or
+-- with exactly `fixedKb` (a pull that mustn't escalate). Credits `owner` for a knockout like a
+-- thrown hit.
+function CombatService.areaHit(
+	owner: any,
+	target: any,
+	pos: Vector3,
+	dir: Vector3,
+	damage: number,
+	ballType: string,
+	fixedKb: Vector3?
+)
 	local t = now()
 	if t < target.immuneUntil or not alive(target) or ragdolled(target) then
 		return
 	end
 	S.PowerService.unfreeze(target)
 	local scale = ProjectileMath.escalation(target.damage)
-	local kb = ProjectileMath.knockback(dir * 100, ballType, scale)
+	local kb = (fixedKb or ProjectileMath.knockback(dir * 100, ballType, scale)) * S.PowerService.knockbackScale(target)
 	local ragdollTime = ProjectileMath.ragdollDuration(scale)
 	S.PlayerStateService.setDamage(target, target.damage + damage)
 	S.PowerService.onHit(owner, target, damage)

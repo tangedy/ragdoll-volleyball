@@ -124,8 +124,8 @@ local function candidates(ray: Ray): { Candidate }
 			if type(myTeam) ~= "string" or myTeam == "" or team == nil or team == "" or team == myTeam then
 				return
 			end
-			if model:GetAttribute("Status") ~= "Active" then
-				return
+			if model:GetAttribute("Status") ~= "Active" or model:GetAttribute("Hidden") == true then
+				return -- (Hidden: an enemy's Decoy)
 			end
 		end
 		local r = model:FindFirstChild("HumanoidRootPart") :: BasePart?

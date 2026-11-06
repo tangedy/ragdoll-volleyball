@@ -22,7 +22,7 @@ local SpinService = {}
 local S: any
 local SP = Config.Spin
 local rng = Random.new()
-local RARITIES = { "Common", "Rare", "Epic", "Legendary" }
+local RARITIES = { "Common", "Rare", "Epic", "Legendary", "Mythic", "Secret" }
 
 export type SpinState = { date: string, freeUsed: boolean, paid: number, total: number, receipts: { string } }
 
@@ -42,7 +42,10 @@ function SpinService.pool(powers: boolean?): { [string]: { Catalog.Item } }
 	if pools[key] then
 		return pools[key]
 	end
-	local p: { [string]: { Catalog.Item } } = { Common = {}, Rare = {}, Epic = {}, Legendary = {} }
+	local p: { [string]: { Catalog.Item } } = {}
+	for _, r in RARITIES do
+		p[r] = {}
+	end
 	for _, item in Catalog.Items do
 		-- event cosmetics are never on the wheels (they're only sold during their event), mastery
 		-- cosmetics are only earned and Robux exclusives only bought (the chest pools narrow this one);
@@ -348,6 +351,18 @@ function SpinService.spinPower(c: any, how: string): (any?, string?)
 		c.profile.OwnedCosmetics[item.Id] = true
 	end
 	S.AnalyticsService.event(c, "PowerSpin_" .. how .. "_" .. rarity, coins)
+	if PW.Announce[rarity] and not duplicate then
+		local color = Config.Spin.RarityColors[rarity]
+		S.NetService.broadcast("Feed", {
+			text = ('🎡 <b>%s</b> won a <b><font color="#%s">%s</font></b> power: %s!'):format(
+				c.name,
+				color:ToHex(),
+				string.upper(rarity),
+				item.Name
+			),
+		})
+		S.NetService.broadcast("Sound", { cue = "SpinLegendary" })
+	end
 	S.DataService.push(c)
 	task.spawn(S.DataService.save, c, false)
 	return {

@@ -14,6 +14,7 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local ArenaLayout = require(Shared.ArenaLayout)
 local PowerDefinitions = require(Shared.PowerDefinitions)
 local Net = require(script.Parent.Net)
 local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Theme"))
@@ -41,6 +42,16 @@ local ULT_SOUNDS: { [string]: string } = {
 	Phantom = "DestinyPortal",
 	BallStorm = "StandSummon",
 	TimeStop = "TimeStop",
+	Boomerang = "BallWhoosh",
+	Pinball = "Bonk",
+	Fortress = "StandSummon",
+	Tether = "Drag",
+	MirrorSquad = "DestinyPortal",
+	BlackHole = "BlackHoleForm",
+	Titan = "CartSlam",
+	StormCloud = "SupernovaPoint",
+	Replay = "TimeResume",
+	EdgeCollapse = "StripWarn",
 }
 
 local gui: ScreenGui
@@ -267,8 +278,16 @@ local function paint()
 		if def then
 			refs.face.BackgroundColor3 = def.Color
 			refs.icon.Text = def.Icon
-			refs.caption.Text = string.upper(def.Name)
-			paintCooldown(refs, player:GetAttribute("PowerReadyAt" .. slot), def.Cooldown, t)
+			local level = player:GetAttribute("PowerMastery" .. slot)
+			local stars = if type(level) == "number" and level > 1 then string.rep("★", level) else ""
+			refs.caption.Text = if stars ~= "" then stars else string.upper(def.Name)
+			local cooldown = player:GetAttribute("PowerCooldown" .. slot)
+			paintCooldown(
+				refs,
+				player:GetAttribute("PowerReadyAt" .. slot),
+				if type(cooldown) == "number" and cooldown > 0 then cooldown else def.Cooldown,
+				t
+			)
 			-- a ball power needs a ball in your hand, Magnet an empty one
 			local usable = if def.Kind == "Ball" then hasBall elseif def.Id == "Magnet" then not hasBall else true
 			refs.face.BackgroundTransparency = if usable then 0.15 else 0.55
@@ -372,6 +391,70 @@ local function beam(from: Vector3, to: Vector3, color: Color3)
 	Theme.tween(p, 0.35, { Size = Vector3.new(0.05, 0.05, d), Transparency = 1 })
 end
 
+-- A frozen, see-through copy of a character (Decoy's afterimage, Mirror Squad's copies).
+local function afterimage(model: any, at: Vector3?, life: number)
+	if typeof(model) ~= "Instance" or not model:IsA("Model") then
+		return
+	end
+	local was = model.Archivable
+	model.Archivable = true
+	local ok, copy = pcall(function()
+		return model:Clone()
+	end)
+	model.Archivable = was
+	if not ok or not copy then
+		return
+	end
+	for _, d in copy:GetDescendants() do
+		if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("BillboardGui") or d:IsA("Highlight") then
+			d:Destroy()
+		elseif d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			if d.Transparency < 1 then
+				d.Transparency = 0.55
+			end
+		end
+	end
+	local hum = copy:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	end
+	if at then
+		local pivot = copy:GetPivot()
+		copy:PivotTo(CFrame.new(at) * pivot.Rotation)
+	end
+	copy.Name = "PowerAfterimage"
+	copy.Parent = fxFolder
+	Debris:AddItem(copy, life)
+end
+
+-- Red strips over the enemy side and back edges (Edge Collapse), `band` studs wide.
+local function edgeBands(team: string, band: number, life: number, transparency: number)
+	local o = Config.Arena.Origin
+	local steps = Net.MatchState:GetAttribute("OvertimeSteps")
+	local hw = ArenaLayout.safeHalfWidth(if type(steps) == "number" then steps else 0)
+	local sign = ArenaLayout.teamSign(team)
+	local half = ArenaLayout.HalfLength
+	local y = o.Y + 0.2
+	local color = Color3.fromRGB(255, 70, 50)
+	local strips = {
+		CFrame.new(o.X - hw + band / 2, y, o.Z + sign * half / 2),
+		CFrame.new(o.X + hw - band / 2, y, o.Z + sign * half / 2),
+	}
+	for _, cf in strips do
+		fxPart({ Size = Vector3.new(band, 0.3, half), CFrame = cf, Color = color, Transparency = transparency }, life)
+	end
+	fxPart({
+		Size = Vector3.new(hw * 2, 0.3, band),
+		CFrame = CFrame.new(o.X, y, o.Z + sign * (half - band / 2)),
+		Color = color,
+		Transparency = transparency,
+	}, life)
+end
+
 local function rootOf(model: any): BasePart?
 	if typeof(model) == "Instance" and model:IsA("Model") then
 		return model:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -419,15 +502,25 @@ local function onFx(d: any)
 		end
 	elseif kind == "Ult" then
 		local def = PowerDefinitions.get(d.power)
-		local color = if def then def.Color else T.sun
+		-- a Mastered power's ultimate goes off in gold
+		local color = if d.mastered then Color3.fromRGB(255, 215, 80) elseif def then def.Color else T.sun
 		local mine = d.casterPlayer == player
 		local name = if mine then "" else (tostring(d.casterName) .. ": ")
-		HUDController.banner(name .. tostring(d.name), color, 1.4, nil, { scale = if mine then 1 else 0.7 })
+		HUDController.banner(
+			name .. (if d.mastered then "🌟 " else "") .. tostring(d.name),
+			color,
+			1.4,
+			nil,
+			{ scale = if mine then 1 else 0.7 }
+		)
 		SoundController.play(ULT_SOUNDS[d.ult] or "PowerUp")
 		local root = rootOf(d.caster)
 		if root then
-			ring(root.Position - Vector3.new(0, 2.5, 0), 14, color, 0.6)
-			burst(root.Position, color, 12, 0.5)
+			ring(root.Position - Vector3.new(0, 2.5, 0), if d.mastered then 22 else 14, color, 0.6)
+			burst(root.Position, color, if d.mastered then 18 else 12, 0.5)
+			if d.mastered then
+				ring(root.Position + Vector3.new(0, 1, 0), 10, Color3.fromRGB(255, 240, 160), 0.8)
+			end
 		end
 		if mine then
 			pushCamera(tonumber(d.windup) or 0.9)
@@ -461,11 +554,131 @@ local function onFx(d: any)
 			ring(d.position, tonumber(d.radius) or 14, Color3.fromRGB(170, 70, 230), 0.45)
 			SoundController.play("BubbleBigPop", d.position)
 		end
-	elseif kind == "Shatter" or kind == "Poof" or kind == "Smothered" then
+	elseif kind == "Grapple" or kind == "Snap" or kind == "Return" then
+		if typeof(d.from) == "Vector3" and typeof(d.to) == "Vector3" then
+			beam(d.from, d.to, if kind == "Return" then Color3.fromRGB(140, 255, 90) else Color3.fromRGB(230, 180, 110))
+			SoundController.play(if kind == "Return" then "BallWhoosh" else "Drag", d.to, 0.7)
+		end
+	elseif kind == "Chain" then
+		if typeof(d.from) == "Vector3" and typeof(d.to) == "Vector3" then
+			-- a jagged bolt: three short beams through jittered midpoints
+			local a, b = d.from :: Vector3, d.to :: Vector3
+			local last = a
+			for i = 1, 3 do
+				local nextPoint = if i == 3
+					then b
+					else a:Lerp(b, i / 3) + Vector3.new(
+						math.random(-20, 20) / 10,
+						math.random(-10, 20) / 10,
+						math.random(-20, 20) / 10
+					)
+				beam(last, nextPoint, Color3.fromRGB(255, 245, 120))
+				last = nextPoint
+			end
+			SoundController.play("SupernovaPoint", b, 0.6)
+		end
+	elseif kind == "Lightning" then
+		if typeof(d.position) == "Vector3" then
+			beam(
+				d.position + Vector3.new(math.random(-3, 3), 45, math.random(-3, 3)),
+				d.position,
+				Color3.fromRGB(255, 245, 120)
+			)
+			burst(d.position, Color3.fromRGB(255, 245, 120), 9, 0.35)
+			SoundController.play("SupernovaBurn", d.position, 0.8)
+		end
+	elseif kind == "Decoy" then
+		afterimage(d.caster, nil, 2)
+		if typeof(d.position) == "Vector3" then
+			burst(d.position, Color3.fromRGB(230, 120, 255), 6, 0.3)
+		end
+	elseif kind == "Mirror" then
+		if type(d.positions) == "table" then
+			for _, pos in d.positions do
+				if typeof(pos) == "Vector3" then
+					afterimage(d.caster, pos - Vector3.new(0, Config.Ball.SpawnUp, 0), 1.2)
+					burst(pos, Color3.fromRGB(230, 120, 255), 5, 0.3)
+				end
+			end
+		end
+	elseif kind == "Grow" or kind == "Stomp" then
+		if typeof(d.position) == "Vector3" then
+			ring(d.position - Vector3.new(0, 3, 0), tonumber(d.radius) or 10, Color3.fromRGB(200, 170, 130), 0.4)
+			SoundController.play(if kind == "Stomp" then "CartSlam" else "PowerUp", d.position, 0.7)
+		end
+	elseif kind == "Phase" then
+		if typeof(d.position) == "Vector3" then
+			burst(d.position, Color3.fromRGB(155, 123, 255), 7, 0.4)
+		end
+	elseif kind == "Rewind" then
+		if typeof(d.from) == "Vector3" and typeof(d.to) == "Vector3" then
+			burst(d.from, Color3.fromRGB(255, 122, 89), 6, 0.3)
+			beam(d.from, d.to, Color3.fromRGB(255, 122, 89))
+			burst(d.to, Color3.fromRGB(255, 122, 89), 6, 0.4)
+			SoundController.play("TimeStep", d.to)
+		end
+	elseif kind == "Vortex" then
+		if typeof(d.position) == "Vector3" then
+			local life = tonumber(d.duration) or 3
+			local core = fxPart({
+				Shape = Enum.PartType.Ball,
+				Size = Vector3.one * 2,
+				CFrame = CFrame.new(d.position),
+				Color = Color3.new(0, 0, 0),
+				Material = Enum.Material.SmoothPlastic,
+			}, life + 0.3)
+			Theme.tween(core, 0.4, { Size = Vector3.one * 12 })
+			task.delay(life, function()
+				Theme.tween(core, 0.3, { Size = Vector3.one * 0.5, Transparency = 1 })
+			end)
+			for i = 0, math.floor(life / 0.5) - 1 do
+				task.delay(i * 0.5, function()
+					local pos = d.position :: Vector3
+					local p = fxPart({
+						Shape = Enum.PartType.Cylinder,
+						Size = Vector3.new(0.3, 30, 30),
+						CFrame = CFrame.new(pos - Vector3.new(0, 1, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+						Color = Color3.fromRGB(110, 60, 170),
+						Transparency = 0.6,
+					}, 0.5)
+					Theme.tween(p, 0.5, { Size = Vector3.new(0.3, 2, 2), Transparency = 0.1 })
+				end)
+			end
+			SoundController.play("BlackHoleSuck", d.position)
+		end
+	elseif kind == "EdgeCollapse" then
+		if type(d.team) == "string" then
+			edgeBands(d.team, tonumber(d.band) or 11, tonumber(d.duration) or 4, 0.65)
+		end
+	elseif kind == "EdgePulse" then
+		if type(d.team) == "string" then
+			edgeBands(d.team, tonumber(d.band) or 11, 0.3, 0.15)
+			SoundController.play("StripDrop")
+		end
+	elseif kind == "GravityPull" then
+		if typeof(d.position) == "Vector3" then
+			local r = tonumber(d.radius) or 14
+			local p = fxPart({
+				Shape = Enum.PartType.Cylinder,
+				Size = Vector3.new(0.4, r * 2, r * 2),
+				CFrame = CFrame.new(d.position) * CFrame.Angles(0, 0, math.rad(90)),
+				Color = Color3.fromRGB(110, 60, 170),
+				Transparency = 0.5,
+			}, 0.45)
+			Theme.tween(p, 0.45, { Size = Vector3.new(0.4, 1, 1), Transparency = 0.1 })
+			SoundController.play("BlackHoleSuck", d.position, 0.6)
+		end
+	elseif kind == "Bounce" then
+		if typeof(d.position) == "Vector3" then
+			burst(d.position, Color3.fromRGB(255, 200, 40), 4, 0.25)
+			SoundController.play("Bonk", d.position, 0.6)
+		end
+	elseif kind == "Shatter" or kind == "Poof" or kind == "Smothered" or kind == "Blocked" then
 		if typeof(d.position) == "Vector3" then
 			local color = if kind == "Shatter"
 				then Color3.fromRGB(170, 230, 255)
 				elseif kind == "Smothered" then Color3.fromRGB(120, 255, 140)
+				elseif kind == "Blocked" then Color3.fromRGB(120, 200, 255)
 				else Color3.new(1, 1, 1)
 			burst(d.position, color, 5, 0.3)
 			SoundController.play("BubblePop", d.position, 0.6)

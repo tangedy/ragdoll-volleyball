@@ -458,7 +458,12 @@ function SpinController.drawReveal(reveal: Frame, result: any, back: GuiObject, 
 	Theme.focus(focusOn or ok)
 	confetti(reveal, col)
 	SoundController.play(
-		if result.rarity == "Legendary" or result.rarity == "Epic" then "SpinLegendary" else "SpinReveal"
+		if result.rarity == "Legendary"
+				or result.rarity == "Epic"
+				or result.rarity == "Mythic"
+				or result.rarity == "Secret"
+			then "SpinLegendary"
+			else "SpinReveal"
 	)
 	if result.duplicate and result.coins > 0 then
 		task.delay(0.6, function()

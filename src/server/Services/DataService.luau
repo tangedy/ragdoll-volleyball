@@ -87,6 +87,8 @@ export type Profile = {
 	SavingFor: string,
 	-- the Power Wheel's counters (SpinService.powerState): paid spins today and spins ever (its seed)
 	PowerSpin: { date: string, paid: number, total: number },
+	-- mastery XP per power id (PowerService.gainMastery; levels from PowerDefinitions.masteryLevel)
+	PowerMastery: { [string]: number },
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -128,6 +130,7 @@ local function default(): Profile
 		Deals = { date = "", ids = {} },
 		SavingFor = "",
 		PowerSpin = { date = "", paid = 0, total = 0 },
+		PowerMastery = {},
 		Lock = nil,
 	}
 end
@@ -232,6 +235,9 @@ function DataService.migrate(old: any): Profile
 	if type(data.PowerKOs) ~= "table" then
 		data.PowerKOs = {}
 	end
+	if type(data.PowerMastery) ~= "table" then
+		data.PowerMastery = {}
+	end
 	if type(data.PowerSpin) ~= "table" then
 		data.PowerSpin = { date = "", paid = 0, total = 0 }
 	end
@@ -334,6 +340,7 @@ local function pushProfile(c: any)
 		seen = p.ShopSeen,
 		boost = S.BoostService.status(c),
 		powerKOs = p.PowerKOs,
+		powerMastery = p.PowerMastery,
 		matches = p.Matches,
 		-- banked level rewards; `since` is where this session started, so the client knows which are new
 		levelRewards = { paid = p.LevelRewardsPaid, since = c.levelRewardsSince or p.LevelRewardsPaid },

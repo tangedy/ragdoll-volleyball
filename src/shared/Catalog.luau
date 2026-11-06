@@ -11,7 +11,8 @@ local BallDefinitions = require(script.Parent.BallDefinitions)
 local Config = require(script.Parent.Config)
 
 export type Category = "BallSkin" | "Trail" | "Title" | "Finisher" | "Pose" | "Power"
-export type Rarity = "Common" | "Rare" | "Epic" | "Legendary"
+-- Mythic and Secret are power-only tiers above Legendary
+export type Rarity = "Common" | "Rare" | "Epic" | "Legendary" | "Mythic" | "Secret"
 
 export type Item = {
 	Id: string,
@@ -45,6 +46,8 @@ export type Item = {
 	-- Config.Economy.RobuxPriceByRarity / ByCategory), never sold for coins, spun or rolled. On the shelf with a
 	-- Robux button and an EXCLUSIVE tag. Price is just its value. Epic or Legendary only.
 	Exclusive: boolean?,
+	-- a Power Wheel prize only (the Secret powers): never sold for coins. Price is just its value.
+	WheelOnly: boolean?,
 	Data: { [string]: any },
 }
 
@@ -1361,6 +1364,97 @@ local items: { Item } = {
 		RobuxProductId = 0,
 		Data = { Power = "Frost", Icon = "❄️" },
 	},
+	{
+		Id = "Power_Curve",
+		Category = "Power",
+		Name = "Curve",
+		Price = 500,
+		Rarity = "Common",
+		RobuxProductId = 0,
+		Data = { Power = "Curve", Icon = "🌀" },
+	},
+	{
+		Id = "Power_Bounce",
+		Category = "Power",
+		Name = "Bounce",
+		Price = 500,
+		Rarity = "Common",
+		RobuxProductId = 0,
+		Data = { Power = "Bounce", Icon = "🏀" },
+	},
+	{
+		Id = "Power_Shield",
+		Category = "Power",
+		Name = "Shield",
+		Price = 1750,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Data = { Power = "Shield", Icon = "🛡️" },
+	},
+	{
+		Id = "Power_Grapple",
+		Category = "Power",
+		Name = "Grapple",
+		Price = 1750,
+		Rarity = "Rare",
+		RobuxProductId = 0,
+		Data = { Power = "Grapple", Icon = "🪝" },
+	},
+	{
+		Id = "Power_Decoy",
+		Category = "Power",
+		Name = "Decoy",
+		Price = 5000,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Power = "Decoy", Icon = "🎭" },
+	},
+	{
+		Id = "Power_Gravity",
+		Category = "Power",
+		Name = "Gravity",
+		Price = 5000,
+		Rarity = "Epic",
+		RobuxProductId = 0,
+		Data = { Power = "Gravity", Icon = "🌑" },
+	},
+	{
+		Id = "Power_Giant",
+		Category = "Power",
+		Name = "Giant",
+		Price = 12000,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Data = { Power = "Giant", Icon = "🗿" },
+	},
+	{
+		Id = "Power_Thunder",
+		Category = "Power",
+		Name = "Thunder",
+		Price = 12000,
+		Rarity = "Legendary",
+		RobuxProductId = 0,
+		Data = { Power = "Thunder", Icon = "⚡" },
+	},
+	{
+		Id = "Power_Rewind",
+		Category = "Power",
+		Name = "Rewind",
+		Price = 25000,
+		Rarity = "Mythic",
+		RobuxProductId = 0,
+		Data = { Power = "Rewind", Icon = "⏪" },
+	},
+	{
+		Id = "Power_Void",
+		Category = "Power",
+		Name = "Void",
+		Price = 50000,
+		Rarity = "Secret",
+		RobuxProductId = 0,
+		WheelOnly = true, -- the Power Wheel's 0.2% prize
+		Data = { Power = "Void", Icon = "🕳️" },
+	},
 }
 
 local Catalog = {}
@@ -1420,7 +1514,7 @@ end
 -- Is this item on sale (for coins) right now? Event items only while their event runs; bundle,
 -- mastery and Robux-exclusive items never.
 function Catalog.isOffered(item: Item, events: { [string]: boolean }?): boolean
-	if item.Bundle or item.Unlock or item.Exclusive then
+	if item.Bundle or item.Unlock or item.Exclusive or item.WheelOnly then
 		return false
 	end
 	if not item.Event then

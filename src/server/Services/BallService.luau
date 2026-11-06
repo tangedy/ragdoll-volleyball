@@ -100,6 +100,9 @@ local function sweepParamsFor(ball: Ball): RaycastParams
 		return sweep.params
 	end
 	local include: { Instance } = table.clone(S.ArenaService.sceneryList(ball.context))
+	for _, wall in S.PowerService.wallsAgainst(ball.lastTeam) do
+		table.insert(include, wall) -- Fortress: the other team's walls stop this ball
+	end
 	for _, t in S.CombatService.targetsFor(ball) do
 		if t.proxy then
 			table.insert(include, t.proxy)
@@ -293,6 +296,11 @@ function BallService.start()
 	end)
 end
 
+-- Is `ball` still in play (not destroyed)?
+function BallService.isLive(ball: Ball): boolean
+	return balls[ball.id] == ball
+end
+
 -- Shared array: read it, don't modify it.
 function BallService.all(): { Ball }
 	if allCache then
@@ -417,9 +425,10 @@ local function homingTarget(targets: { any }, origin: Vector3, velocity: Vector3
 	end
 	local dir = velocity.Unit
 	local best, bestCos = nil, HOMING_CONE_COS
+	local t0 = now()
 	for _, t in targets do
 		local root = t.root :: BasePart?
-		if root then
+		if root and not (t.hiddenUntil and t0 < t.hiddenUntil) then -- Decoy: lost from homing
 			local to = root.Position - origin
 			local cos = if to.Magnitude > 1e-3 then to.Unit:Dot(dir) else 1
 			if cos > bestCos then
@@ -466,23 +475,15 @@ local function steer(ball: Ball, dt: number)
 	ball.courseDirty = true
 end
 
--- Launch a held ball. `velocity` is fully server-computed.
-function BallService.launch(c: any, velocity: Vector3, throwId: number): Ball?
-	local ball = c.heldBall :: Ball?
-	local root = c.root :: BasePart?
-	if not ball or not root then
-		return nil
-	end
-	c.heldBall = nil
-	S.PlayerStateService.setAttr(c, Types.Attr.HeldBall, "")
-	ball.holder = nil
-	if ball.weld then
-		ball.weld:Destroy()
-		ball.weld = nil
-	end
+-- Where a throw by `c` with `velocity` leaves the hand.
+local function throwOrigin(root: BasePart, velocity: Vector3): Vector3
 	local flat = Vector3.new(velocity.X, 0, velocity.Z)
 	local forward = if flat.Magnitude > 1e-3 then flat.Unit else root.CFrame.LookVector
-	local origin = root.Position + Vector3.new(0, Config.Ball.SpawnUp, 0) + forward * Config.Ball.SpawnForward
+	return root.Position + Vector3.new(0, Config.Ball.SpawnUp, 0) + forward * Config.Ball.SpawnForward
+end
+
+-- Put `ball` in flight from `origin` as `c`'s throw (a launch, a power's extra ball or a bounce).
+local function startFlight(ball: Ball, c: any, origin: Vector3, velocity: Vector3, throwId: number): Ball
 	local part = ball.part
 	part.Anchored = true
 	part.CanCollide = false
@@ -558,22 +559,51 @@ function BallService.launch(c: any, velocity: Vector3, throwId: number): Ball?
 	return ball
 end
 
--- Throw an extra ball of `ballType` from `c` (a power's: Barrage rockets) as if they'd held it: it's
--- temporary, so it never adds to the court's balls for long.
-function BallService.fireExtra(c: any, ballType: string, velocity: Vector3): Ball?
-	if c.heldBall or not c.root then
+-- Launch a held ball. `velocity` is fully server-computed.
+function BallService.launch(c: any, velocity: Vector3, throwId: number): Ball?
+	local ball = c.heldBall :: Ball?
+	local root = c.root :: BasePart?
+	if not ball or not root then
 		return nil
 	end
-	local ball = BallService.spawn(ballType, c.root.Position, "Match", true)
-	ball.temporary = true
-	ball.holder = c
-	c.heldBall = ball
-	local launched = BallService.launch(c, velocity, 0)
-	if not launched then
-		c.heldBall = nil
-		BallService.destroy(ball)
+	c.heldBall = nil
+	S.PlayerStateService.setAttr(c, Types.Attr.HeldBall, "")
+	ball.holder = nil
+	if ball.weld then
+		ball.weld:Destroy()
+		ball.weld = nil
 	end
-	return launched
+	return startFlight(ball, c, throwOrigin(root, velocity), velocity, throwId)
+end
+
+-- Throw an extra ball of `ballType` as `c`'s (a power's: Barrage rockets, Mirror Squad), from
+-- `origin` (default: c's hand). It's temporary, so it never adds to the court's balls for long.
+function BallService.fireFrom(c: any, ballType: string, velocity: Vector3, origin: Vector3?): Ball?
+	local root = c.root :: BasePart?
+	if not root then
+		return nil
+	end
+	local from = origin or throwOrigin(root, velocity)
+	local ball = BallService.spawn(ballType, from, "Match", true)
+	ball.temporary = true
+	return startFlight(ball, c, from, velocity, 0)
+end
+
+-- Kept for the Barrage call site.
+function BallService.fireExtra(c: any, ballType: string, velocity: Vector3): Ball?
+	return BallService.fireFrom(c, ballType, velocity)
+end
+
+-- Send a ball that has just landed flying again as `c`'s throw (Bounce, Pinball), from `origin`.
+function BallService.relaunch(ball: Ball, c: any, origin: Vector3, velocity: Vector3): Ball?
+	if balls[ball.id] ~= ball or ball.holder or ball.state == "Resetting" then
+		return nil
+	end
+	if ball.weld then
+		ball.weld:Destroy()
+		ball.weld = nil
+	end
+	return startFlight(ball, c, origin, velocity, 0)
 end
 
 -- Make a thrown ball home harder (degrees a second / in all), at `target` if given.
@@ -644,11 +674,10 @@ local function simulate(ball: Ball, dt: number)
 			local n = result.Normal
 			local v = ball.vel
 			local reflected = (v - 2 * v:Dot(n) * n) * 0.45
-			local power = ball.power -- an ultimate ball's area effect goes off where it lands
+			-- a power ball's landing effect goes off where it lands (read before spend resets it)
+			local power, landedType, thrower = ball.power, ball.type, ball.lastThrower
 			S.BallService.spend(ball, hitPos + n * (r + 0.05), reflected)
-			if power then
-				S.PowerService.onImpact(power, hitPos, nil)
-			end
+			S.PowerService.onImpact(ball, landedType, power, thrower, hitPos, nil)
 			S.NetService.broadcast("Sound", { cue = "BallLand", position = hitPos }) -- a miss
 		end
 		return
