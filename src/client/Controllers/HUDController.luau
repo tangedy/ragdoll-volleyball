@@ -574,7 +574,7 @@ local function build()
 			LockController.cycle()
 		end)
 	-- Bottom right, in the hub once the tutorial is done: the big PLAY button. Pressed, it queues you
-	-- (AutoQueue) and turns into a calmer "Waiting for next match · 25" countdown with a small Cancel
+	-- (AutoQueue) and turns into a calmer "Waiting for next match · 20" countdown with a small Cancel
 	-- over it. The server owns the queue: the button only ever shows the `AutoQueue` attribute.
 	local corner = Theme.new("Frame", {
 		Name = "Corner",

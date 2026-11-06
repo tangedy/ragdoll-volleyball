@@ -58,6 +58,8 @@ export type Combatant = {
 	eliminatedBy: Combatant?,
 	jailReturns: number,
 	autoQueue: boolean, -- in the match queue: the hub PLAY button turns it on (Player attribute AutoQueue)
+	queueDeclined: boolean?, -- pressed Cancel / Leave Match: no solo auto-queue until PLAY
+	tutorialDoneAt: number?, -- os.clock() the tutorial was finished this session
 	inMatch: boolean,
 	stats: Stats,
 	settings: { [string]: boolean },

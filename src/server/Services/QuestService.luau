@@ -160,6 +160,15 @@ local function repeatClaims(d: Daily, q: any): number
 	return tonumber(d.repeatClaims and d.repeatClaims[q.Id]) or 0
 end
 
+-- A Repeats quest with FirstGoal uses it (and FirstName) until the day's first claim.
+local function goalOf(d: Daily, q: any): number
+	return if q.FirstGoal and repeatClaims(d, q) == 0 then q.FirstGoal else q.Goal
+end
+
+local function nameOf(d: Daily, q: any): string
+	return if q.FirstName and repeatClaims(d, q) == 0 then q.FirstName else q.Name
+end
+
 local function repeatPay(d: Daily, q: any): number
 	return if repeatClaims(d, q) == 0 then q.Reward.Amount else q.RepeatAmount or q.Reward.Amount
 end
@@ -173,7 +182,7 @@ function QuestService.record(c: any, event: string, amount: number?)
 	local d = QuestService.daily(c)
 	for _, q in Q.List do
 		if q.Event == event then
-			d.progress[q.Id] = math.min(q.Goal, (tonumber(d.progress[q.Id]) or 0) + (amount or 1))
+			d.progress[q.Id] = math.min(goalOf(d, q), (tonumber(d.progress[q.Id]) or 0) + (amount or 1))
 		end
 	end
 end
@@ -189,14 +198,14 @@ function QuestService.status(c: any): any
 		local progress = tonumber(d.progress[q.Id]) or 0
 		local entry: { [string]: any } = {
 			id = q.Id,
-			name = q.Name,
-			goal = q.Goal,
+			name = nameOf(d, q),
+			goal = goalOf(d, q),
 			event = q.Event,
 			progress = progress,
 			claimed = d.claimed[q.Id] == true,
 			-- a claimed quest comes back then (unix seconds): its first-claim cooldown, else the reset
 			nextAt = if d.claimed[q.Id] then (d.backAt and d.backAt[q.Id]) or resetsAt else nil,
-			ready = progress >= q.Goal and d.claimed[q.Id] ~= true,
+			ready = progress >= goalOf(d, q) and d.claimed[q.Id] ~= true,
 		}
 		if q.Repeats then
 			entry.repeats = true
@@ -254,7 +263,7 @@ function QuestService.claim(c: any, id: string): ({ [string]: any }?, string?)
 		return nil, "Already claimed"
 	end
 	local progress = tonumber(d.progress[q.Id]) or 0
-	if progress < q.Goal then
+	if progress < goalOf(d, q) then
 		return nil, "Not done yet"
 	end
 	local reward = if q.Repeats
@@ -320,12 +329,12 @@ local function playClock()
 				local before = tonumber(d.progress[q.Id]) or 0
 				-- a quest claimed out for today doesn't tick until the reset
 				if
-					before < q.Goal
+					before < goalOf(d, q)
 					and not d.claimed[q.Id]
 					and t - (c.questActiveAt or -math.huge) <= Q.ActiveWindow
 				then
 					QuestService.record(c, "Playtime")
-					if (tonumber(d.progress[q.Id]) or 0) >= q.Goal then
+					if (tonumber(d.progress[q.Id]) or 0) >= goalOf(d, q) then
 						S.DataService.push(c)
 						S.AnalyticsService.played12Minutes(c)
 					end

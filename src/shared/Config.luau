@@ -15,7 +15,7 @@ Config.Match = {
 	MaxPlayers = 12,
 	-- hub time between matches (talk, practice, shop, spin): the match starts after this many
 	-- seconds (sooner only when the match is already full, IntermissionSkipWhenFull)
-	LobbyMaxWait = 25,
+	LobbyMaxWait = 20,
 	IntermissionSkipWhenFull = true,
 	RoundCountdown = 3,
 	RoundTime = 75,
@@ -27,7 +27,13 @@ Config.Match = {
 	ResultsOverlay = 4, -- shown over the live lobby while the next intermission runs
 	RoundsToWin = 2, -- best of three
 	MaxDrawReplays = 2,
-	FirstMatchMaxWait = 15, -- a solo joiner must be in a match within this many seconds
+	-- Alone in an idle hub (no match running, nobody else in the server) with the tutorial done, you're
+	-- queued for you (as if you pressed PLAY) and the match starts after LobbyMaxWait, or after
+	-- SoloAfterTutorialWait when you finished the tutorial within SoloAfterTutorialWindow seconds.
+	-- Cancel or Leave Match opts you out until you press PLAY again.
+	SoloAutoQueue = true,
+	SoloAfterTutorialWait = 5,
+	SoloAfterTutorialWindow = 30,
 	-- Join in progress: once the tutorial is done, joining the server (or pressing PLAY, which then
 	-- reads JOIN MATCH) during a live round or its countdown puts you straight in, in place of a bot
 	-- still on the court. You keep its spot and damage %, and can't be hit for JoinImmunity seconds.
@@ -631,7 +637,9 @@ Config.Quests = {
 			Id = "Playtime",
 			Name = "Play 12 minutes",
 			Event = "Playtime",
-			Goal = 12 * 60, -- seconds
+			FirstName = "Play 8 minutes",
+			FirstGoal = 8 * 60, -- seconds, until the day's first claim
+			Goal = 12 * 60, -- seconds, every claim after it
 			Repeats = true,
 			Reward = { Kind = "Coins", Amount = 1000 }, -- the day's first claim
 			RepeatAmount = 500, -- every claim after it

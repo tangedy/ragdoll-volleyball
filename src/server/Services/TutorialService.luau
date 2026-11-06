@@ -64,6 +64,7 @@ local function complete(c: any): { [string]: any }?
 	if c.player then
 		c.player:SetAttribute("TutorialDone", true)
 	end
+	c.tutorialDoneAt = os.clock() -- a lone player's first match starts sooner (MatchService.run)
 	return result
 end
 

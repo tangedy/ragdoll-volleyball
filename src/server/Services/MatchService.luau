@@ -792,6 +792,7 @@ function MatchService.leaveMatch(c: any): boolean
 	S.AnalyticsService.event(c, "LeftMatch_" .. tostring(c.status), tonumber(stateFolder:GetAttribute("Round")) or 0)
 	handOff(c)
 	c.autoQueue = false
+	c.queueDeclined = true -- no solo auto-queue straight back in
 	if c.player then
 		c.player:SetAttribute("AutoQueue", false)
 	end
@@ -1385,20 +1386,60 @@ local function runMatch(queued: { any })
 	publishCounts()
 end
 
+-- The one real player in the server, when they'd be queued but for PLAY and haven't opted out (see
+-- Config.Match.SoloAutoQueue).
+local function soloCandidate(): any?
+	if not M.SoloAutoQueue then
+		return nil
+	end
+	local players = S.PlayerStateService.realPlayers()
+	if #players ~= 1 then
+		return nil
+	end
+	local c = players[1]
+	if
+		c.autoQueue
+		or c.queueDeclined
+		or c.inMatch
+		or not c.profileLoaded
+		or not c.player
+		or c.player:GetAttribute("TutorialDone") ~= true
+		or c.player:GetAttribute("InDevRoom") == true
+		or not S.PlayerStateService.isAlive(c)
+	then
+		return nil
+	end
+	return c
+end
+
 function MatchService.run()
 	while true do
 		local queued = MatchService.queuedPlayers()
+		local lobbyWait = M.LobbyMaxWait
 		if #queued == 0 then
 			setState("WaitingForPlayers")
+			local solo = nil
 			repeat
 				task.wait(0.25)
 				queued = MatchService.queuedPlayers()
-			until #queued > 0
+				solo = if #queued == 0 then soloCandidate() else nil
+			until #queued > 0 or solo
+			if solo then
+				-- alone in the hub: queue them, and fresh out of the tutorial, start almost at once
+				solo.autoQueue = true
+				solo.player:SetAttribute("AutoQueue", true)
+				local doneAt = solo.tutorialDoneAt
+				if doneAt and os.clock() - doneAt <= M.SoloAfterTutorialWindow then
+					lobbyWait = M.SoloAfterTutorialWait
+				end
+				solo.tutorialDoneAt = nil
+				queued = MatchService.queuedPlayers()
+			end
 		end
-		-- the intermission always runs its full LobbyMaxWait (PLAY only queues you; nobody can start
-		-- it early), unless the match is already full
-		setState("Intermission", M.LobbyMaxWait)
-		local endsAt = now() + M.LobbyMaxWait
+		-- the intermission always runs its full wait (PLAY only queues you; nobody can start it
+		-- early), unless the match is already full
+		setState("Intermission", lobbyWait)
+		local endsAt = now() + lobbyWait
 		local cancelled = false
 		while now() < endsAt do
 			task.wait(0.2)

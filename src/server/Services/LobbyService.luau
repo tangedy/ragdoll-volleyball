@@ -255,6 +255,7 @@ function LobbyService.start()
 		local c = S.PlayerStateService.get(player)
 		if c then
 			c.autoQueue = p.value
+			c.queueDeclined = not p.value -- Cancel opts out of the solo auto-queue until PLAY
 			-- PLAY (true) and its Cancel (false) both come through here; it's also the Play again setting,
 			-- so after a match you come back still queued only if you left it on
 			player:SetAttribute("AutoQueue", p.value)
