@@ -63,6 +63,25 @@ Other changes:
   - `SessionAccountDay` on join: days since the account's first join. This gives a D1/D7 read without the dashboard.
   - `SessionGames` and `SessionActiveMinutes` on leave.
 
+### Analytics splits
+Every funnel step and custom event now carries Roblox custom fields. Break down by them in Analytics → Funnels and Analytics → Events.
+
+| Field | Values | Where it comes from |
+|---|---|---|
+| `CustomField01` (device) | Phone, Tablet, Desktop, Console, Unknown | The client's first `ReportDevice` (`InputController.formFactor`). A touch screen whose shorter side is under 500 points counts as a phone. |
+| `CustomField02` (how they arrived) | Invite, Friend, Solo | `AnalyticsService.detectSource`. Invite: `GetJoinData().ReferredByPlayerId`. Friend: a friend was already in the server. Ads vs home recommendations aren't visible in-game; use Acquisition for that. |
+| `CustomField03` (first match) | Bots, Mixed, Real, None | The account's first match: Bots = over half bots. Saved as `profile.FirstMatchType`. **Events only:** funnel steps leave it out because it's unknown until the first match. |
+
+To show the same device on every step, the onboarding "Joined" step waits up to 4 s for the device report (`Config.Analytics.DeviceWait`). Later steps queue behind it.
+
+**Retention by split (custom events):**
+- **`NewPlayer`:** once, in the account's first session. This is the denominator.
+- **`ReturnedD1` / `ReturnedD7`:** the first session 1 or 7 days (24-hour periods) after the first join, once per account. This is the numerator.
+
+So D1 by device = `ReturnedD1` ÷ `NewPlayer`, both broken down by CustomField01. Days count in 24-hour periods from the first join, so this won't exactly match the dashboard's D1, but the splits compare fairly with each other.
+
+**First match:** `FirstMatch` logs once per account; its CustomField03 says which kind. D1 by first match = `ReturnedD1` ÷ `FirstMatch`, both broken down by CustomField03.
+
 ## Reading the next funnel
 - **Compare cohorts.** Compare players who joined after the publish with Nov 5–7.
 - **Steps 7 → 8** (tutorial → 1st match) should rise the most.

@@ -3,6 +3,7 @@
 -- an enemy while you hold a ball. Mobile gets dedicated large buttons plus the camera lock button.
 
 local ContextActionService = game:GetService("ContextActionService")
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -40,11 +41,24 @@ function InputController.catch()
 	Net.request(Net.Actions.Catch)
 end
 
+-- Phone, Tablet, Console or Desktop, for the analytics splits (the server keeps the first report).
+local function formFactor(): string
+	if GuiService:IsTenFootInterface() then
+		return "Console"
+	end
+	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+		local camera = Workspace.CurrentCamera
+		local size = if camera then camera.ViewportSize else Vector2.new(0, 0)
+		return if math.min(size.X, size.Y) < Config.Analytics.PhoneMaxShortSide then "Phone" else "Tablet"
+	end
+	return "Desktop"
+end
+
 local function setInput(kind: string)
 	if AimController.lastInput ~= kind then
 		AimController.lastInput = kind
 		InputController.changed:Fire(kind)
-		Net.request(Net.Actions.ReportDevice, { kind = kind })
+		Net.request(Net.Actions.ReportDevice, { kind = kind, form = formFactor() })
 	end
 end
 
@@ -584,7 +598,7 @@ function InputController.init() end
 function InputController.start()
 	bindDesktopAndGamepad()
 	task.defer(function()
-		Net.request(Net.Actions.ReportDevice, { kind = AimController.lastInput })
+		Net.request(Net.Actions.ReportDevice, { kind = AimController.lastInput, form = formFactor() })
 	end)
 	local mobileGui: ScreenGui? = nil
 	local function refresh()

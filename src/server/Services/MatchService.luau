@@ -1208,6 +1208,7 @@ local function runMatch(queued: { any })
 	local aborted = false
 	local finalEliminator: any? = nil
 	local matchStart = now()
+	S.AnalyticsService.setMatchType(roster)
 	for _, c in roster do
 		c.stats = S.PlayerStateService.newStats()
 		c.matchStartedAt = matchStart

@@ -1892,6 +1892,59 @@ return function(H)
 		return out
 	end
 
+	test("analytics splits: funnel steps carry device and source; events add the first match", function()
+		local A = analytics()
+		local c = H.combatant()
+		c.firstSession = true
+		c.device, c.source = "Phone", "Friend"
+		c.team = "Red"
+		A.funnel(c, "Joined")
+		local step = logged("Onboarding")[1]
+		check(step and step.fields, "no fields on the onboarding step")
+		eq(step.fields.CustomField01, "Phone", "device field")
+		eq(step.fields.CustomField02, "Friend", "source field")
+		eq(step.fields.CustomField03, nil, "first-match field on a funnel step")
+		-- the account's first match is a bot-filled one: it sticks, and events carry it
+		A.setMatchType({ c, { isBot = true }, { isBot = true } })
+		A.matchStarted(c)
+		eq(c.profile.FirstMatchType, "Bots", "first match type")
+		c.profile.Matches = 1
+		A.setMatchType({ c, { team = "Blue" } })
+		A.matchStarted(c)
+		eq(c.profile.FirstMatchType, "Bots", "a later match overwrote the first match type")
+		local firsts = 0
+		for _, e in logged("Event") do
+			if e.name == "FirstMatch" and e.fields.CustomField03 == "Bots" then
+				firsts += 1
+			end
+		end
+		eq(firsts, 1, "FirstMatch events (Bots)")
+		A.event(c, "Anything")
+		local events = logged("Event")
+		eq(events[#events].fields.CustomField03, "Bots", "first-match field on an event")
+		-- a combatant with no reports yet still logs, as Unknown
+		local fresh = H.combatant()
+		eq(A.fields(fresh).CustomField01, "Unknown", "unknown device")
+	end)
+
+	test("analytics splits: ReturnedD1 logs once per account; the first session logs NewPlayer", function()
+		local A = analytics()
+		local c = H.combatant()
+		c.profile.FirstJoinAt = os.time()
+		c.firstSession = true
+		A.sessionStarted(c)
+		c.firstSession = false
+		c.profile.FirstJoinAt = os.time() - 86400 - 60 -- a day later
+		A.sessionStarted(c)
+		A.sessionStarted(c) -- a second session on day 1
+		local counts = {}
+		for _, e in logged("Event") do
+			counts[e.name] = (counts[e.name] or 0) + 1
+		end
+		eq(counts.NewPlayer, 1, "NewPlayer")
+		eq(counts.ReturnedD1, 1, "ReturnedD1")
+	end)
+
 	test("onboarding funnel: all 14 steps once, in order, with 12 minutes waiting for the 2nd game", function()
 		local A = analytics()
 		local c = H.combatant()

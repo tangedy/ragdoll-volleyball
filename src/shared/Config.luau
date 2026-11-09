@@ -785,6 +785,11 @@ Config.Social = {
 Config.Analytics = {
 	-- the onboarding funnel's "Played 12 minutes" step: active seconds in the first session
 	FunnelPlaySeconds = 12 * 60,
+	-- Splits (custom fields on funnel steps and events; Analytics > Funnels / Events > breakdown):
+	-- CustomField01 = device (Phone, Tablet, Desktop, Console), CustomField02 = how they arrived
+	-- (Invite, Friend, Solo), CustomField03 = their first match (Bots, Mixed, Real; events only)
+	PhoneMaxShortSide = 500, -- a touch screen with a shorter side under this (points) is a phone
+	DeviceWait = 4, -- seconds the "Joined" step waits for the client's device report
 }
 
 Config.Rewards = {

@@ -419,10 +419,10 @@ end
 H.analytics = {}
 do
 	local Analytics = services.AnalyticsService
-	Analytics.LogOnboardingFunnelStepEvent = function(_self, player, step, name)
-		table.insert(H.analytics, { kind = "Onboarding", player = player, step = step, name = name })
+	Analytics.LogOnboardingFunnelStepEvent = function(_self, player, step, name, fields)
+		table.insert(H.analytics, { kind = "Onboarding", player = player, step = step, name = name, fields = fields })
 	end
-	Analytics.LogFunnelStepEvent = function(_self, player, funnel, sessionId, step, name)
+	Analytics.LogFunnelStepEvent = function(_self, player, funnel, sessionId, step, name, fields)
 		table.insert(H.analytics, {
 			kind = "Funnel",
 			player = player,
@@ -430,9 +430,12 @@ do
 			session = sessionId,
 			step = step,
 			name = name,
+			fields = fields,
 		})
 	end
-	Analytics.LogCustomEvent = function() end
+	Analytics.LogCustomEvent = function(_self, player, name, value, fields)
+		table.insert(H.analytics, { kind = "Event", player = player, name = name, value = value, fields = fields })
+	end
 end
 
 local function fakeRequire(target)

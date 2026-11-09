@@ -95,6 +95,10 @@ export type Profile = {
 	Best: { Hits: number, Knockouts: number, Catches: number },
 	-- the daily XP rush (Config.Rewards.XPRush): the UTC day number and games it boosted that day
 	XPRush: { day: number, games: number },
+	-- analytics splits: the account's first match ("Bots", "Mixed", "Real"; "" until then) and which
+	-- return events (ReturnedD1, ReturnedD7) it has logged
+	FirstMatchType: string,
+	ReturnLogged: { [string]: boolean },
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -140,6 +144,8 @@ local function default(): Profile
 		FirstWinDay = 0,
 		Best = { Hits = 0, Knockouts = 0, Catches = 0 },
 		XPRush = { day = 0, games = 0 },
+		FirstMatchType = "",
+		ReturnLogged = {},
 		Lock = nil,
 	}
 end

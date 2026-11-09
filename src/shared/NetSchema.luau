@@ -146,7 +146,10 @@ NetSchema.Validators = {
 		if not isTable(p) or (p.kind ~= "Touch" and p.kind ~= "Mouse" and p.kind ~= "Gamepad") then
 			return nil
 		end
-		return { kind = p.kind }
+		-- the device's form factor, for analytics splits (optional; anything else is dropped)
+		local forms = { Phone = true, Tablet = true, Desktop = true, Console = true }
+		local form = if type(p.form) == "string" and forms[p.form] then p.form else nil
+		return { kind = p.kind, form = form }
 	end,
 	BuyItem = function(p: any): any
 		if not isTable(p) or type(p.id) ~= "string" or #p.id > 64 then

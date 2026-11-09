@@ -14,6 +14,7 @@
 -- the 2nd game ends) waits until the one before it is logged, and no step is logged twice.
 
 local Analytics = game:GetService("AnalyticsService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -65,6 +66,68 @@ local function live(c: any): Player?
 	return nil
 end
 
+-- Splits ----------------------------------------------------------------------------------------
+-- Custom fields on every funnel step and event, so the dashboard can break them down (see
+-- Config.Analytics): CustomField01 = device, CustomField02 = how they arrived, and on events only,
+-- CustomField03 = what their first match was. Funnel steps leave 03 out: it's unknown until the
+-- first match starts, and a field that changes partway through a funnel splits it badly.
+
+local currentMatchType = "Real" -- the running match's: "Bots" (over half bots), "Mixed" or "Real"
+
+local function fields(c: any, withMatch: boolean?): { [string]: string }
+	local f = {
+		CustomField01 = (c and c.device) or "Unknown",
+		CustomField02 = (c and c.source) or "Unknown",
+	}
+	if withMatch then
+		local first = c and c.profile and c.profile.FirstMatchType
+		f.CustomField03 = if type(first) == "string" and first ~= "" then first else "None"
+	end
+	return f
+end
+AnalyticsService.fields = fields
+
+-- How this player arrived: "Invite" (a friend's invite or referral link), "Friend" (a friend was
+-- already in the server: they followed or joined them), else "Solo". Ads vs home recommendations
+-- can't be told apart in game: the dashboard's Acquisition page has that. Yields (friend checks).
+function AnalyticsService.detectSource(c: any)
+	local player = live(c)
+	if not player or c.source then
+		return
+	end
+	local source = "Solo"
+	local ok, join = pcall(function()
+		return player:GetJoinData()
+	end)
+	if ok and type(join) == "table" and (tonumber(join.ReferredByPlayerId) or 0) > 0 then
+		source = "Invite"
+	else
+		for _, other in Players:GetPlayers() do
+			if other ~= player then
+				local okF, isFriend = pcall(function()
+					return player:IsFriendsWith(other.UserId)
+				end)
+				if okF and isFriend then
+					source = "Friend"
+					break
+				end
+			end
+		end
+	end
+	c.source = source
+end
+
+-- MatchService: the match about to start, once its bots are in. Bots fill it past half: "Bots".
+function AnalyticsService.setMatchType(roster: { any })
+	local bots = 0
+	for _, c in roster do
+		if c.isBot then
+			bots += 1
+		end
+	end
+	currentMatchType = if bots * 2 > #roster then "Bots" elseif bots > 0 then "Mixed" else "Real"
+end
+
 -- Onboarding funnel step `key` (a key of ONBOARDING), first session only.
 function AnalyticsService.funnel(c: any, key: string)
 	local player = live(c)
@@ -84,7 +147,7 @@ function AnalyticsService.funnel(c: any, key: string)
 		c.funnelStep = i
 		local name = ONBOARDING[i].name
 		pcall(function()
-			Analytics:LogOnboardingFunnelStepEvent(player, i, name)
+			Analytics:LogOnboardingFunnelStepEvent(player, i, name, fields(c))
 		end)
 		log("onboarding", player.Name, i, name)
 	end
@@ -121,7 +184,7 @@ function AnalyticsService.coinPurchase(c: any)
 	end
 	local name = COIN_STEPS[n] .. " coin purchase"
 	pcall(function()
-		Analytics:LogFunnelStepEvent(player, COIN_FUNNEL, nil, n, name)
+		Analytics:LogFunnelStepEvent(player, COIN_FUNNEL, nil, n, name, fields(c))
 	end)
 	log("coins", player.Name, n, name)
 end
@@ -133,7 +196,7 @@ function AnalyticsService.event(c: any, name: string, value: number?)
 		return
 	end
 	pcall(function()
-		Analytics:LogCustomEvent(player, name, value or 1)
+		Analytics:LogCustomEvent(player, name, value or 1, fields(c, true))
 	end)
 	log("event", player.Name, name, value)
 end
@@ -165,6 +228,12 @@ function AnalyticsService.matchStarted(c: any)
 		return
 	end
 	c.matchesThisSession = (c.matchesThisSession or 0) + 1
+	-- the account's first match decides its CustomField03 from now on (D1 by first match type)
+	local p = c.profile
+	if p and (tonumber(p.Matches) or 0) == 0 and (p.FirstMatchType or "") == "" then
+		p.FirstMatchType = currentMatchType
+		AnalyticsService.event(c, "FirstMatch") -- its CustomField03 says which kind
+	end
 	local finished = c.gamesFinished or 0
 	c.funnelGame = finished + 1
 	if finished == 0 then
@@ -177,7 +246,7 @@ function AnalyticsService.matchStarted(c: any)
 	if lossId then
 		c.lossFunnelId = nil
 		pcall(function()
-			Analytics:LogFunnelStepEvent(player, LOSS_FUNNEL, lossId, 2, "Played another game")
+			Analytics:LogFunnelStepEvent(player, LOSS_FUNNEL, lossId, 2, "Played another game", fields(c))
 		end)
 		log("loss", player.Name, lossId, 2)
 	end
@@ -185,7 +254,7 @@ function AnalyticsService.matchStarted(c: any)
 	if winId then
 		c.winFunnelId = nil
 		pcall(function()
-			Analytics:LogFunnelStepEvent(player, WIN_FUNNEL, winId, 2, "Played another game")
+			Analytics:LogFunnelStepEvent(player, WIN_FUNNEL, winId, 2, "Played another game", fields(c))
 		end)
 		log("win", player.Name, winId, 2)
 	end
@@ -286,7 +355,20 @@ function AnalyticsService.sessionStarted(c: any)
 	local p = c and c.profile
 	local first = p and tonumber(p.FirstJoinAt) or 0
 	if first > 1 then
-		AnalyticsService.event(c, "SessionAccountDay", (os.time() - first) // 86400)
+		local day = (os.time() - first) // 86400
+		AnalyticsService.event(c, "SessionAccountDay", day)
+		-- retention by split: NewPlayer (the first session) is the denominator; ReturnedD1 / D7 the
+		-- numerators, each once per account-day (custom fields carry device, source, first match)
+		if c.firstSession then
+			AnalyticsService.event(c, "NewPlayer")
+		elseif day == 1 or day == 7 then
+			local key = "ReturnedD" .. day
+			p.ReturnLogged = p.ReturnLogged or {}
+			if not p.ReturnLogged[key] then
+				p.ReturnLogged[key] = true
+				AnalyticsService.event(c, key)
+			end
+		end
 	end
 end
 
@@ -337,7 +419,7 @@ function AnalyticsService.matchEnded(
 			local id = ("%d_%d_%d"):format(player.UserId, os.time(), c.lossCount)
 			c.lossFunnelId = id
 			pcall(function()
-				Analytics:LogFunnelStepEvent(player, LOSS_FUNNEL, id, 1, "Lost a game")
+				Analytics:LogFunnelStepEvent(player, LOSS_FUNNEL, id, 1, "Lost a game", fields(c))
 			end)
 			log("loss", player.Name, id, 1)
 		elseif info.winner and c.team == info.winner then
@@ -345,7 +427,7 @@ function AnalyticsService.matchEnded(
 			local id = ("%d_%d_w%d"):format(player.UserId, os.time(), c.winCount)
 			c.winFunnelId = id
 			pcall(function()
-				Analytics:LogFunnelStepEvent(player, WIN_FUNNEL, id, 1, "Won a game")
+				Analytics:LogFunnelStepEvent(player, WIN_FUNNEL, id, 1, "Won a game", fields(c))
 			end)
 			log("win", player.Name, id, 1)
 		end

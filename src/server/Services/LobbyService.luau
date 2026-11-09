@@ -204,8 +204,17 @@ local function onPlayerAdded(player: Player)
 	end
 	-- the save may have landed before the character existed: push again so its name tag gets the badge
 	S.DataService.push(c)
-	S.AnalyticsService.funnel(c, "Joined")
-	S.AnalyticsService.sessionStarted(c)
+	-- analytics: wait (briefly) for the device report so every step carries the same splits; later
+	-- onboarding steps queue behind "Joined" (AnalyticsService.funnel logs strictly in order)
+	task.spawn(function()
+		S.AnalyticsService.detectSource(c)
+		local deadline = os.clock() + Config.Analytics.DeviceWait
+		while not c.device and player.Parent == Players and os.clock() < deadline do
+			task.wait(0.1)
+		end
+		S.AnalyticsService.funnel(c, "Joined")
+		S.AnalyticsService.sessionStarted(c)
+	end)
 	S.TutorialService.sync(c)
 	-- tutorial done and a round is live with a bot on the court: straight in, no PLAY press (the
 	-- avatar may still be building, so give it a few seconds)
@@ -301,6 +310,9 @@ function LobbyService.start()
 	end)
 	S.NetService.on(NetSchema.Actions.ReportDevice, function(player, p)
 		local c = S.PlayerStateService.get(player)
+		if c and p.form and not c.device then
+			c.device = p.form -- the first report is the session's device (analytics splits)
+		end
 		if c and not (c.devicesSeen and c.devicesSeen[p.kind]) then
 			c.devicesSeen = c.devicesSeen or {}
 			c.devicesSeen[p.kind] = true
