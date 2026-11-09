@@ -1,14 +1,15 @@
 --!strict
 -- Thin wrapper over Roblox AnalyticsService (spec §14, Amendment A analytics additions).
 --
--- Three funnels for the Creator Dashboard (Analytics > Funnels):
+-- Four funnels for the Creator Dashboard (Analytics > Funnels):
 -- 1. Onboarding (LogOnboardingFunnelStepEvent): a player's first session only (c.firstSession, set
 --    by DataService.load), from joining through the tutorial and their first two games to the
---    "Play 12 minutes" quest.
+--    12 active minutes in that session (QuestService playClock; Config.Analytics).
 -- 2. "CoinPurchases": a player's 1st to 8th coin purchase (shop items and coin spins) over their
 --    whole life, for accounts created since it shipped (profile.FirstJoinAt > 1).
 -- 3. "PlayAfterLoss": every lost game opens a new run of it (its own funnel session id); step 2 is
 --    starting another match in the same session.
+-- 4. "PlayAfterWin": the same two steps for every won game, so the two can be compared.
 -- Onboarding steps are logged strictly in order: a step that comes early (12 minutes played before
 -- the 2nd game ends) waits until the one before it is logged, and no step is logged twice.
 
@@ -44,6 +45,7 @@ AnalyticsService.Onboarding = ONBOARDING
 local COIN_FUNNEL = "CoinPurchases"
 local COIN_STEPS = { "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th" }
 local LOSS_FUNNEL = "PlayAfterLoss"
+local WIN_FUNNEL = "PlayAfterWin" -- the same two steps after a won game, to compare with the loss one
 
 function AnalyticsService.init(_services: any) end
 
@@ -170,7 +172,7 @@ function AnalyticsService.matchStarted(c: any)
 	elseif finished == 1 then
 		AnalyticsService.funnel(c, "StartedSecondMatch")
 	end
-	-- the loss funnel: they played again after losing
+	-- the loss / win funnels: they played again after that game
 	local lossId = c.lossFunnelId
 	if lossId then
 		c.lossFunnelId = nil
@@ -178,6 +180,14 @@ function AnalyticsService.matchStarted(c: any)
 			Analytics:LogFunnelStepEvent(player, LOSS_FUNNEL, lossId, 2, "Played another game")
 		end)
 		log("loss", player.Name, lossId, 2)
+	end
+	local winId = c.winFunnelId
+	if winId then
+		c.winFunnelId = nil
+		pcall(function()
+			Analytics:LogFunnelStepEvent(player, WIN_FUNNEL, winId, 2, "Played another game")
+		end)
+		log("win", player.Name, winId, 2)
 	end
 	if c.joinedAt and c.matchesThisSession == 1 then
 		AnalyticsService.event(c, "JoinToFirstMatch", os.clock() - c.joinedAt)
@@ -270,6 +280,24 @@ local function publishDebug()
 	end
 end
 
+-- Session shape, for reading retention beside the funnels: on join, which day of the account's life
+-- this is (0 = the day it was made); on leave, games finished and active minutes this session.
+function AnalyticsService.sessionStarted(c: any)
+	local p = c and c.profile
+	local first = p and tonumber(p.FirstJoinAt) or 0
+	if first > 1 then
+		AnalyticsService.event(c, "SessionAccountDay", (os.time() - first) // 86400)
+	end
+end
+
+function AnalyticsService.sessionEnded(c: any)
+	if not live(c) then
+		return
+	end
+	AnalyticsService.event(c, "SessionGames", c.gamesFinished or 0)
+	AnalyticsService.event(c, "SessionActiveMinutes", (c.sessionActiveSeconds or 0) // 60)
+end
+
 function AnalyticsService.start()
 	if RunService:IsStudio() then
 		task.spawn(function()
@@ -312,6 +340,14 @@ function AnalyticsService.matchEnded(
 				Analytics:LogFunnelStepEvent(player, LOSS_FUNNEL, id, 1, "Lost a game")
 			end)
 			log("loss", player.Name, id, 1)
+		elseif info.winner and c.team == info.winner then
+			c.winCount = (c.winCount or 0) + 1
+			local id = ("%d_%d_w%d"):format(player.UserId, os.time(), c.winCount)
+			c.winFunnelId = id
+			pcall(function()
+				Analytics:LogFunnelStepEvent(player, WIN_FUNNEL, id, 1, "Won a game")
+			end)
+			log("win", player.Name, id, 1)
 		end
 	end
 end

@@ -40,6 +40,7 @@ NetSchema.Actions = {
 NetSchema.Feedback = {
 	Banner = "Banner",
 	Feed = "Feed",
+	BotChat = "BotChat", -- { model, text }: a bot's chat bubble
 	Impact = "Impact",
 	DodgeAccepted = "DodgeAccepted",
 	Ragdoll = "Ragdoll",

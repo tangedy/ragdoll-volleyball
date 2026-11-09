@@ -205,6 +205,7 @@ local function onPlayerAdded(player: Player)
 	-- the save may have landed before the character existed: push again so its name tag gets the badge
 	S.DataService.push(c)
 	S.AnalyticsService.funnel(c, "Joined")
+	S.AnalyticsService.sessionStarted(c)
 	S.TutorialService.sync(c)
 	-- tutorial done and a round is live with a bot on the court: straight in, no PLAY press (the
 	-- avatar may still be building, so give it a few seconds)
@@ -222,11 +223,41 @@ local function onPlayerAdded(player: Player)
 	end
 end
 
+-- A one-time "press PLAY" hint per hub visit for a player who's been standing around unqueued for
+-- Config.Match.IdleNudgeAfter seconds (players who press Cancel get it too: it's only a hint).
+local function idleNudges()
+	while true do
+		task.wait(1)
+		for _, c in S.PlayerStateService.realPlayers() do
+			local idle = c.player
+				and c.profileLoaded
+				and not c.inMatch
+				and not c.autoQueue
+				and c.player:GetAttribute("TutorialDone") == true
+				and c.player:GetAttribute("InDevRoom") ~= true
+			if not idle then
+				c.hubIdle = 0
+				c.nudged = false
+				continue
+			end
+			c.hubIdle = (c.hubIdle or 0) + 1
+			if c.hubIdle >= Config.Match.IdleNudgeAfter and not c.nudged then
+				c.nudged = true
+				local text = if S.MatchService.openSlots() > 0
+					then "A match is on: press JOIN MATCH to jump in!"
+					else "Press PLAY to start a match!"
+				S.NetService.send(c.player, "Hint", { text = text, duration = 3 })
+			end
+		end
+	end
+end
+
 local function onPlayerRemoving(player: Player)
 	local c = S.PlayerStateService.get(player)
 	if not c then
 		return
 	end
+	S.AnalyticsService.sessionEnded(c)
 	-- analytics: departure after elimination (spec §14)
 	if c.inMatch and (c.status == "Jailed" or c.status == "Spectating") then
 		S.AnalyticsService.event(c, "LeftWhileOut_" .. c.status)
@@ -243,6 +274,7 @@ local function onPlayerRemoving(player: Player)
 end
 
 function LobbyService.start()
+	task.spawn(idleNudges)
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	Players.PlayerRemoving:Connect(onPlayerRemoving)
 	for _, p in Players:GetPlayers() do

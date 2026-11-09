@@ -89,6 +89,12 @@ export type Profile = {
 	PowerSpin: { date: string, paid: number, total: number },
 	-- mastery XP per power id (PowerService.gainMastery; levels from PowerDefinitions.masteryLevel)
 	PowerMastery: { [string]: number },
+	-- the UTC day number (os.time() // 86400) of this player's last first-win-of-the-day bonus
+	FirstWinDay: number,
+	-- personal bests in one match (the results card calls out a new one)
+	Best: { Hits: number, Knockouts: number, Catches: number },
+	-- the daily XP rush (Config.Rewards.XPRush): the UTC day number and games it boosted that day
+	XPRush: { day: number, games: number },
 	Lock: { JobId: string, Time: number }?,
 }
 
@@ -131,6 +137,9 @@ local function default(): Profile
 		SavingFor = "",
 		PowerSpin = { date = "", paid = 0, total = 0 },
 		PowerMastery = {},
+		FirstWinDay = 0,
+		Best = { Hits = 0, Knockouts = 0, Catches = 0 },
+		XPRush = { day = 0, games = 0 },
 		Lock = nil,
 	}
 end

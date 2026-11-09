@@ -263,6 +263,13 @@ function BotService.fill(roster: { any }, teamSize: number)
 		end
 	end
 	local avgLevel = if count > 0 then levels / count else 1
+	-- a brand-new player's opponents are Rookie bots (Config.Bots.Rookie)
+	local rookieFoes: { [string]: boolean } = {}
+	for _, c in roster do
+		if c.player and c.profile and c.team and (tonumber(c.profile.Matches) or 0) < B.Rookie.Matches then
+			rookieFoes[if c.team == "Red" then "Blue" else "Red"] = true
+		end
+	end
 	for _, team in { "Red", "Blue" } do
 		local n = 0
 		for _, c in roster do
@@ -271,7 +278,8 @@ function BotService.fill(roster: { any }, teamSize: number)
 			end
 		end
 		while n < teamSize and existing < B.MaxPerServer do
-			BotService.create(team, roster, BotService.pickDifficulty(avgLevel))
+			local level = if rookieFoes[team] then B.Rookie.Profile else BotService.pickDifficulty(avgLevel)
+			BotService.create(team, roster, level)
 			n += 1
 			existing += 1
 		end
@@ -586,7 +594,7 @@ local function thinkHolding(c: any, t: number)
 			strafeDir = if rng:NextNumber() < 0.5 then 1 else -1,
 			target = nil,
 			retargetAt = 0,
-			allowPlayers = rng:NextNumber() < B.PlayerTargetChance,
+			allowPlayers = rng:NextNumber() < (profileOf(c).PlayerTargetChance or B.PlayerTargetChance),
 		}
 	end
 	local plan = brain.plan

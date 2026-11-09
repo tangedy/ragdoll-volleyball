@@ -11,6 +11,7 @@ local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TextChatService = game:GetService("TextChatService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
@@ -654,7 +655,9 @@ local function build()
 	Theme.body(confirm, {
 		Position = UDim2.fromOffset(24, 58),
 		Size = UDim2.new(1, -48, 0, 44),
-		Text = "You'll miss this match's reward. A bot takes your place.",
+		Text = ("You'll miss up to +%d coins and this match's XP. A bot takes your place."):format(
+			Config.Coins.WinLastElimination
+		),
 		TextWrapped = true,
 		ZIndex = 21,
 	})
@@ -689,7 +692,7 @@ local function build()
 		Name = "Results",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 140),
-		Size = UDim2.fromOffset(420, 280),
+		Size = UDim2.fromOffset(420, 322),
 		Visible = false,
 	}, Theme.Radius.L)
 	refs.results = results
@@ -709,6 +712,8 @@ local function build()
 	Theme.new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 6),
 	}, refs.resultSticker)
 	local coinRow = Theme.new("Frame", {
 		Position = UDim2.fromOffset(24, 64),
@@ -741,13 +746,13 @@ local function build()
 	refs.statKOs = Theme.statChip(statRow, "Knockouts", T.candy, { Size = chipSize, LayoutOrder = 3 })
 	-- level + XP footer
 	refs.resultLevel = Theme.text(results, 17, {
-		Position = UDim2.new(0, 24, 1, -64),
+		Position = UDim2.new(0, 24, 1, -106),
 		Size = UDim2.new(0.5, -24, 0, 22),
 		Text = "Level 1",
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
 	refs.resultXP = Theme.body(results, {
-		Position = UDim2.new(0, 24, 1, -40),
+		Position = UDim2.new(0, 24, 1, -84),
 		Size = UDim2.new(0.5, -24, 0, 16),
 		FontFace = Theme.TextFace,
 		Text = "+0 XP",
@@ -755,7 +760,7 @@ local function build()
 	})
 	refs.resultStreak = Theme.new("Frame", {
 		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -24, 1, -34),
+		Position = UDim2.new(1, -24, 1, -76),
 		Size = UDim2.fromOffset(180, 24),
 		BackgroundTransparency = 1,
 	}, results)
@@ -763,6 +768,39 @@ local function build()
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
 	}, refs.resultStreak)
+	-- progress into the next level, under the XP line
+	local xpTrack = Theme.new("Frame", {
+		Position = UDim2.new(0, 24, 1, -64),
+		Size = UDim2.new(0.5, -24, 0, 5),
+		BackgroundColor3 = T.surfaceSunk,
+		BorderSizePixel = 0,
+	}, results)
+	Theme.round(xpTrack)
+	refs.resultXPFill = Theme.new("Frame", {
+		Size = UDim2.fromScale(0, 1),
+		BackgroundColor3 = T.sun,
+		BorderSizePixel = 0,
+	}, xpTrack)
+	Theme.round(refs.resultXPFill)
+	-- the next goal: how far to the next level and what it pays (a reason to play one more)
+	refs.resultNext = Theme.body(results, {
+		Position = UDim2.new(0, 24, 1, -56),
+		Size = UDim2.new(1, -48, 0, 18),
+		FontFace = Theme.TextFace,
+		Text = "",
+		TextColor3 = T.sun,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	})
+	-- come back tomorrow: the next daily ladder rung, once today's is claimed
+	refs.resultTomorrow = Theme.body(results, {
+		Position = UDim2.new(0, 24, 1, -34),
+		Size = UDim2.new(1, -48, 0, 16),
+		FontFace = Theme.TextFace,
+		Text = "",
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	})
 	-- kept for the gallery/debug text path (aborted matches etc.)
 	refs.resultBody = refs.resultXP
 end
@@ -1096,6 +1134,73 @@ end
 
 -- Results card -------------------------------------------------------------------------------------
 
+-- The results card's one "next goal" line, from the Results payload: the day's first-win bonus
+-- until it's won, else the play streak if the next game pays it, else a quest that's ready or under
+-- way, else the next level.
+function HUDController.nextGoalText(data: any): string
+	if data.firstWinDone == false and not data.aborted then
+		return ("Next: win a game for the +%d first-win bonus"):format(Config.Rewards.FirstWinBonus)
+	end
+	local games = tonumber(data.sessionGames) or 0
+	local every = Config.Rewards.PlayStreak.Every
+	if games > 0 and (games + 1) % every == 0 then
+		return ("Next game: play streak bonus +%d"):format(Config.Rewards.PlayStreak.Coins)
+	end
+	local q = data.quest
+	if type(q) == "table" and type(q.goal) == "number" and type(q.progress) == "number" then
+		if q.ready then
+			return ("Quest done: %s · claim it in the hub!"):format(tostring(q.name))
+		-- half done, or any progress on the one-more-game quest (it's the session-length goal)
+		elseif q.progress * 2 >= q.goal or (q.event == "Game" and q.progress > 0) then
+			return ("Quest: %s (%d/%d)"):format(tostring(q.name), q.progress, q.goal)
+		end
+	end
+	return HUDController.levelGoalText(data)
+end
+
+-- "Tomorrow: day 3 reward, +400": the next daily ladder rung (Results `tomorrow`), or "".
+function HUDController.tomorrowText(data: any): string
+	local t = data.tomorrow
+	if type(t) == "table" and t.waiting then
+		return ("Your day %d daily reward is waiting in the hub!"):format(tonumber(t.day) or 1)
+	end
+	if type(t) ~= "table" or type(t.reward) ~= "table" then
+		return ""
+	end
+	local reward = t.reward
+	local what
+	if reward.Kind == "Cosmetic" then
+		what = ("pick a free %s item"):format(tostring(reward.Rarity or "new"))
+	else
+		local LevelRewardsController = require(script.Parent.LevelRewardsController) :: any
+		what = LevelRewardsController.rewardLabel(reward)
+		if reward.Kind == "Coins" then
+			what ..= " coins"
+		end
+	end
+	return ("Come back tomorrow: day %d reward, %s"):format(tonumber(t.day) or 1, what)
+end
+
+-- "60 XP to Level 4 · Rare+ spin": the next level's distance and reward, from the Results payload
+-- (xpInto, xpNeed, level). Empty at the level cap or without the numbers.
+function HUDController.levelGoalText(data: any): string
+	local need = tonumber(data.xpNeed)
+	local into = tonumber(data.xpInto) or 0
+	local level = tonumber(data.level) or 1
+	if not need or level >= Config.Progression.LevelCap then
+		return ""
+	end
+	local text = ("%d XP to Level %d"):format(math.max(1, math.ceil(need - into)), level + 1)
+	local reward = Config.Progression.Rewards[level + 1]
+	if reward then
+		local LevelRewardsController = require(script.Parent.LevelRewardsController) :: any
+		text ..= " · " .. LevelRewardsController.rewardLabel(reward) .. (if reward.Kind == "Coins"
+			then " coins"
+			else "")
+	end
+	return text
+end
+
 local resultsToken = 0
 local function showResults(data: any, persist: boolean?)
 	resultsToken += 1
@@ -1103,6 +1208,7 @@ local function showResults(data: any, persist: boolean?)
 	local r = refs.results :: Frame
 	refs.resultTitle.Text = if data.aborted
 		then "Match over"
+		elseif (tonumber(data.firstEver) or 0) > 0 then "Your first win!"
 		elseif data.won then "You win!"
 		elseif data.winner then "Good game!"
 		else "Draw!"
@@ -1111,10 +1217,34 @@ local function showResults(data: any, persist: boolean?)
 			s:Destroy()
 		end
 	end
+	-- at most two stickers, the rarest moments first
+	local stickers: { { string | Color3 } } = {}
+	if (tonumber(data.firstEver) or 0) > 0 then
+		table.insert(stickers, { "First win ever!", T.leaf })
+	elseif (tonumber(data.firstWin) or 0) > 0 then
+		table.insert(stickers, { "1st win today!", T.leaf })
+	end
+	if data.mvp then
+		table.insert(stickers, { "MVP!", T.sun })
+	end
+	if type(data.records) == "table" and #data.records > 0 then
+		local short = { Knockouts = "KOs", Hits = "hits", Catches = "catches" }
+		table.insert(stickers, { "Best " .. (short[data.records[1]] or "match") .. "!", T.candy })
+	end
+	if (tonumber(data.playStreak) or 0) > 0 then
+		table.insert(stickers, { "Play streak!", T.peach })
+	end
 	if data.won and data.coins > 0 and data.tier then
-		Theme.sticker(refs.resultSticker, tostring(data.tier), T.sun, { Size = UDim2.fromOffset(0, 22) })
+		table.insert(stickers, { tostring(data.tier), T.sun })
 	elseif data.aborted then
-		Theme.sticker(refs.resultSticker, "Aborted", T.sky, { Size = UDim2.fromOffset(0, 22) })
+		table.insert(stickers, { "Aborted", T.sky })
+	end
+	for i = 1, math.min(2, #stickers) do
+		local s = stickers[i]
+		Theme.sticker(refs.resultSticker, s[1] :: string, s[2] :: Color3, {
+			Size = UDim2.fromOffset(0, 22),
+			LayoutOrder = i,
+		})
 	end
 	local stats = data.stats or { hits = 0, catches = 0, knockouts = 0 }
 	refs.statHits.Text = tostring(stats.hits or 0)
@@ -1124,7 +1254,22 @@ local function showResults(data: any, persist: boolean?)
 		then ("Level up! You're level %d"):format(data.level or 1)
 		else ("Level %d"):format(data.level or 1)
 	refs.resultLevel.TextColor3 = if data.leveledUp then T.success else T.ink
-	refs.resultXP.Text = ("+%d XP"):format(data.xp or 0)
+	refs.resultXP.Text = ("+%d XP%s"):format(
+		data.xp or 0,
+		if data.xpRush then (" (%dx daily rush)"):format(Config.Rewards.XPRush.Multiplier) else ""
+	)
+	refs.resultNext.Text = HUDController.nextGoalText(data)
+	-- the bar fills from where this match started to where it ended (from empty after a level-up)
+	local need = tonumber(data.xpNeed) or 0
+	local into = tonumber(data.xpInto) or 0
+	local fill = refs.resultXPFill :: Frame
+	local target = if need > 0 then math.clamp(into / need, 0, 1) else 1
+	local from = if data.leveledUp then 0 else math.clamp((into - (tonumber(data.xp) or 0)) / math.max(1, need), 0, 1)
+	fill.Size = UDim2.fromScale(from, 1)
+	TweenService:Create(fill, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = UDim2.fromScale(target, 1),
+	}):Play()
+	refs.resultTomorrow.Text = HUDController.tomorrowText(data)
 	for _, s in refs.resultStreak:GetChildren() do
 		if s:IsA("Frame") then
 			s:Destroy()
@@ -1242,7 +1387,9 @@ local function update()
 			end
 			-- just wide enough for the team's headshots
 			refs[team .. "Plate"].Size = UDim2.fromOffset(math.max(132, 32 + teamSize * (FACE + 6) - 6), PLATE.Y)
+			local need = tonumber(MS:GetAttribute("RoundsToWin")) or Config.Match.RoundsToWin
 			for i, s in stars[team] do
+				s.Visible = i <= need
 				local won = i <= wins
 				s.BackgroundColor3 = if won then T.sun else T.surfaceSunk
 				local glyph = s:FindFirstChild("Star")
@@ -1452,6 +1599,15 @@ function HUDController.start()
 		if d.confetti then
 			HUDController.confetti(d.color)
 		end
+	end)
+	Net.on("BotChat", function(d)
+		if type(d) ~= "table" or typeof(d.model) ~= "Instance" or type(d.text) ~= "string" then
+			return
+		end
+		local head = d.model:FindFirstChild("Head") or d.model
+		pcall(function()
+			TextChatService:DisplayBubble(head, d.text)
+		end)
 	end)
 	Net.on("Hint", function(d)
 		HUDController.hint(d.text, d.duration, d.fade == true)

@@ -100,6 +100,7 @@ local function rewardLabel(reward: any): string
 	local item = reward.Id and Catalog.get(reward.Id)
 	return if item then item.Name else "Item"
 end
+LevelRewardsController.rewardLabel = rewardLabel
 
 -- One line for the level-up card from what the server banked (RewardService.payLevels).
 local function bankedLabel(b: any): string

@@ -212,6 +212,20 @@ function PowerService.roundStarted(roster: { any })
 	end
 end
 
+-- The team behind on rounds starts the round with Config.Powers.ComebackUlt of a full meter.
+function PowerService.comeback(roster: { any }, team: string)
+	if not PW.Enabled or (PW.ComebackUlt or 0) <= 0 then
+		return
+	end
+	local amount = M.Max * PW.ComebackUlt
+	for _, c in roster do
+		if c.team == team and c.inMatch and not c.isDummy and (c.ult or 0) < amount then
+			c.ult = amount
+			setAttr(c, "UltCharge", math.floor(amount))
+		end
+	end
+end
+
 -- Ultimate meter ---------------------------------------------------------------------------------
 
 function PowerService.addMeter(c: any, amount: number)
@@ -231,7 +245,10 @@ function PowerService.addMeter(c: any, amount: number)
 	if before < M.Max and c.ult >= M.Max then
 		if c.player then
 			S.NetService.send(c.player, "PowerFx", { kind = "UltReady" })
-		elseif c.isBot then
+		elseif
+			c.isBot
+			and not (c.bot and c.bot.difficulty == Config.Bots.Rookie.Profile and Config.Bots.Rookie.NoUltimates)
+		then
 			local d = PW.BotUltDelay
 			c.botUltAt = now() + rng:NextNumber(d[1], d[2])
 		end

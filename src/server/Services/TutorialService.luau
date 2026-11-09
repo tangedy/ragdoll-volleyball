@@ -64,7 +64,18 @@ local function complete(c: any): { [string]: any }?
 	if c.player then
 		c.player:SetAttribute("TutorialDone", true)
 	end
-	c.tutorialDoneAt = os.clock() -- a lone player's first match starts sooner (MatchService.run)
+	c.tutorialDoneAt = os.clock() -- the first match starts sooner (MatchService.run)
+	-- straight into the queue (as if PLAY was pressed), whoever else is in the server, so nobody
+	-- finishes the tutorial and stalls in the hub; a short beat first so the Done card can land.
+	-- Cancel opts out as usual (queueDeclined).
+	if Config.Match.QueueAfterTutorial then
+		task.delay(Config.Match.QueueAfterTutorialDelay, function()
+			if c.player and c.player.Parent and not c.queueDeclined and not c.inMatch then
+				c.autoQueue = true
+				c.player:SetAttribute("AutoQueue", true)
+			end
+		end)
+	end
 	return result
 end
 

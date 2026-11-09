@@ -60,6 +60,11 @@ local function tryPrompt()
 	end)
 end
 
+-- True while a favourite prompt is waiting to show or showing (InviteController steps aside).
+function FavoriteController.isPrompting(): boolean
+	return pending
+end
+
 function FavoriteController.start()
 	Net.on("Results", function(data: any)
 		if done or pending or game.PlaceId == 0 then

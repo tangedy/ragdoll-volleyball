@@ -15,7 +15,7 @@ Config.Match = {
 	MaxPlayers = 12,
 	-- hub time between matches (talk, practice, shop, spin): the match starts after this many
 	-- seconds (sooner only when the match is already full, IntermissionSkipWhenFull)
-	LobbyMaxWait = 20,
+	LobbyMaxWait = 10, -- was 20; Amendment A3 asked for ~6 (funnel: players leave between matches)
 	IntermissionSkipWhenFull = true,
 	RoundCountdown = 3,
 	RoundTime = 75,
@@ -26,6 +26,7 @@ Config.Match = {
 	RoundResolution = 3,
 	ResultsOverlay = 4, -- shown over the live lobby while the next intermission runs
 	RoundsToWin = 2, -- best of three
+	FirstMatchRounds = 1, -- a match of only brand-new players (0 finished games) is one round
 	MaxDrawReplays = 2,
 	-- Alone in an idle hub (no match running, nobody else in the server) with the tutorial done, you're
 	-- queued for you (as if you pressed PLAY) and the match starts after LobbyMaxWait, or after
@@ -34,10 +35,17 @@ Config.Match = {
 	SoloAutoQueue = true,
 	SoloAfterTutorialWait = 5,
 	SoloAfterTutorialWindow = 30,
+	-- Finishing the tutorial queues you (as if you pressed PLAY) after this many seconds, even with
+	-- other players in the server; a live match with a bot slot pulls you straight in.
+	QueueAfterTutorial = true,
+	QueueAfterTutorialDelay = 5, -- long enough for the Done card and a look at the daily sheet
 	-- Join in progress: once the tutorial is done, joining the server (or pressing PLAY, which then
 	-- reads JOIN MATCH) during a live round or its countdown puts you straight in, in place of a bot
 	-- still on the court. You keep its spot and damage %, and can't be hit for JoinImmunity seconds.
 	JoinInProgress = true,
+	-- in the hub with the tutorial done, not queued, and not in a match for this long: a one-time
+	-- "press PLAY" hint per hub visit (LobbyService)
+	IdleNudgeAfter = 25,
 	JoinImmunity = 2,
 }
 
@@ -294,6 +302,9 @@ Config.Powers = {
 	ExtraBallLife = 10,
 	-- Bots: each gets a random power when it spawns (weighted by rarity), uses its active when it
 	-- makes sense, and its ultimate UltDelay seconds (random in range) after the meter fills.
+	-- comeback: at the start of a round, everyone on the team behind on rounds gets this share of a
+	-- full ultimate meter (it never lowers a meter that's already higher)
+	ComebackUlt = 0.35,
 	BotRarityWeights = { Common = 55, Rare = 28, Epic = 12, Legendary = 4, Mythic = 1, Secret = 0 },
 	BotUltDelay = { 0.5, 3 },
 	BotUseChance = 0.35, -- per bot think when the active is ready and useful
@@ -339,6 +350,18 @@ Config.Bots = {
 	--   TargetSmarts: chance it picks the best target (near an edge, just got up, can't catch)
 	--   instead of simply the nearest · Strafe: sidestep speed factor while aiming
 	Profiles = {
+		-- only ever against a brand-new player (Rookie below): slow, wide, rarely picks real players
+		Rookie = {
+			AimErrorDeg = 15,
+			ReactionTime = { 0.45, 0.7 },
+			DodgeChance = 0.15,
+			AimDelay = { 1.5, 2.5 },
+			QuickThrowChance = 0,
+			EdgeCaution = 10,
+			TargetSmarts = 0.1,
+			Strafe = 0.2,
+			PlayerTargetChance = 0.15,
+		},
 		Easy = {
 			AimErrorDeg = 11,
 			ReactionTime = { 0.34, 0.55 },
@@ -370,6 +393,18 @@ Config.Bots = {
 			Strafe = 1,
 		},
 	},
+	-- chat bubbles from a few bots as a match is decided (MatchService.botBanter)
+	Banter = {
+		Enabled = true,
+		Chance = 0.5, -- per bot
+		MaxPerMatch = 2,
+		Win = { "gg", "gg ez", "lets gooo", "gg wp", "too easy" },
+		Lose = { "gg", "gg wp", "nooo", "rematch?", "so close" },
+	},
+	-- A brand-new player's first matches should be winnable: while any real player in the match has
+	-- finished fewer than Matches games, every bot on the other team is a Rookie bot, and Rookie bots
+	-- never fire their ultimate (their active power still works).
+	Rookie = { Matches = 3, Profile = "Rookie", NoUltimates = true },
 	-- Which profiles fill a match, by the average level of its real players (first row that fits).
 	Mix = {
 		{ MaxLevel = 3, Weights = { Easy = 0.8, Normal = 0.2 } },
@@ -680,7 +715,7 @@ Config.Economy = {
 -- match events: a credited knockout (bots included, the same as the 25-coin knockout payout), a hit
 -- on an enemy (bots included), a dodge an enemy ball flew past (Dodge below), and a won match (the
 -- anti-AFK rule the match coins use).
---   Event: "Knockout" | "Hit" | "Dodge" | "Won" | "Playtime"
+--   Event: "Knockout" | "Hit" | "Dodge" | "Won" | "Playtime" | "Game" (a finished game you took part in)
 -- A Repeats quest's progress never resets: claiming it pays Reward (RepeatAmount instead after the
 -- day's first claim) and starts it again from 0, up to MaxClaims times per UTC day.
 -- Playtime counts a second at a time while you're active (moved in the last ActiveWindow seconds).
@@ -699,6 +734,8 @@ Config.Quests = {
 		{ Id = "Hits", Name = "Hit 10 players", Event = "Hit", Goal = 10, Chest = "Gesture" },
 		{ Id = "Dodges", Name = "Dodge 5 balls", Event = "Dodge", Goal = 5, Chest = "Gesture" },
 		{ Id = "Won", Name = "Win 1 game", Event = "Won", Goal = 1, Chest = "Finisher" },
+		-- Always: picked every day (a session-length goal: one more game)
+		{ Id = "Games", Name = "Play 3 games", Event = "Game", Goal = 3, Chest = "Title", Always = true },
 		{
 			Id = "Playtime",
 			Name = "Play 12 minutes",
@@ -737,8 +774,35 @@ Config.Quests = {
 	SpinDuration = 4.2, -- seconds the reveal wheel spins on the client
 }
 
+-- Friend invites (InviteController): once a session, after this many finished games this session.
+Config.Social = {
+	InviteEnabled = true,
+	InviteAfterGames = 2,
+	InviteMessage = "Come knock me off the court!",
+}
+
+-- Analytics (AnalyticsService funnels).
+Config.Analytics = {
+	-- the onboarding funnel's "Played 12 minutes" step: active seconds in the first session
+	FunnelPlaySeconds = 12 * 60,
+}
+
 Config.Rewards = {
 	StreakEndMin = 5, -- "STREAK ENDED!" feed message threshold
+	-- the day's first win (UTC day, bot matches included, anti-AFK rule applies) pays this on top,
+	-- before boosts; the results card shows it, and until it's won it's the card's next goal
+	FirstWinBonus = 150,
+	FirstWinXP = 30,
+	-- play streak: every Every-th finished game in a row this session (you took part; aborted ones
+	-- don't count, leaving the server resets it) pays Coins on top, before boosts
+	PlayStreak = { Every = 3, Coins = 100 },
+	-- a player's first win ever pays this once, on top (the results card celebrates it)
+	FirstEverWinBonus = 300,
+	-- daily XP rush: each UTC day's first Games finished games (you took part) earn Multiplier x XP
+	XPRush = { Games = 3, Multiplier = 2 },
+	-- MVP: the match's top scorer (Knockout/Hit/Catch points, bots included) gets a sticker, a feed
+	-- line and Coins on top; ties go to nobody
+	MVP = { Knockout = 3, Hit = 1, Catch = 2, Coins = 50, MinScore = 4 },
 }
 
 -- The guided hub tutorial (TutorialService; the step contract is in docs/prompts/build-path.md):
@@ -881,6 +945,7 @@ Config.Intro = {
 	Order = { "Blue", "Red" },
 	BlueTime = 2,
 	RedTime = 2,
+	RepeatScale = 0.5, -- intro length once every real player in the match has finished a game this session
 	CameraBack = 9, -- studs in front of the line-up
 	CameraUp = 2.4, -- above the players' roots (about chest height)
 	PanOvershoot = 3, -- the pan starts/ends this far past the end players

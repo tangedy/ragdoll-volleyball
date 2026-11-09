@@ -66,16 +66,18 @@ end
 -- function so tests can pin the picks.)
 function QuestService.pickDaily(): { string }
 	local pool, repeating = {}, 0
+	local picks = {}
 	for _, q in Q.List do
 		if q.Repeats then
 			repeating += 1
+		elseif q.Always then
+			table.insert(picks, q.Id)
 		else
 			table.insert(pool, q.Id)
 		end
 	end
-	local picks = {}
 	local rng = Random.new()
-	for _ = 1, math.min(#pool, Q.Shown - repeating) do
+	for _ = 1, math.min(#pool, Q.Shown - repeating - #picks) do
 		table.insert(picks, table.remove(pool, rng:NextInteger(1, #pool)) :: string)
 	end
 	return picks
@@ -237,6 +239,29 @@ function QuestService.status(c: any): any
 	}
 end
 
+-- The shown quest closest to done that isn't claimed (ready ones first), for the results card:
+-- { name, progress, goal, ready } or nil. Playtime quests are left out (they tick in seconds).
+function QuestService.closest(c: any): { [string]: any }?
+	if not c.profile then
+		return nil
+	end
+	local d = QuestService.daily(c)
+	local best, bestScore = nil, -1
+	for _, q in shown(d) do
+		if q.Event == "Playtime" or d.claimed[q.Id] then
+			continue
+		end
+		local goal = goalOf(d, q)
+		local progress = math.min(goal, tonumber(d.progress[q.Id]) or 0)
+		local score = progress / math.max(1, goal)
+		if score > bestScore then
+			best = { name = nameOf(d, q), progress = progress, goal = goal, ready = progress >= goal, event = q.Event }
+			bestScore = score
+		end
+	end
+	return best
+end
+
 local function inHub(c: any): boolean
 	return not c.inMatch and c.status == "Lobby"
 end
@@ -321,6 +346,14 @@ local function playClock()
 				c.questLastPos = pos
 				c.questActiveAt = t
 			end
+			-- the onboarding funnel's "Played 12 minutes": 12 real active minutes this session, not the
+			-- playtime quest's goal (its first claim of the day is only 8)
+			if t - (c.questActiveAt or -math.huge) <= Q.ActiveWindow then
+				c.sessionActiveSeconds = (c.sessionActiveSeconds or 0) + 1
+				if c.sessionActiveSeconds == Config.Analytics.FunnelPlaySeconds then
+					S.AnalyticsService.played12Minutes(c)
+				end
+			end
 			for _, q in Q.List do
 				if q.Event ~= "Playtime" then
 					continue
@@ -336,7 +369,6 @@ local function playClock()
 					QuestService.record(c, "Playtime")
 					if (tonumber(d.progress[q.Id]) or 0) >= goalOf(d, q) then
 						S.DataService.push(c)
-						S.AnalyticsService.played12Minutes(c)
 					end
 				end
 				c.player:SetAttribute("QuestPlaytime", tonumber(d.progress[q.Id]) or 0)

@@ -103,6 +103,31 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 			end
 		end
 	end
+	-- MVP: the top scorer of the match (bots included), if it's a clear win and a real player
+	local mvp: any? = nil
+	if not ctx.aborted then
+		local V = Config.Rewards.MVP
+		local best, tie = V.MinScore - 1, false
+		for _, c in roster do
+			local s = c.stats
+			if s then
+				local score = (s.knockouts + (s.botKnockouts or 0)) * V.Knockout
+					+ (s.hits + (s.botHits or 0)) * V.Hit
+					+ (s.catches + (s.botCatches or 0)) * V.Catch
+				if score > best then
+					best, mvp, tie = score, c, false
+				elseif score == best and mvp then
+					tie = true
+				end
+			end
+		end
+		if tie or (mvp and not mvp.player) then
+			mvp = nil
+		end
+		if mvp then
+			S.NetService.broadcast("Feed", { text = ("⭐ %s was the MVP!"):format(S.MatchService.tag(mvp)) })
+		end
+	end
 	for _, c in roster do
 		if c.player and c.player.Parent and c.profile and c.rewardedMatch ~= ctx.matchId then
 			c.rewardedMatch = ctx.matchId
@@ -112,6 +137,70 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 			local xp = RewardService.xp(c, ctx)
 			local won = ctx.winner ~= nil and c.team == ctx.winner and not ctx.aborted
 			local p = c.profile
+			local today = os.time() // 86400 -- UTC day number
+			-- play streak: every Every-th finished game this session pays a bonus
+			local playStreak = 0
+			if coins > 0 and not ctx.aborted then
+				c.sessionGames = (c.sessionGames or 0) + 1
+				if c.sessionGames % Config.Rewards.PlayStreak.Every == 0 then
+					playStreak = Config.Rewards.PlayStreak.Coins * boost
+				end
+			end
+			-- first win of the day: a reason to come back tomorrow (paid once per UTC day)
+			local firstWin = 0
+			if won and coins > 0 and (tonumber(p.FirstWinDay) or 0) ~= today then
+				p.FirstWinDay = today
+				firstWin = Config.Rewards.FirstWinBonus * boost
+				coins += firstWin
+				xp += Config.Rewards.FirstWinXP
+			end
+			coins += playStreak
+			local isMvp = mvp == c and coins > 0
+			if isMvp then
+				coins += Config.Rewards.MVP.Coins * boost
+			end
+			-- daily XP rush: the day's first few games you took part in earn extra XP
+			local rush = false
+			if coins > 0 and not ctx.aborted then
+				local r = p.XPRush
+				if type(r) ~= "table" or r.day ~= today then
+					r = { day = today, games = 0 }
+					p.XPRush = r
+				end
+				if r.games < Config.Rewards.XPRush.Games then
+					r.games += 1
+					xp = math.floor(xp * Config.Rewards.XPRush.Multiplier)
+					rush = true
+				end
+			end
+			-- first win ever: a one-time bonus (Wins is bumped below)
+			local firstEver = 0
+			if won and coins > 0 and (tonumber(p.Wins) or 0) == 0 then
+				firstEver = Config.Rewards.FirstEverWinBonus * boost
+				coins += firstEver
+			end
+			-- personal bests in one match (bot actions count, as they do on the card)
+			local records = {}
+			if not ctx.aborted then
+				if type(p.Best) ~= "table" then
+					p.Best = { Hits = 0, Knockouts = 0, Catches = 0 }
+				end
+				local this = {
+					Hits = c.stats.hits + c.stats.botHits,
+					Knockouts = c.stats.knockouts + c.stats.botKnockouts,
+					Catches = c.stats.catches + c.stats.botCatches,
+				}
+				for _, k in { "Knockouts", "Hits", "Catches" } do
+					local before = tonumber(p.Best[k]) or 0
+					if this[k] > before then
+						p.Best[k] = this[k]
+						-- a "best" from a player's very first match isn't news
+						if before > 0 then
+							table.insert(records, k)
+						end
+					end
+				end
+			end
 			p.Coins += coins
 			local oldLevel = p.Level
 			p.Level, p.XP = Progression.addXP(p.Level, p.XP, xp)
@@ -126,8 +215,12 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 			-- daily quests: a finished match you took part in (the coins' anti-AFK rule) counts as
 			-- won when your team won; bot-filled matches count, as they do for coins
 			local s = c.stats
-			if won and (s.throws + s.catches + s.botCatches + s.dodges) >= P.MinParticipationActions then
+			local tookPart = (s.throws + s.catches + s.botCatches + s.dodges) >= P.MinParticipationActions
+			if won and tookPart then
 				S.QuestService.record(c, "Won")
+			end
+			if tookPart and not ctx.aborted then
+				S.QuestService.record(c, "Game")
 			end
 			c.stats.banked = true
 			-- bot-heavy (casual) matches neither advance nor break streaks
@@ -150,6 +243,18 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 				boost = boost,
 				xp = xp,
 				level = p.Level,
+				firstWin = firstWin, -- the first-win-of-the-day bonus inside `coins` (0 if none)
+				playStreak = playStreak, -- the play-streak bonus inside `coins` (0 if none)
+				firstEver = firstEver, -- the first-win-ever bonus inside `coins` (0 if none)
+				records = records, -- stat names with a new personal best this match
+				mvp = isMvp,
+				xpRush = rush, -- this match's XP was multiplied by the daily rush
+				sessionGames = c.sessionGames or 0,
+				tomorrow = RewardService.tomorrow(c), -- tomorrow's daily ladder rung, once today's is claimed
+				firstWinDone = (tonumber(p.FirstWinDay) or 0) == today,
+				quest = S.QuestService.closest(c), -- the nearest unfinished quest, for the next goal
+				xpInto = p.XP, -- progress into the next level, for the results card's next goal
+				xpNeed = Progression.xpToNext(p.Level),
 				leveledUp = p.Level > oldLevel,
 				streak = p.CurrentWinStreak,
 				wins = p.Wins, -- lifetime, this match included (FavoriteController asks from the 2nd)
@@ -168,6 +273,22 @@ function RewardService.awardMatch(roster: { any }, ctx: MatchContext)
 			task.spawn(S.DataService.save, c, false)
 		end
 	end
+end
+
+-- Tomorrow's daily ladder reward, once today's rung is claimed (so the results card can say "come
+-- back tomorrow for…"): { day, reward }; { waiting = true, day } while today's is unclaimed. A missed day resets the ladder, so it's only a promise
+-- if they come back tomorrow.
+function RewardService.tomorrow(c: any): { [string]: any }?
+	if not c.profile then
+		return nil
+	end
+	local status = S.ShopService.dailyStatus(c)
+	if not status.claimed then
+		return { waiting = true, day = status.day } -- today's rung isn't claimed yet
+	end
+	local ladder = Config.DailyRewards.Ladder
+	local day = status.day % #ladder + 1
+	return { day = day, reward = ladder[day] }
 end
 
 -- Level rewards ---------------------------------------------------------------------------------------

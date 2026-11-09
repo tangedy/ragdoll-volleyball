@@ -27,6 +27,7 @@ local matchId = 0
 local roundId = 0
 local roster: { any } = {}
 local wins = { Red = 0, Blue = 0 }
+local roundsToWin = Config.Match.RoundsToWin -- this match's (a first match can be shorter)
 local roundHits = { Red = 0, Blue = 0 }
 local overtime = false
 local teamSize = 3
@@ -944,6 +945,11 @@ local function playRound(): (string, boolean)
 	setState("RoundActive", M.RoundTime)
 	banner("GO!", Color3.fromRGB(120, 255, 140), 0.8, "Go")
 	S.PowerService.roundStarted(roster)
+	-- comeback: the team behind on rounds starts with some ultimate meter
+	local behind = if wins.Red < wins.Blue then "Red" elseif wins.Blue < wins.Red then "Blue" else nil
+	if behind then
+		S.PowerService.comeback(roster, behind)
+	end
 	local endsAt = now() + M.RoundTime
 	local sdStart = 0
 	local stepsDone = 0
@@ -984,7 +990,7 @@ local function playRound(): (string, boolean)
 				end
 				victim.lastCourtPos = pos
 				lastElim = { victim = victim, credit = dev }
-				wins[dev.team] = M.RoundsToWin - 1
+				wins[dev.team] = roundsToWin - 1
 				return dev.team, true
 			end
 		end
@@ -1122,6 +1128,14 @@ local function playIntro()
 	local teams = {}
 	local total = 0
 	local times = {}
+	-- every real player here has already sat through an intro this session: a quicker one
+	local introScale = I.RepeatScale or 1
+	for _, c in roster do
+		if c.player and (c.sessionGames or 0) == 0 then
+			introScale = 1
+			break
+		end
+	end
 	for _, team in I.Order do
 		local members = {}
 		local minX, maxX = math.huge, -math.huge
@@ -1143,7 +1157,7 @@ local function playIntro()
 				halfWidth = (maxX - minX) / 2,
 			}
 		end
-		local t = if team == "Blue" then I.BlueTime else I.RedTime
+		local t = (if team == "Blue" then I.BlueTime else I.RedTime) * introScale
 		table.insert(times, t)
 		total += t
 	end
@@ -1173,6 +1187,22 @@ local function runMatch(queued: { any })
 	wins = { Red = 0, Blue = 0 }
 	MatchService.setAttr("RedWins", 0)
 	MatchService.setAttr("BlueWins", 0)
+	-- a match of only brand-new players (no finished game yet) is a single round: their first
+	-- reward and results card come sooner (Config.Match.FirstMatchRounds)
+	roundsToWin = M.RoundsToWin
+	local allNew, anyReal = true, false
+	for _, c in roster do
+		if c.player then
+			anyReal = true
+			if not c.profile or (tonumber(c.profile.Matches) or 0) > 0 then
+				allNew = false
+			end
+		end
+	end
+	if anyReal and allNew then
+		roundsToWin = M.FirstMatchRounds
+	end
+	MatchService.setAttr("RoundsToWin", roundsToWin)
 	local roundNumber = 0
 	local draws = 0
 	local aborted = false
@@ -1186,7 +1216,7 @@ local function runMatch(queued: { any })
 		c.lateJoin = false
 		S.AnalyticsService.matchStarted(c)
 	end
-	while wins.Red < M.RoundsToWin and wins.Blue < M.RoundsToWin do
+	while wins.Red < roundsToWin and wins.Blue < roundsToWin do
 		roundNumber += 1
 		MatchService.setAttr("Round", roundNumber)
 		resetRound()
@@ -1232,7 +1262,7 @@ local function runMatch(queued: { any })
 			aborted = true
 			break
 		end
-		local decidesMatch = (result == "Red" or result == "Blue") and wins[result] + 1 >= M.RoundsToWin
+		local decidesMatch = (result == "Red" or result == "Blue") and wins[result] + 1 >= roundsToWin
 		if not decidesMatch then
 			-- nobody goes back to the hub between rounds: the jailed stay in jail, and anyone knocked
 			-- out for good (sudden death) is put straight back on the court for the next round
@@ -1244,6 +1274,7 @@ local function runMatch(queued: { any })
 			end
 		end
 		if decidesMatch then
+			MatchService.botBanter(result)
 			-- reward tiers read this: who was still on the court when the match was won
 			for _, c in roster do
 				c.aliveAtWin = c.team == result and c.status == "Active"
@@ -1283,9 +1314,9 @@ local function runMatch(queued: { any })
 
 	local winner: string? = nil
 	if not aborted then
-		if wins.Red >= M.RoundsToWin then
+		if wins.Red >= roundsToWin then
 			winner = "Red"
-		elseif wins.Blue >= M.RoundsToWin then
+		elseif wins.Blue >= roundsToWin then
 			winner = "Blue"
 		end
 	end
@@ -1324,6 +1355,32 @@ local function runMatch(queued: { any })
 		end
 	end
 	publishCounts()
+end
+
+-- A couple of bots say something in a chat bubble as the match is decided ("gg"), so a bot-filled
+-- server feels a little more alive (Config.Bots.Banter). Clients draw the bubble (HUDController).
+function MatchService.botBanter(winner: string)
+	local BT = Config.Bots.Banter
+	if not BT or not BT.Enabled then
+		return
+	end
+	local said = 0
+	for _, c in roster do
+		if said >= BT.MaxPerMatch then
+			break
+		end
+		if c.isBot and c.character and math.random() < BT.Chance then
+			said += 1
+			local lines = if c.team == winner then BT.Win else BT.Lose
+			local text = lines[math.random(1, #lines)]
+			local model = c.character
+			task.delay(math.random() * 1.2 + 0.3, function()
+				if model.Parent then
+					S.NetService.broadcast("BotChat", { model = model, text = text })
+				end
+			end)
+		end
+	end
 end
 
 -- The one real player in the server, when they'd be queued but for PLAY and haven't opted out (see
@@ -1374,6 +1431,13 @@ function MatchService.run()
 				end
 				solo.tutorialDoneAt = nil
 				queued = MatchService.queuedPlayers()
+			end
+		end
+		-- someone fresh out of the tutorial is waiting: their first match starts almost at once
+		for _, c in queued do
+			if c.tutorialDoneAt and os.clock() - c.tutorialDoneAt <= M.SoloAfterTutorialWindow then
+				lobbyWait = math.min(lobbyWait, M.SoloAfterTutorialWait)
+				c.tutorialDoneAt = nil
 			end
 		end
 		-- the intermission always runs its full wait (PLAY only queues you; nobody can start it

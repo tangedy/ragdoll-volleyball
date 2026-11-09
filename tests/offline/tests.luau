@@ -343,6 +343,16 @@ return function(H)
 		return t
 	end
 
+	-- Turn off the per-day and per-session bonuses (first wins, the XP rush, the play streak) for a
+	-- test about something else.
+	local function noBonuses(c)
+		local today = os.time() // 86400
+		c.profile.Wins = math.max(1, c.profile.Wins)
+		c.profile.FirstWinDay = today
+		c.profile.XPRush = { day = today, games = math.huge }
+		c.sessionGames = 0.5 -- (a count that never lands on a multiple of the streak)
+	end
+
 	test("rewards: tiers, idle players get nothing, aborted matches pay nothing", function()
 		local P = Config.Coins
 		local function fake(team, elims, alive, throws)
@@ -367,11 +377,17 @@ return function(H)
 		c.stats.throws = 2
 		c.matchEliminations = 1
 		c.aliveAtWin = true
+		-- the coin totals below are the match payouts only: no daily XP rush, and level rewards
+		-- already banked (two matches level a new player up, and level 2 pays coins)
+		c.profile.XPRush = { day = os.time() // 86400, games = math.huge }
+		c.profile.LevelRewardsPaid = Config.Progression.LevelCap
 		local m = ctx("Red")
 		S.RewardService.awardMatch({ c }, m)
-		eq(c.profile.Coins, Config.Coins.WinAlive, "first payout")
+		-- the first win ever is also the day's first win: both bonuses ride on it
+		local first = Config.Coins.WinAlive + Config.Rewards.FirstWinBonus + Config.Rewards.FirstEverWinBonus
+		eq(c.profile.Coins, first, "first payout")
 		S.RewardService.awardMatch({ c }, m)
-		eq(c.profile.Coins, Config.Coins.WinAlive, "same match paid twice")
+		eq(c.profile.Coins, first, "same match paid twice")
 		local d = S.QuestService.daily(c)
 		eq(d.progress.Won, 1, "won quest")
 		-- with a boost, the next match pays double
@@ -379,9 +395,100 @@ return function(H)
 		c.stats = H.stats()
 		c.stats.throws = 1
 		S.RewardService.awardMatch({ c }, ctx("Red"))
-		eq(c.profile.Coins, Config.Coins.WinAlive + 2 * Config.Coins.WinAlive, "boosted payout")
+		eq(c.profile.Coins, first + 2 * Config.Coins.WinAlive, "boosted payout")
 		local results = H.eventsNamed("Results")
 		eq(results[#results].payload.boost, 2, "results card boost")
+	end)
+
+	test("rewards: first win of the day pays once a day; first win ever pays once", function()
+		local c = H.combatant()
+		c.team = "Red"
+		local function play(winner)
+			c.stats = H.stats()
+			c.stats.throws = 1
+			c.matchEliminations = 2 -- a plain WIN tier
+			S.RewardService.awardMatch({ c }, ctx(winner))
+			local results = H.eventsNamed("Results")
+			return results[#results].payload
+		end
+		local r = play("Blue")
+		eq(r.firstWin, 0, "a loss paid the first-win bonus")
+		check(r.firstWinDone == false, "first win shown as done before any win")
+		r = play("Red")
+		eq(r.firstWin, Config.Rewards.FirstWinBonus, "first win today")
+		eq(r.firstEver, Config.Rewards.FirstEverWinBonus, "first win ever")
+		r = play("Red")
+		eq(r.firstWin, 0, "second win today paid the bonus")
+		eq(r.firstEver, 0, "second win paid the first-ever bonus")
+		c.profile.FirstWinDay -= 1 -- a new day
+		r = play("Red")
+		eq(r.firstWin, Config.Rewards.FirstWinBonus, "next day's first win")
+	end)
+
+	test("rewards: every 3rd finished game in a session pays the play streak; idle games don't count", function()
+		local c = H.combatant()
+		c.team = "Red"
+		local paid = {}
+		for i = 1, 7 do
+			c.stats = H.stats()
+			c.stats.throws = if i == 4 then 0 else 1 -- game 4 is idle
+			S.RewardService.awardMatch({ c }, ctx("Blue"))
+			local results = H.eventsNamed("Results")
+			table.insert(paid, results[#results].payload.playStreak)
+		end
+		local P = Config.Rewards.PlayStreak.Coins
+		eq(table.concat(paid, ","), table.concat({ 0, 0, P, 0, 0, 0, P }, ","), "play streak payouts")
+	end)
+
+	test("rewards: the day's first games earn rush XP, then plain XP", function()
+		local c = H.combatant()
+		c.team = "Red"
+		local rushed = 0
+		for _ = 1, Config.Rewards.XPRush.Games + 2 do
+			c.stats = H.stats()
+			c.stats.throws = 1
+			S.RewardService.awardMatch({ c }, ctx("Blue"))
+			local results = H.eventsNamed("Results")
+			if results[#results].payload.xpRush then
+				rushed += 1
+			end
+		end
+		eq(rushed, Config.Rewards.XPRush.Games, "rush games")
+	end)
+
+	test("rewards: the MVP is the clear top scorer and only a real player gets paid for it", function()
+		local a, b = H.combatant(), H.combatant()
+		a.team, b.team = "Red", "Blue"
+		a.stats.throws, b.stats.throws = 1, 1
+		a.stats.knockouts = 2 -- 6 points
+		b.stats.hits = 3 -- 3 points
+		S.RewardService.awardMatch({ a, b }, ctx("Red"))
+		local mine, theirs
+		for _, e in H.eventsNamed("Results") do
+			if e.to == a.player then
+				mine = e.payload
+			elseif e.to == b.player then
+				theirs = e.payload
+			end
+		end
+		check(mine and mine.mvp == true, "top scorer wasn't the MVP")
+		check(theirs and theirs.mvp == false, "runner-up was the MVP")
+	end)
+
+	test("quests: Always quests are picked every day; closest() picks the nearest unfinished one", function()
+		for _ = 1, 20 do
+			check(table.find(S.QuestService.pickDaily(), "Games") ~= nil, "Games wasn't picked")
+		end
+		local c = H.combatant()
+		local d = S.QuestService.daily(c)
+		d.picks = { "Games", "Knockouts" }
+		d.progress.Games = 1 -- 1/3
+		d.progress.Knockouts = 2 -- 2/3, closer
+		local q = S.QuestService.closest(c)
+		check(q and q.name == "Knock out 3" and q.progress == 2, "closest quest")
+		d.claimed.Knockouts = true
+		q = S.QuestService.closest(c)
+		check(q and q.name == "Play 3 games", "a claimed quest was still picked")
 	end)
 
 	test("quests: a first claim comes back after the short cooldown, later ones wait for the reset", function()
@@ -1543,6 +1650,7 @@ return function(H)
 		c.profile.Level = 4
 		c.profile.XP = P.LevelBase + P.LevelPerLevel * 4 - 1
 		c.profile.LevelRewardsPaid = 4
+		noBonuses(c)
 		local m = ctx("Red")
 		S.RewardService.awardMatch({ c }, m)
 		eq(c.profile.Level, 5, "level after the match")
